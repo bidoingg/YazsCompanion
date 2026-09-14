@@ -14,7 +14,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.5.0";
+        public const string VERSION = "0.5.1";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -54,28 +54,42 @@ namespace YazsCompanion
             catch (Exception e) { Logger.LogWarning("file log unavailable: " + e.Message); }
 
             Updater.CleanupSiblings();
+            // The update check touches no game object, so it runs before the hooks: a build the game has outgrown
+            // (a renamed member fails its patch below) can still fetch the fixed build and ask for a restart.
+            if (AutoUpdate.Value) Updater.CheckInBackground(UpdateUrl.Value, VERSION, PluginDir);
+            else Logger.LogInfo("[update] auto-update is off (config)");
+
             var knowledge = Knowledge.Load(Path.Combine(PluginDir, "knowledge.json"));
 
+            // One patch class at a time (what Harmony.PatchAll does, minus the shared fate): a hook the game
+            // renamed logs its error and every other screen keeps working.
             var harmony = new Harmony(GUID);
-            harmony.PatchAll(typeof(Plugin).Assembly);
+            int failed = 0;
+            foreach (var type in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                try { harmony.CreateClassProcessor(type).Patch(); }
+                catch (Exception e) { failed++; Logger.LogError("patch " + type.Name + " failed (game update?): " + e.Message); }
+            }
             int patched = 0;
             foreach (var _ in harmony.GetPatchedMethods()) patched++;
-            Logger.LogInfo(NAME + " " + VERSION + " loaded from " + PluginDir + "; " + patched + " methods patched; badges " + (ShowBadges.Value ? "on" : "off")
+            Logger.LogInfo(NAME + " " + VERSION + " loaded from " + PluginDir + "; " + patched + " methods patched"
+                + (failed > 0 ? " (" + failed + " patch classes FAILED, see above)" : "") + "; badges " + (ShowBadges.Value ? "on" : "off")
                 + "; panel " + (ShowPanel.Value ? "on" : "off") + "; auto-update " + (AutoUpdate.Value ? "on" : "off") + "; knowledge from " + knowledge.Source
                 + " (" + knowledge.ItemTier.Count + " items, " + knowledge.AbilityTier.Count + " abilities, " + knowledge.RescueTier.Count + " survivors)");
-
-            if (AutoUpdate.Value) Updater.CheckInBackground(UpdateUrl.Value, VERSION, PluginDir);
         }
     }
 
-    /// <summary>Appends this plugin's own log lines (only) to a file, timestamped, flushed per line. Thread-safe: the updater logs from a worker.</summary>
+    /// <summary>Appends this plugin's own log lines (only) to a file, timestamped, flushed per line. Thread-safe: the updater logs from a worker.
+    /// Bounded on long-lived installs: past MaxBytes the file is rotated to companion.log.1 (replacing the previous one) at launch.</summary>
     internal sealed class FileListener : ILogListener
     {
+        const long MaxBytes = 2L * 1024 * 1024;
         readonly StreamWriter _w;
         readonly object _lock = new object();
         public FileListener(string path)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
+            Rotate(path);
             _w = new StreamWriter(path, true) { AutoFlush = true };
             _w.WriteLine("==== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " session start ====");
         }
@@ -86,5 +100,18 @@ namespace YazsCompanion
             lock (_lock) { try { _w.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " [" + e.Level + "] " + e.Data); } catch { } }
         }
         public void Dispose() { lock (_lock) { _w.Dispose(); } }
+
+        static void Rotate(string path)
+        {
+            try
+            {
+                var f = new FileInfo(path);
+                if (!f.Exists || f.Length < MaxBytes) return;
+                string old = path + ".1";
+                if (File.Exists(old)) File.Delete(old);
+                File.Move(path, old);
+            }
+            catch { }
+        }
     }
 }
