@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>YazsCompanionMod</AssemblyName>
+    <RootNamespace>YazsCompanion</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>CS8632;CS0649</NoWarn>
+    <!-- Game install; override with -p:GameDir=... -->
+    <GameDir Condition="'$(GameDir)' == ''">J:\SteamLibrary\steamapps\common\Yet Another Zombie Survivors</GameDir>
+    <BepInExDir>$(GameDir)\BepInEx</BepInExDir>
+  </PropertyGroup>
+
+  <!-- BepInEx 6 IL2CPP core + the interop assemblies BepInEx generated on first launch -->
+  <ItemGroup>
+    <Reference Include="$(BepInExDir)\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(BepInExDir)\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(BepInExDir)\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(BepInExDir)\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(BepInExDir)\core\Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(BepInExDir)\interop\*.dll" Private="false" />
+  </ItemGroup>
+
+  <!-- Deploy straight into BepInEx/plugins after a build (skip with -p:Deploy=false) -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(Deploy)' != 'false'">
+    <MakeDir Directories="$(BepInExDir)\plugins\YazsCompanion" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BepInExDir)\plugins\YazsCompanion" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(BepInExDir)\plugins\YazsCompanion" />
+  </Target>
+</Project>

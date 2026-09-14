@@ -1,0 +1,6 @@
+# build output and packaged releases (published as GitHub release assets, not committed)
+YazsCompanion.Mod/bin/
+YazsCompanion.Mod/obj/
+dist/
+*.user
+.vs/
