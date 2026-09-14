@@ -138,6 +138,8 @@ namespace YazsCompanion
             var skill = b.TryCast<UIPowerupButtonSkill>(); if (skill != null && skill.shortDescription != null) return skill.shortDescription;
             var item = b.TryCast<UIPowerupButtonItem>(); if (item != null && item.itemDescription != null) return item.itemDescription;
             var mil = b.TryCast<UIPowerupButtonMilitary>(); if (mil != null && mil.militaryTrainingDescription != null) return mil.militaryTrainingDescription;
+            var tag = b.TryCast<UIPowerupButtonHashtag>();
+            if (tag != null) { if (tag.hashtagShortDescriptionText != null) return tag.hashtagShortDescriptionText; if (tag.hashtagDescriptionText != null) return tag.hashtagDescriptionText; }
             return null;
         }
 

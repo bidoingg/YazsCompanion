@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline bench for the item and tag rules: compiles the mod's pure files (no game types) into a console app.
+       Run with tools\bench.cmd [path\to\gamedata.json]. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>YazsCompanion.Bench</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>CS8632;CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\YazsCompanion.Mod\ItemRules.cs" Link="mod\ItemRules.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Knowledge.cs" Link="mod\Knowledge.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Tags.cs" Link="mod\Tags.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Updater.cs" Link="mod\Updater.cs" />
+  </ItemGroup>
+</Project>

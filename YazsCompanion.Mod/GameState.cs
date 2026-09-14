@@ -43,6 +43,7 @@ namespace YazsCompanion
         public string Clock = "?";
         public string Mode = "?";
         public int Horde;
+        public readonly TagProfile Tags = new TagProfile();   // what the squad deals + the run's damage type tag points
         public bool SquadFull { get { return Squad.Count >= 3; } }
         public Survivor Find(CT t) { foreach (var s in Squad) if (s.Type == t) return s; return null; }
         public bool OnSquad(CT t) { return Find(t) != null; }
@@ -162,6 +163,63 @@ namespace YazsCompanion
         public static bool Unlocked(ClassProperties cp) { try { return cp.isCharacterUnlocked || cp.isCharacterAlwaysUnlocked; } catch { return false; } }
         public static bool IsAbility(PowerupBase p) { try { return p.isAbility && p.TryCast<BasicLevelPowerup>() == null; } catch { return false; } }
 
+        // ---- damage type tags ----
+        static readonly HashtagSystem.EHashtagType[] TagTypes =
+        {
+            HashtagSystem.EHashtagType.Fire, HashtagSystem.EHashtagType.Electric, HashtagSystem.EHashtagType.Toxic, HashtagSystem.EHashtagType.Ice,
+            HashtagSystem.EHashtagType.Explosive, HashtagSystem.EHashtagType.Kinetic, HashtagSystem.EHashtagType.Slashing
+        };
+        /// <summary>The game's display name of a tag type (Toxic shows as Chemical); null for None.</summary>
+        public static string TagName(HashtagSystem.EHashtagType t)
+        {
+            switch (t)
+            {
+                case HashtagSystem.EHashtagType.Fire: return "Fire";
+                case HashtagSystem.EHashtagType.Electric: return "Electric";
+                case HashtagSystem.EHashtagType.Toxic: return "Chemical";
+                case HashtagSystem.EHashtagType.Ice: return "Ice";
+                case HashtagSystem.EHashtagType.Explosive: return "Explosive";
+                case HashtagSystem.EHashtagType.Kinetic: return "Kinetic";
+                case HashtagSystem.EHashtagType.Slashing: return "Slashing";
+                default: return null;
+            }
+        }
+
+        /// <summary>What the squad deals (the current weapon of each survivor counts 1 per type, each owned ability 0.5)
+        /// and the run's tag points per type from the game's HashtagSystem (plus the special-effect threshold).</summary>
+        static void ReadTags(GameplayMaster master, Snapshot s)
+        {
+            var p = s.Tags;
+            foreach (var sv in s.Squad)
+            {
+                if (sv.Weapon != null && sv.LevelOf(sv.Weapon) >= 1) Deals(p, sv.Weapon, 1.0);
+                foreach (var kv in sv.Powerups)
+                {
+                    if (kv.Value < 1 || kv.Key == null || !IsAbility(kv.Key)) continue;
+                    Deals(p, kv.Key, 0.5);
+                }
+            }
+            try
+            {
+                var hs = master.hashtagSystem;
+                if (hs != null)
+                {
+                    try { p.SpecialAt = HashtagSystem.NumRequiredForSpecial; } catch { }
+                    foreach (var t in TagTypes)
+                    {
+                        int n = 0; try { n = hs.GetNumType(t); } catch { continue; }
+                        if (n > 0) p.Points[TagName(t)] = n;
+                    }
+                }
+            }
+            catch { }
+        }
+        static void Deals(TagProfile p, PowerupBase powerup, double weight)
+        {
+            string name = Name(powerup);
+            try { foreach (var t in Each(powerup.hashtagTypes)) p.Deals(TagName(t), name, weight); } catch { }
+        }
+
         // ---- the run right now ----
         public static Snapshot Read()
         {
@@ -206,6 +264,7 @@ namespace YazsCompanion
                 try { var cp = h.Value.Key.targetClassProperties; if (cp != null) owner = s.Find(cp.characterType); } catch { }
                 (owner ?? h.Key).Powerups.Add(h.Value);
             }
+            try { ReadTags(master, s); } catch (Exception e) { Plugin.Logger.LogWarning("[tags] " + e.Message); }
             return s;
         }
     }

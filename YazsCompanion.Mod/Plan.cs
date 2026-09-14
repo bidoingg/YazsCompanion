@@ -31,6 +31,7 @@ namespace YazsCompanion
                 try { p.Survivor(sv, s); }
                 catch (Exception e) { p.Lines.Add(C(Dim, sv.Name + ": " + e.GetType().Name)); }
             }
+            try { p.TagsLine(s); } catch { }
             try { p.Recruits(s); } catch { }
             try { p.Items(s); } catch { }
             p.Signature = string.Join("|", p.Lines);
@@ -116,6 +117,15 @@ namespace YazsCompanion
                 }
                 if (best != null) Lines.Add(C(Dim, "next ability  ") + G.Name(best));
             }
+        }
+
+        // the run's damage type tag points and the type worth stacking at the next Research Pod
+        void TagsLine(Snapshot s)
+        {
+            string pts = s.Tags.PointsText();
+            if (pts.Length == 0) return;
+            string focus = s.Tags.Focus();
+            Lines.Add(C(Gold, "TAGS  ") + pts + (focus != null ? C(Dim, "  stack " + focus) : ""));
         }
 
         void Recruits(Snapshot s)

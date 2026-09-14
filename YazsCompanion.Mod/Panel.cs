@@ -106,7 +106,7 @@ namespace YazsCompanion
         {
             string quest = "";
             try { var qm = GameQuestManager.Get; var q = qm == null ? null : qm.ActiveQuest; if (q != null) quest = q.Pointer.ToString(); } catch { }
-            return s.Squad.Count + "|" + s.SquadText() + "|" + quest;
+            return s.Squad.Count + "|" + s.SquadText() + "|" + quest + "|" + s.Tags.Key();
         }
 
         static void SetVisible(bool v)

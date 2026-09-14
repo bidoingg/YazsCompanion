@@ -52,6 +52,9 @@ namespace YazsCompanion
             return k;
         }
 
+        /// <summary>Parse a knowledge file from memory (the offline bench; no file, no stamp).</summary>
+        public static Knowledge FromJson(string json) { var k = new Knowledge(); k.Parse(json); return k; }
+
         // Write the defaults when the file is missing. When a newer build ships new defaults, replace the file only if
         // the user never edited it (its hash equals the hash of the defaults we last wrote, kept in knowledge.json.stamp);
         // an edited file is left alone with a log line, the old one is kept as knowledge.json.bak.
@@ -149,20 +152,34 @@ namespace YazsCompanion
     ""Cooling Mods"": ""A"",
     ""Ice Turret"": ""A""
   },
+  // item tiers from the wiki's item tier list (1.0.0c2, 2026-08-30): S = pickup radius / magnet items, Accumulator,
+  // Silencer on crit squads; A and B as listed there; 'tag toys' (items whose effect is +N to a damage type tag)
+  // are B, and the mod adds the fit with what the squad actually deals on top of the tier
   ""items"": {
-    ""Silencer"": ""S"",
+    ""Silencer"": ""S"", ""Accumulator"": ""S"",
+    ""Chick Magnet"": ""A"", ""Electric Personality"": ""A"",
     ""Black Box"": ""A"", ""Mana Potion"": ""A"", ""Dartboard"": ""A"", ""Fishing Pole"": ""A"", ""Last Round"": ""A"",
     ""Ragged Patch"": ""A"", ""Power Generator"": ""A"",
+    ""Heavy Metal"": ""B"", ""Pickup Pick"": ""B"",
     ""Hijacked Signal"": ""B"", ""Jailbroken Phone"": ""B"", ""Access Keycard"": ""B"", ""Great Nade"": ""B"",
     ""Hyperactivity"": ""B"", ""The Word"": ""B"", ""Boiling Pot"": ""B"", ""Pawn Shop Receipt"": ""B"",
+    ""Spoil Canister"": ""B"", ""Jacob's Ladder"": ""B"", ""Plague's Visage"": ""B"", ""Special Snowflake"": ""B"",
+    ""Nine Inch Nails"": ""B"", ""Bloody Axe"": ""B"", ""Bleeding Edge"": ""B"", ""The Bomb"": ""B"", ""Explosive Surprise"": ""B"",
+    ""Icon of Cinder"": ""B"", ""Icon of Pestilence"": ""B"", ""Icon of Stillness"": ""B"", ""Icon of Tempest"": ""B"",
+    ""Slingshot"": ""B"", ""Magical Hat"": ""B"", ""Omnigeode"": ""B"", ""Ultra Instinct"": ""B"", ""One For All"": ""B"",
     ""Glass Cannon"": ""C"", ""Brave Toaster"": ""C"", ""Acoustic Guitar"": ""C"", ""Easter Egg"": ""C"", ""Mushroom Mushroom"": ""C""
   },
   ""itemNotes"": {
     ""Silencer"": ""shines on crit squads"",
+    ""Accumulator"": ""magnet pickups nuke the screen"",
+    ""Chick Magnet"": ""pickup radius, the wiki's Default-mode staple"",
+    ""Electric Personality"": ""pickup radius, magnets collect everything"",
     ""Glass Cannon"": ""only behind Engineer's shield"",
     ""Mana Potion"": ""strong on Mechanic with Engineer"",
     ""Power Generator"": ""Endurance staple after elite bosses"",
-    ""Boiling Pot"": ""Pyro on Green Hell""
+    ""Boiling Pot"": ""Pyro on Green Hell"",
+    ""Ultra Instinct"": ""pools every tag into one type at 30 points"",
+    ""Magical Hat"": ""+2 to every elemental tag (+4 at 4 or more)""
   },
   ""critSquad"": [ ""Huntress"", ""Ghost"", ""SWAT"", ""Ranger"" ],
   // military-training stat weights (added to rarity: Common 1, Rare 2, Legendary 3, Endless 2.5)

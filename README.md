@@ -6,22 +6,18 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.4.3 — card verdicts accepted; the PLAN sidebar appeared only on the results
-screen of the user's Steam Deck runs (0.4.1), so 0.4.2/0.4.3 are diagnostic builds.** The Deck log showed
-`[panel] created` and a correct `[plan]` line right after the last pick of each run, i.e. once the run was
-over: one of the 0.4.1 gates (`IsGameplayActive`, `IsPaused`, `IsGameplayUIVisible()`,
-`IsDisplayingUpgradeSelection()`) reads false during play and true on the results screen; the plan logic
-itself is fine. 0.3.1's card frame, ribbon and reason line were accepted on sight with the rankings
-behaving (weapon first, guide rescue tiers). 0.4.0 added the sidebar described below; 0.4.1 was a
-code-review pass (HUD-driven tick, rebuild only when the squad changes, evolve line, tree-locked wording,
-fork choice limited to unlocked branches). 0.4.3 also clears the selection-screen tracker on the base
-`Hide` hook instead of waiting for the screen object to deactivate. In 0.4.2+ every signal that could hide
-the sidebar is logged when it changes (`[panel] players=1 active=True paused=False pauseMenu=False
-defeat=False hudVisible=True selecting=False screen=False hud=True`), only the proven ones hide it (no
-players in the run, an open selection screen tracked by the badge code), `[panel] shown` / `hidden` /
-`created ... canvas WxH screen WxH` lines trace the drawing, and `GameplayMaster.Update` ticks it as a
-fallback next to `UIGameplay.Update` (`[panel] first tick from ...` says which fired). Read the log of the
-next run to decide which gates to re-enable.
+Status (2026-09-14): **0.5.1 — card verdicts accepted on PC and Steam Deck; auto-update validated
+end to end; the PLAN sidebar is still a diagnostic build.** The sidebar appeared only on the results
+screen of the user's Steam Deck runs (0.4.1): one of the 0.4.1 gates (`IsGameplayActive`, `IsPaused`,
+`IsGameplayUIVisible()`, `IsDisplayingUpgradeSelection()`) reads false during play and true on the results
+screen; the plan logic itself is fine. Since 0.4.2 every signal that could hide the sidebar is logged when it
+changes (`[panel] players=1 active=True paused=False pauseMenu=False defeat=False hudVisible=True
+selecting=False screen=False hud=True`), only the proven ones hide it (no players in the run, an open
+selection screen tracked by the badge code), `[panel] shown` / `hidden` / `created ... canvas WxH screen WxH`
+lines trace the drawing, and `GameplayMaster.Update` ticks it as a fallback next to `UIGameplay.Update`
+(`[panel] first tick from ...` says which fired). The log of the next run decides which gates to re-enable.
+0.5.0 added the auto-updater and the public repository; 0.5.1 ranks the Research Pod reward cards, scores
+chest items against what the squad actually deals, adds a `TAGS` line to the plan and an offline bench.
 
 ## The PLAN sidebar (during play)
 
@@ -37,16 +33,17 @@ next ability  Bombing Strike
 ```
 
 (the `evolve:` line appears only while a maxed ability waits for its unlocked evolution card; a maxed
-weapon whose next tier is not bought in the Training Yard reads `next tier locked in the Training Yard`)
-and for the squad `SOS  Engineer, Huntress` (the two best rescues for this squad by the same rules
-as the SOS cards) and `GRAB  Silencer, Black Box` (items worth a chest slot: S/A tier or quest target,
-not held). It is driven by the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes
-(a cheap key of the squad text plus the active quest; a rebuild walks every tree node and item), hides
-while a selection screen (`UIGameplay.IsDisplayingUpgradeSelection`), the pause menu or a hidden HUD
-(`GameplayMaster.IsGameplayUIVisible`) is up, and dies with the HUD when the run ends. `ShowPanel`,
-`PanelTop` and `PanelRight` in the config move or disable it (canvas units on a 3840 x 2160 canvas).
-Every change is logged as a `[plan] 03:31: ...` line; `[panel] created under UIGameplay using label
-'Quest_Obj1'` shows which HUD text it cloned for the font.
+weapon whose next tier is not bought in the Training Yard reads `next tier locked in the Training Yard`),
+then for the run `TAGS  Explosive 7/10, Kinetic 3/10  stack Explosive` (damage type tag points per type,
+`/N` until the type's special effect, and the type worth stacking at the next Research Pod), and for the
+squad `SOS  Engineer, Huntress` (the two best rescues for this squad by the same rules as the SOS cards) and
+`GRAB  Silencer, Black Box` (items worth a chest slot: S/A tier or quest target, not held). It is driven by
+the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes (a cheap key of the squad text,
+the active quest and the tag points; a rebuild walks every tree node and item), and dies with the HUD when
+the run ends. The intended gates (a selection screen, the pause menu, the results screen) are the open item
+above. `ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units on a
+3840 x 2160 canvas). Every change is logged as a `[plan] 03:31: ...` line; `[panel] created under UIGameplay
+using label 'Quest_Obj1'` shows which HUD text it cloned for the font.
 
 ## What you see in the game
 
@@ -58,7 +55,7 @@ Every change is logged as a `[plan] 03:31: ...` line; `[panel] created under UIG
   of 4`, `S-tier rescue, 2 synergies with the squad`), grey on the others, warm on the pick, dull red
   when a card is worth avoiding. Scores stay in the log.
 - Screens covered: level-up (including the stat cards of Endless level-ups), chest, military training,
-  SOS rescue (survivors and Liberate). Hashtag events are shown but scored flat (not ranked yet).
+  SOS rescue (survivors and Liberate), and the Research Pod reward (damage type tag points).
 
 Placement comes from the card prefab read out of the game's asset files (`tools`-free, see
 *How it hooks the game*): every card root is 832 x 1462 canvas units on a 3840 x 2160 canvas, the
@@ -73,9 +70,9 @@ Turn the badges off with `ShowBadges = false` in `BepInEx\config\bidoi.yazs.comp
 
 The rules follow published guides rather than the player's own history. The tiers they use live in
 `BepInEx\plugins\YazsCompanion\knowledge.json` (written on first launch, editable; delete it to reset).
-Sources, all read 2026-09-13: GoldMath's *Synergy Guide* on Steam (id 3352985777) for survivor pairings
+Sources, all read 2026-09-13/14: GoldMath's *Synergy Guide* on Steam (id 3352985777) for survivor pairings
 (the mod recomputes the pair synergy counts from the game's own synergy nodes at run time);
-yetanotherzombiesurvivors.wiki's tier lists for survivors, weapons, squads and items, and its rule
+yetanotherzombiesurvivors.wiki's tier lists for survivors, weapons, squads and items (1.0.0c2), and its rule
 "take each ability once, finish the weapon, then dump into the one ability that is already working";
 yetanotherzombiesurvivorswiki.wiki's *best upgrades* page for "max the starting weapon first, one
 weapon line, then crit / turret-shield / poison / dodge-regen by squad identity".
@@ -93,9 +90,19 @@ weapon line, then crit / turret-shield / poison / dodge-regen by squad identity"
   owned Training Yard synergies with a partner on the squad (+2.5), an unlocked evolution (+1.5) and
   paid tree levels (+0.3 each) add on top, scaled; the total never exceeds 5.5.
 - **Chests**: guide tier first (S +3, A +2, B +1, C −1.5), then fit with the squad's damage types from
-  the item's description (fire → Pyro, explosive → SWAT/Tank, ...), +3 for the active quest's target
-  item, −1 for a single-slot item already held. Silencer drops without a crit survivor; Glass Cannon is
-  only rated behind an Engineer.
+  the item's description, +3 for the active quest's target item, −1 for a single-slot item already
+  held. The damage types come from the game itself: every weapon and ability lists the tags it deals
+  (`PowerupBase.hashtagTypes`), so "+4 to Fire damage type tag" scores by how much of the squad's damage
+  is Fire (each survivor's current weapon counts 1, each owned ability 0.5), named in the reason
+  (`Flamethrower, Molotov: fire`); a malus clause ("−10% Kinetic, Slashing, Explosive damage") counts
+  against the squad the same way. The class table (Pyro → fire, ...) is only the fallback when no
+  powerup is known yet. Silencer drops without a crit survivor; Glass Cannon is only rated behind an
+  Engineer.
+- **Research Pod rewards** (`UIGameplayHashtagEvent`, cards of "+N points of one damage type"):
+  1 + 0.15 per point, +2.5 scaled by the squad's share of that type, +1.0 for the type you already stack
+  most among the ones you deal, +1.5 when the card reaches the special-effect threshold
+  (`HashtagSystem.NumRequiredForSpecial`, read live), and the distance to it in the reason
+  (`3 more to the special after this`). Types nobody on the squad deals stay at the bottom.
 - **SOS**: guide rescue tier (S +2.5 down to C −0.5) plus synergy potential: 0.7 per synergy node
   between the survivor and anyone on the squad, 0.6 more per node you already own, +0.5 per owned
   "while X is on the team" passive, a small bonus for low Training Yard levels and a rank within five
@@ -105,6 +112,15 @@ weapon line, then crit / turret-shield / poison / dodge-regen by squad identity"
 
 Run history is deliberately not used. The log shows every score with its reasons, so a verdict you
 disagree with can be traced and the knowledge file adjusted.
+
+### Offline bench
+
+`tools\bench.cmd [path\to\gamedata.json] [--all]` compiles the pure rule files (`ItemRules.cs`, `Tags.cs`,
+`Knowledge.cs`) into a console app (`tools\ItemBench`) and scores every item of the game for a few squads,
+listing the top picks, any item that reaches the `GRAB` threshold (3.0) on keywords alone, the bottom of
+the list, and how a Research Pod screen would rank. It reads the PC app's extracted `data\gamedata.json`
+(from `tools\extract_gamedata.py` in the project root, outside this repository); pass the path if it lives
+elsewhere. Use it before changing a rule or a tier.
 
 ## Get it
 
@@ -125,7 +141,8 @@ changes, ticked from `GameMaster.Update`). `knowledge.json` is refreshed with a 
 you never edited it (a hash stamp in `knowledge.json.stamp`; the old file is kept as `.bak`). Config:
 `AutoUpdate` (default on) and `UpdateUrl` in `BepInEx\config\bidoi.yazs.companion.cfg`. Offline launches just
 skip the check; a bad download is discarded on a hash or assembly check failure. Log lines: `[update] ...`,
-`[notice] ...`.
+`[notice] ...`. Validated on the PC with a local feed and with a real newer build next to the running one;
+the Steam Deck (0.5.0 hand-installed) gets its first automatic update with 0.5.1.
 
 ## Prerequisites (already done on this machine)
 
@@ -174,14 +191,17 @@ mod\release.cmd -Notes "what changed"
 copies the DLL to `dist\YazsCompanionMod-<version>.dll`, writes `dist\latest.json` (version, download URL,
 SHA-256, zip URL, notes, date), tags `v<version>`, pushes, creates the GitHub release with the three assets, and
 copies the zip into the Drive folder. Bump `VERSION` in `Plugin.cs` first; the tag and the feed come from it.
-`-Draft` publishes later, `-NoBuild` reuses the build.
+`-Draft` publishes later, `-NoBuild` reuses the build. Load-test the build in the game before releasing: a
+build that fails to load leaves every auto-updated install without the mod until the next release.
 
 ## Logs
 
 - `BepInEx\plugins\YazsCompanion\companion.log` — only this mod's lines, appended across launches:
   `[offer] LevelUp 03:31 (Normal horde 1)`, `[squad] Tank* L57 Pump-Action Shotgun:4 Sawblade Drone:4 | SWAT L80 ...`,
-  one `[card] #1 PICK Rocket Launcher (weapon, Tank) 5.00 - next step of the weapon path` per card,
-  then `[pick] LevelUp 03:31: Rocket Launcher (#1, the pick)` when the screen closes.
+  `[tags] points: Explosive 7/10, Kinetic 3/10 (special at 10) | deals: Explosive (Rocket Launcher, Minefield),
+  Kinetic (Assault Rifle) | stack Explosive`, one `[card] #1 PICK Rocket Launcher (weapon, Tank) 6.40 - next
+  step of the weapon line` per card, then `[pick] LevelUp 03:31: Rocket Launcher (#1, the pick)` when the
+  screen closes.
 - `BepInEx\LogOutput.log` — everything BepInEx logged this launch (overwritten per launch).
 - Set `Verbose = true` in the config to also log every raw field of every card and survivor
   (`[raw]` lines) when a verdict looks wrong.
@@ -192,18 +212,20 @@ To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in t
 ## How it hooks the game
 
 The game code is not obfuscated. The selection screens are `UIGameplayLevelUp`, `UIGameplayChestOpened`,
-`UIGameplayMilitaryTraining`, `UIGameplayHashtagEvent` and `UIGameplayCharacterRescue` (SOS), all deriving
-from `UIGameplayUpgradeSelection`. Each overrides `AssignGeneratedElements()`, which fills the
-`powerupButtons` array; the mod post-fixes each override, reads `attachedPowerup` / `attachedItem` from every
-active button, ranks, and draws. The base `Hide(clicked)` runs once per screen for every type and is the pick event.
-Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game stores every survivor's powerups on the
-leader's player object; they are regrouped by `targetClassProperties.characterType`), the Training Yard from the
-nodes reachable through each powerup (`skillTreeRequirement`, `skillTreeAbilityBoost`) and each class's
-`skillTreeSynergies`, the run clock from `currentGameMode`. The sidebar ticks from a post-fix on `UIGameplay.Update`
-(the HUD object that owns the gameplay canvas, confirmed in the scene file `level2`: a GameObject named `UIGameplay`
-with a Canvas, four `Ability_0n` slots per survivor) and forgets its objects on `UIGameplay.OnDestroy`. The game's
-own auto-pick lives in `GameOptions.AutoselectionModes` (Off / On / Skip / Liberate per category), which a later
-version could drive with this ranking.
+`UIGameplayMilitaryTraining`, `UIGameplayHashtagEvent` (the Research Pod reward) and `UIGameplayCharacterRescue`
+(SOS), all deriving from `UIGameplayUpgradeSelection`. Each overrides `AssignGeneratedElements()`, which fills
+the `powerupButtons` array; the mod post-fixes each override, reads `attachedPowerup` / `attachedItem` /
+`attachedHashtagEvent` from every active button, ranks, and draws. The base `Hide(clicked)` runs once per screen
+for every type and is the pick event. Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game
+stores every survivor's powerups on the leader's player object; they are regrouped by
+`targetClassProperties.characterType`), the Training Yard from the nodes reachable through each powerup
+(`skillTreeRequirement`, `skillTreeAbilityBoost`) and each class's `skillTreeSynergies`, the run clock from
+`currentGameMode`, the damage types from each powerup's `hashtagTypes` and the tag points from
+`GameplayMaster.hashtagSystem` (`GetNumType`, `NumRequiredForSpecial`). The sidebar ticks from a post-fix on
+`UIGameplay.Update` (the HUD object that owns the gameplay canvas, confirmed in the scene file `level2`: a
+GameObject named `UIGameplay` with a Canvas, four `Ability_0n` slots per survivor) and forgets its objects on
+`UIGameplay.OnDestroy`. The game's own auto-pick lives in `GameOptions.AutoselectionModes` (Off / On / Skip /
+Liberate per category), which a later version could drive with this ranking.
 
 Every patch is a post-fix that only reads state, so a game update that renames a member breaks the build
 (compile error), not the game.
@@ -215,16 +237,18 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
   build.cmd                       build + deploy
   package.cmd / package.ps1       Steam Deck / Windows zip with BepInEx bundled
   release.cmd / release.ps1       tag + GitHub release + latest.json for the auto-updater + Drive copy
+  tools/bench.cmd, tools/ItemBench/   offline bench of the item and tag rules over the extracted game data
   YazsCompanion.Mod/
     YazsCompanion.Mod.csproj      references BepInEx\core + BepInEx\interop from the game folder
     Plugin.cs                     BepInEx entry point, config, Harmony bootstrap, per-mod log file
     Advisor.cs                    Harmony patches; collects the cards, ranks, draws, logs offers and picks
-    GameState.cs                  live squad / clock / Training Yard readers over the IL2CPP objects
+    GameState.cs                  live squad / clock / Training Yard / damage-tag readers over the IL2CPP objects
     Ranker.cs                     the ranking rules (guide principles + live state)
     Knowledge.cs                  guide-derived tiers; writes/reads plugins\YazsCompanion\knowledge.json
-    ItemRules.cs                  item keyword table (squad-fit signal, from engine.js ITEM_KEYWORDS)
+    ItemRules.cs                  item keyword table and the pure item score (squad fit by damage type)
+    Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
-    Plan.cs                       the run plan (weapon line, ability to feed, next ability, SOS, GRAB)
+    Plan.cs                       the run plan (weapon line, ability to feed, next ability, TAGS, SOS, GRAB)
     Panel.cs                      the PLAN sidebar during play (cloned HUD font, throttled rebuilds)
     Updater.cs                    release-feed check, hash-verified download next to the running DLL, old-build cleanup
     Notice.cs                     the "restart to apply" strip on its own overlay canvas
@@ -233,11 +257,13 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. Play one run with 0.4.1 and look at the PLAN sidebar: placement against the item icons and minimap,
-   line wrapping at 640 units, whether it hides on every screen it should. `companion.log` must show one
-   `[panel] created ...` line and a `[plan]` line per squad change, and no `[panel]` warnings.
-2. Item ranking beyond the guide tiers is still weak (a chest can be won on a keyword alone); either grow the
-   item tiers in `knowledge.json` or add a per-survivor item table.
-3. Run history in-process (the game's run-history save) to restore the damage-share and partner weights.
-4. Optional, opt-in: drive the game's autoselection with this ranking.
-5. Steam Deck: same files under Proton with the `winhttp` override in the launch options (unverified).
+1. Read `companion.log` of a run on 0.5.x: the `[panel]` gate lines during play, on pause and on the results
+   screen, and the `created ... canvas WxH screen WxH` line; then re-enable the gates that read right (expected:
+   players == 0, an open selection screen, `GameplayMaster.IsPauseMenuFlowActive`,
+   `GameplayMaster.IsDefeatResultsFlowActive`) and fix the placement from what the run showed.
+2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
+   (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
+3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better
+   source appears, or add a per-survivor item table.
+4. Run history in-process (the game's run-history save) to restore the damage-share and partner weights.
+5. Optional, opt-in: drive the game's autoselection with this ranking.

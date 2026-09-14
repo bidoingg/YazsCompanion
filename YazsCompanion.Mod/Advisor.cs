@@ -44,6 +44,9 @@ namespace YazsCompanion
                 if (reroll) sb.Append(" reroll");
                 Plugin.Logger.LogInfo(sb.ToString());
                 if (Plugin.LogSquad.Value) Plugin.Logger.LogInfo("[squad] " + snap.SquadText());
+                if (Plugin.LogSquad.Value && (snap.Tags.Known || snap.Tags.Points.Count > 0))
+                    Plugin.Logger.LogInfo("[tags] points: " + (snap.Tags.PointsText().Length > 0 ? snap.Tags.PointsText() : "none") + (snap.Tags.SpecialAt > 0 ? " (special at " + snap.Tags.SpecialAt + ")" : "")
+                        + " | deals: " + (snap.Tags.Known ? snap.Tags.DealsText() : "unknown") + (snap.Tags.Focus() != null ? " | stack " + snap.Tags.Focus() : ""));
                 foreach (var c in cards)
                 {
                     var line = new StringBuilder();

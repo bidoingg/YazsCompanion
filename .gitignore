@@ -1,6 +1,8 @@
 # build output and packaged releases (published as GitHub release assets, not committed)
 YazsCompanion.Mod/bin/
 YazsCompanion.Mod/obj/
+tools/ItemBench/bin/
+tools/ItemBench/obj/
 dist/
 *.user
 .vs/

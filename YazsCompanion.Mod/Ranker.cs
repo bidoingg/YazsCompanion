@@ -55,7 +55,7 @@ namespace YazsCompanion
         static void Score(Screen screen, Card c, Snapshot s)
         {
             if (c.Item != null) { ScoreItem(c, s); return; }
-            if (c.Hashtag != null) { ScoreHashtag(c); return; }
+            if (c.Hashtag != null) { ScoreHashtag(c, s); return; }
             var p = c.Powerup;
             if (p == null) { c.Kind = "empty"; c.Score = 0.5; c.Why.Add("nothing attached"); return; }
             c.Name = G.Name(p);
@@ -252,26 +252,15 @@ namespace YazsCompanion
             c.Score = ItemScore(c.Item, s, c.Why);
         }
 
-        /// <summary>Guide tier first, then squad fit, quest target, stacking. Shared by the chest cards and the plan panel.</summary>
+        /// <summary>Guide tier first, then squad fit (ItemRules.Evaluate, shared with the offline bench), then the
+        /// game-only parts: quest target, stacking. Shared by the chest cards and the plan panel.</summary>
         internal static double ItemScore(ItemBase it, Snapshot s, List<string> why)
         {
             string name = G.Name(it);
             string desc = ""; try { desc = it.EnglishDescription; } catch { }
             if (string.IsNullOrEmpty(desc)) { try { desc = it.GetDescriptionText(); } catch { } }
             var squad = s.Squad.Select(x => x.Name).ToList();
-            var fitWhy = new List<string>();
-            double fit = ItemRules.Score(desc, squad, fitWhy);
-            string tier; K.ItemTier.TryGetValue(name, out tier);
-            double tierScore = Knowledge.Tier(tier, 3.0, 2.0, 1.0, -1.5);
-            string note; K.ItemNote.TryGetValue(name, out note);
-            bool crit = squad.Any(x => K.CritSquad.Contains(x, StringComparer.OrdinalIgnoreCase));
-            bool engineer = s.OnSquad(CT.Engineer);
-            if (string.Equals(name, "Silencer", StringComparison.OrdinalIgnoreCase) && !crit) { tierScore -= 1.5; note = "no crit survivor on the squad"; }
-            if (string.Equals(name, "Glass Cannon", StringComparison.OrdinalIgnoreCase)) { tierScore = engineer ? 1.5 : -2.0; note = engineer ? "viable behind Engineer's shield" : "no shield: a tombstone"; }
-
-            double score = 1.0 + tierScore + fit * 0.6;
-            if (tier != null) why.Add(tier + "-tier item" + (note != null ? ", " + note : ""));
-            else if (note != null) why.Add(note);
+            double score = ItemRules.Evaluate(name, desc, squad, s.Tags, K, why);
             try
             {
                 var qm = GameQuestManager.Get;
@@ -284,7 +273,6 @@ namespace YazsCompanion
                 if (max <= 1) { score -= 1.0; why.Insert(0, "already held"); }
                 else why.Add("stacks, already held");
             }
-            why.AddRange(fitWhy);
             if (why.Count == 0) why.Add("no squad-specific value");
             return score;
         }
@@ -371,12 +359,16 @@ namespace YazsCompanion
             c.Why.Add(rarity + (team ? ", team-wide" : "") + ": " + Humanize(stat));
         }
 
-        static void ScoreHashtag(Card c)
+        // ---------------------------------------------------------------- Research Pod rewards: damage type tag points
+        static void ScoreHashtag(Card c, Snapshot s)
         {
-            c.Kind = "hashtag";
-            string type = "?"; int n = 1;
-            try { type = c.Hashtag.hashtagType.ToString(); n = c.Hashtag.numUpgrades; } catch { }
-            c.Name = "#" + type; c.Score = 1 + 0.1 * n; c.Why.Add("hashtag upgrade x" + n);
+            c.Kind = "tags";
+            string type = null; int n = 1;
+            try { type = G.TagName(c.Hashtag.hashtagType); } catch { }
+            try { n = c.Hashtag.numUpgrades; } catch { }
+            if (type == null) { c.Name = "#?"; c.Score = 1; c.Why.Add("unknown tag type"); return; }
+            c.Name = "#" + type + " +" + n;
+            c.Score = Tags.Score(type, n, s.Tags, c.Why);
         }
 
         // ---------------------------------------------------------------- helpers
