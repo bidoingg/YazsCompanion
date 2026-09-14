@@ -7,12 +7,17 @@
 // rebuilt only when the squad state changes (a cheap key: squad text + active quest), because a
 // rebuild walks every skill tree node and every item.
 //
-// 0.4.2 is a diagnostic build: the sidebar has never been seen in a run, so every signal that could
-// hide it is logged whenever it changes ("[panel] players=.. active=.. ..."), and only the signals
-// already proven by the card badges actually hide it (no players in the run, our own tracking of an
-// open selection screen). The others (IsGameplayActive, IsPaused, IsGameplayUIVisible,
-// IsDisplayingUpgradeSelection) are observed first and will gate again once the log shows what they
-// really say during play, on pause and on the results screen.
+// Gating, validated on the Steam Deck log of 0.5.0 (2026-09-14): during play every flag reads false
+// (players=1 active=True paused=False pauseMenu=False defeat=False hudVisible=False selecting=False).
+// The pause menu sets IsPaused + IsPauseMenuFlowActive + IsGameplayUIVisible(); a selection screen sets
+// IsPaused + IsDisplayingUpgradeSelection() (and our own tracker, which clears on the pick while the
+// screen still animates out); the end of the run sets IsGameplayUIVisible(), then IsDefeatResultsFlowActive,
+// then gamePlayers drops to 0. So IsGameplayUIVisible() means "a UI view is showing", NOT "the HUD is
+// visible" (0.4.1 hid the sidebar on its inverse, hence the results-screen-only sightings). The panel hides
+// on any of them and shows otherwise; the flags are still logged whenever they change.
+//
+// Size: the canvas is 3840 units wide on every screen (3840x2400 on the Deck's 1280x800, so one unit is a
+// third of a pixel there), hence the automatic scale that keeps the text at a readable pixel size.
 using System;
 using Il2CppInterop.Runtime;
 using UnityEngine;
@@ -76,8 +81,9 @@ namespace YazsCompanion
                     + " hudVisible=" + hudVisible + " selecting=" + selecting + " screen=" + screenUp + " hud=" + (hud != null);
                 if (gates != _gates) { _gates = gates; Plugin.Logger.LogInfo("[panel] " + gates); }
 
-                // diagnostic build: hide only on what the badges already proved (see the header comment)
-                if (players == 0 || screenUp) { SetVisible(false); return; }
+                // see the header comment: every one of these reads false during play and true on some screen
+                bool viewUp = players == 0 || screenUp || selecting == "True" || paused == "True" || pauseMenu == "True" || defeat == "True" || hudVisible == "True";
+                if (viewUp) { SetVisible(false); return; }
                 if (!Ensure(hud)) return;
                 SetVisible(true);   // before the rebuild: an inactive TMP object skips its mesh update, and Resize measures the text
 
@@ -161,6 +167,8 @@ namespace YazsCompanion
             root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(1f, 1f);
             root.anchoredPosition = new Vector2(-Plugin.PanelRight.Value, -Plugin.PanelTop.Value);
             root.sizeDelta = new Vector2(Width, 300f);
+            float scale = Scale(canvas);
+            root.localScale = new Vector3(scale, scale, 1f);   // pivot top-right: grows down and to the left
 
             var bg = Image(root, "Backdrop", Backdrop); Stretch(bg, 0, 0, 0, 0);
 
@@ -193,8 +201,24 @@ namespace YazsCompanion
             _root = root; _text = text; _visible = true;
             string geo = "";
             try { geo = " canvas " + canvas.rect.width.ToString("0") + "x" + canvas.rect.height.ToString("0") + " screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height +" scale " + canvas.lossyScale.x.ToString("0.000"); } catch { }
-            Plugin.Logger.LogInfo("[panel] created under " + canvas.name + " using label '" + template.name + "' at (" + root.anchoredPosition.x + ", " + root.anchoredPosition.y + ")" + geo);
+            Plugin.Logger.LogInfo("[panel] created under " + canvas.name + " using label '" + template.name + "' at (" + root.anchoredPosition.x + ", " + root.anchoredPosition.y + ") x" + scale.ToString("0.00") + geo);
             return true;
+        }
+
+        // one canvas unit is Screen.height / canvas height pixels (1/3 on the Deck, 2/3 on a 1440p monitor): enlarge the
+        // block until its 31-unit font is at least MinTextPx tall; PanelScale in the config overrides the automatic value
+        const float MinTextPx = 15f;
+        static float Scale(RectTransform canvas)
+        {
+            float fixedScale = 0; try { fixedScale = Plugin.PanelScale.Value; } catch { }
+            if (fixedScale > 0) return Mathf.Clamp(fixedScale, 0.5f, 3f);
+            try
+            {
+                float h = canvas.rect.height; if (h <= 0) return 1f;
+                float px = Font * UnityEngine.Screen.height / h;
+                return Mathf.Clamp(MinTextPx / px, 1f, 2f);
+            }
+            catch { return 1f; }
         }
 
         static void Resize(int lines)

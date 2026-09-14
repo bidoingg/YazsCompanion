@@ -23,8 +23,8 @@ namespace YazsCompanion
         // geometry in canvas units, relative to the card root (832 x 1462)
         // fonts sized like the card's own description text (~44 units); the band below the card is ~220 units deep
         const float FrameInset = 5f, FrameThick = 6f, CornerDiamond = 30f;
-        const float RibbonY = -48f, RibbonH = 66f, RibbonW = 480f, RibbonTip = 40f;
-        const float ReasonY = -134f, ReasonH = 70f, ReasonW = 800f;
+        const float RibbonH = 66f, RibbonW = 480f, RibbonTip = 40f;      // ribbon centre sits at -48 for scale 1
+        const float ReasonH = 70f, ReasonW = 800f;                        // reason centre sits at -134 for scale 1
         const float RibbonFont = 42f, ReasonFont = 40f;
 
         static readonly Color Gold = new Color(0.96f, 0.78f, 0.32f, 1f);
@@ -43,14 +43,15 @@ namespace YazsCompanion
                 var root = c.Button.transform.TryCast<RectTransform>();
                 if (root == null) return;
                 bool best = c.Rank == 1;
+                float s = Scale(root);
 
                 var frame = Frame(root);
                 frame.gameObject.SetActive(best);
 
-                var ribbon = Ribbon(root, c.Button);
+                var ribbon = Ribbon(root, c.Button, s);
                 if (ribbon != null) ribbon.gameObject.SetActive(best);
 
-                var reason = Reason(root, c.Button);
+                var reason = Reason(root, c.Button, s);
                 if (reason != null)
                 {
                     string prefix = best ? "" : "<b>" + (c.Rank < Ordinal.Length ? Ordinal[c.Rank] : "#" + c.Rank) + "</b>   ";
@@ -92,44 +93,78 @@ namespace YazsCompanion
         }
 
         // ---- RECOMMENDED ribbon under the card, diamond tips like the game's NEW / UPGRADE label ----
-        static RectTransform Ribbon(RectTransform root, UIPowerupButtonBase b)
+        // s = size multiplier (1 on a desktop monitor); the ribbon hangs 15 units under the card at any size
+        static RectTransform Ribbon(RectTransform root, UIPowerupButtonBase b, float s)
         {
             var existing = root.Find(RibbonName);
-            if (existing != null) return existing.TryCast<RectTransform>();
-            var template = Template(b);
-            if (template == null) return null;
-            var r = NewRect(RibbonName, root);
-            r.anchorMin = r.anchorMax = new Vector2(0.5f, 0f); r.pivot = new Vector2(0.5f, 0.5f);
-            r.anchoredPosition = new Vector2(0f, RibbonY); r.sizeDelta = new Vector2(RibbonW, RibbonH);
-            var bar = Image(r, "Bar", RibbonBg); Stretch(bar, RibbonTip / 2, 0, RibbonTip / 2, 0);
-            var rule = Image(r, "Rule", Gold); rule.anchorMin = new Vector2(0, 0); rule.anchorMax = new Vector2(1, 0); rule.pivot = new Vector2(0.5f, 0);
-            rule.anchoredPosition = Vector2.zero; rule.sizeDelta = new Vector2(-RibbonTip, 4f);
-            Diamond(r, "TipL", 0, 0.5f, RibbonTip, Gold);
-            Diamond(r, "TipR", 1, 0.5f, RibbonTip, Gold);
-            var text = CloneText(template, r, "Text");
-            if (text != null)
+            RectTransform r = existing != null ? existing.TryCast<RectTransform>() : null;
+            TextMeshProUGUI text = null;
+            if (r == null)
             {
-                Stretch(text.rectTransform, RibbonTip, 0, RibbonTip, 0);
-                text.text = "RECOMMENDED"; text.color = GoldText; text.fontSize = RibbonFont; text.fontStyle = FontStyles.Bold;
-                text.alignment = TextAlignmentOptions.Center; text.characterSpacing = 4f;
+                var template = Template(b);
+                if (template == null) return null;
+                r = NewRect(RibbonName, root);
+                r.anchorMin = r.anchorMax = new Vector2(0.5f, 0f); r.pivot = new Vector2(0.5f, 0.5f);
+                var bar = Image(r, "Bar", RibbonBg); Stretch(bar, RibbonTip / 2, 0, RibbonTip / 2, 0);
+                var rule = Image(r, "Rule", Gold); rule.anchorMin = new Vector2(0, 0); rule.anchorMax = new Vector2(1, 0); rule.pivot = new Vector2(0.5f, 0);
+                rule.anchoredPosition = Vector2.zero; rule.sizeDelta = new Vector2(-RibbonTip, 4f);
+                Diamond(r, "TipL", 0, 0.5f, RibbonTip, Gold);
+                Diamond(r, "TipR", 1, 0.5f, RibbonTip, Gold);
+                text = CloneText(template, r, "Text");
+                if (text != null)
+                {
+                    Stretch(text.rectTransform, RibbonTip, 0, RibbonTip, 0);
+                    text.text = "RECOMMENDED"; text.color = GoldText; text.fontStyle = FontStyles.Bold;
+                    text.alignment = TextAlignmentOptions.Center; text.characterSpacing = 4f;
+                }
             }
+            else { var t = r.Find("Text"); if (t != null) text = t.GetComponent<TextMeshProUGUI>(); }
+            r.anchoredPosition = new Vector2(0f, -(RibbonH * s / 2 + 15f)); r.sizeDelta = new Vector2(RibbonW * s, RibbonH * s);
+            if (text != null) text.fontSize = RibbonFont * s;
             return r;
         }
 
         // ---- one reason line under the card (under the ribbon on the recommended card) ----
-        static TextMeshProUGUI Reason(RectTransform root, UIPowerupButtonBase b)
+        static TextMeshProUGUI Reason(RectTransform root, UIPowerupButtonBase b, float s)
         {
             var existing = root.Find(ReasonName);
-            if (existing != null) return existing.GetComponent<TextMeshProUGUI>();
-            var template = Template(b);
-            if (template == null) { Plugin.Logger.LogWarning("[badge] no label template on " + b.GetIl2CppType().Name); return null; }
-            var text = CloneText(template, root, ReasonName);
-            if (text == null) return null;
+            TextMeshProUGUI text = existing != null ? existing.GetComponent<TextMeshProUGUI>() : null;
+            if (text == null)
+            {
+                var template = Template(b);
+                if (template == null) { Plugin.Logger.LogWarning("[badge] no label template on " + b.GetIl2CppType().Name); return null; }
+                text = CloneText(template, root, ReasonName);
+                if (text == null) return null;
+                var rt0 = text.rectTransform;
+                rt0.anchorMin = rt0.anchorMax = new Vector2(0.5f, 0f); rt0.pivot = new Vector2(0.5f, 0.5f);
+                text.alignment = TextAlignmentOptions.Center; text.fontStyle = FontStyles.Normal;
+            }
             var rt = text.rectTransform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f); rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0f, ReasonY); rt.sizeDelta = new Vector2(ReasonW, ReasonH);
-            text.fontSize = ReasonFont; text.alignment = TextAlignmentOptions.Center; text.fontStyle = FontStyles.Normal;
+            // ribbon (RibbonH*s) + 15 above it + 18 gap + half the reason height: -134 at s = 1, the accepted 0.3.1 placement
+            rt.anchoredPosition = new Vector2(0f, -(RibbonH * s + 33f + ReasonH * s / 2)); rt.sizeDelta = new Vector2(Mathf.Min(ReasonW * s, 900f), ReasonH * s);
+            text.fontSize = ReasonFont * s;
             return text;
+        }
+
+        // one canvas unit is Screen.height / canvas height pixels (a third of a pixel on the Deck): enlarge the ribbon and
+        // the reason line until the reason font is at least MinTextPx tall, capped so both stay inside the band under the
+        // card (about 220 units); BadgeScale in the config overrides the automatic value
+        const float MinTextPx = 16f, MaxScale = 1.3f;
+        static float Scale(RectTransform root)
+        {
+            float fixedScale = 0; try { fixedScale = Plugin.BadgeScale.Value; } catch { }
+            if (fixedScale > 0) return Mathf.Clamp(fixedScale, 0.5f, MaxScale);
+            try
+            {
+                var comp = root.GetComponentInParent(Il2CppType.Of<Canvas>());
+                var canvas = comp == null ? null : comp.TryCast<Canvas>();
+                if (canvas != null && canvas.rootCanvas != null) canvas = canvas.rootCanvas;
+                var crt = canvas == null ? null : canvas.transform.TryCast<RectTransform>();
+                float h = crt == null ? 0 : crt.rect.height; if (h <= 0) return 1f;
+                float px = ReasonFont * UnityEngine.Screen.height / h;
+                return Mathf.Clamp(MinTextPx / px, 1f, MaxScale);
+            }
+            catch { return 1f; }
         }
 
         // ---- primitives ----

@@ -14,7 +14,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.5.1";
+        public const string VERSION = "0.5.2";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -22,6 +22,8 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> ShowPanel;
         internal static ConfigEntry<float> PanelTop;
         internal static ConfigEntry<float> PanelRight;
+        internal static ConfigEntry<float> PanelScale;
+        internal static ConfigEntry<float> BadgeScale;
         internal static ConfigEntry<bool> LogSquad;
         internal static ConfigEntry<bool> Verbose;
         internal static ConfigEntry<bool> AutoUpdate;
@@ -44,6 +46,8 @@ namespace YazsCompanion
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
             PanelTop = Config.Bind("General", "PanelTop", 780f, "Sidebar distance from the top of the screen, in canvas units (the canvas is 3840 x 2160).");
             PanelRight = Config.Bind("General", "PanelRight", 44f, "Sidebar distance from the right edge of the screen, in canvas units.");
+            PanelScale = Config.Bind("General", "PanelScale", 0f, "Size multiplier of the sidebar. 0 = automatic: enlarged on small screens (Steam Deck) so its text stays about 15 px tall, 1 on a desktop monitor.");
+            BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
             Verbose = Config.Bind("Logging", "Verbose", false, "Also log every raw field of every card and survivor (for validating the ranking).");
             AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the screen says so). The older file is removed by the new build.");

@@ -6,18 +6,19 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.5.1 — card verdicts accepted on PC and Steam Deck; auto-update validated
-end to end; the PLAN sidebar is still a diagnostic build.** The sidebar appeared only on the results
-screen of the user's Steam Deck runs (0.4.1): one of the 0.4.1 gates (`IsGameplayActive`, `IsPaused`,
-`IsGameplayUIVisible()`, `IsDisplayingUpgradeSelection()`) reads false during play and true on the results
-screen; the plan logic itself is fine. Since 0.4.2 every signal that could hide the sidebar is logged when it
-changes (`[panel] players=1 active=True paused=False pauseMenu=False defeat=False hudVisible=True
-selecting=False screen=False hud=True`), only the proven ones hide it (no players in the run, an open
-selection screen tracked by the badge code), `[panel] shown` / `hidden` / `created ... canvas WxH screen WxH`
-lines trace the drawing, and `GameplayMaster.Update` ticks it as a fallback next to `UIGameplay.Update`
-(`[panel] first tick from ...` says which fired). The log of the next run decides which gates to re-enable.
-0.5.0 added the auto-updater and the public repository; 0.5.1 ranks the Research Pod reward cards, scores
-chest items against what the squad actually deals, adds a `TAGS` line to the plan and an offline bench.
+Status (2026-09-14): **0.5.2 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
+validated on both.** The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
+`GameplayMaster.IsGameplayUIVisible()`, which the Deck log of 0.5.0 proved to mean "a UI view is showing"
+(false during play; true on the pause menu, the selection screens and the results): the diagnostic builds
+0.4.2–0.5.1 logged every candidate flag (`[panel] players=1 active=True paused=False pauseMenu=False
+defeat=False hudVisible=False selecting=False screen=False hud=True` is play), and 0.5.2 hides the sidebar on
+any of `players == 0`, an open selection screen (our tracker or `UIGameplay.IsDisplayingUpgradeSelection()`),
+`GameplayMaster.IsPaused`, `IsPauseMenuFlowActive`, `IsDefeatResultsFlowActive` or `IsGameplayUIVisible()`.
+The flags are still logged when they change, with `[panel] shown` / `hidden` / `created ... x1.45 canvas WxH
+screen WxH`. 0.5.2 also scales the sidebar and the card badges up on small screens (the Deck's 1280x800 gets a
+3840x2400 canvas, so a canvas unit is a third of a pixel there). 0.5.0 added the auto-updater and the public
+repository; 0.5.1 ranked the Research Pod reward cards, scored chest items against what the squad actually
+deals, added a `TAGS` line to the plan and an offline bench.
 
 ## The PLAN sidebar (during play)
 
@@ -39,11 +40,14 @@ then for the run `TAGS  Explosive 7/10, Kinetic 3/10  stack Explosive` (damage t
 squad `SOS  Engineer, Huntress` (the two best rescues for this squad by the same rules as the SOS cards) and
 `GRAB  Silencer, Black Box` (items worth a chest slot: S/A tier or quest target, not held). It is driven by
 the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes (a cheap key of the squad text,
-the active quest and the tag points; a rebuild walks every tree node and item), and dies with the HUD when
-the run ends. The intended gates (a selection screen, the pause menu, the results screen) are the open item
-above. `ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units on a
-3840 x 2160 canvas). Every change is logged as a `[plan] 03:31: ...` line; `[panel] created under UIGameplay
-using label 'Quest_Obj1'` shows which HUD text it cloned for the font.
+the active quest and the tag points; a rebuild walks every tree node and item), hides while a selection screen,
+the pause menu, the results screen or any other game view is up, and dies with the HUD when the run ends.
+`ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units; the canvas is 3840
+wide on every screen, 2160 tall on 16:9, 2400 on the Deck's 16:10). `PanelScale` (default 0 = automatic) keeps
+the text at least 15 px tall: 1.0 on a desktop monitor, about 1.45 on the Deck, where the block grows down and
+to the left from its top-right corner. Every change is logged as a `[plan] 03:31: ...` line; `[panel] created
+under UIGameplay using label 'GameTimer_Txt' at (-44, -780) x1.45 canvas 3840x2400 screen 1280x800` shows which
+HUD text it cloned for the font, the scale and the geometry.
 
 ## What you see in the game
 
@@ -64,7 +68,9 @@ the divider line. Everything is parented to the card root, so it rises with a ho
 vanishes with the screen. Nothing captures clicks.
 
 Turn the badges off with `ShowBadges = false` in `BepInEx\config\bidoi.yazs.companion.cfg`
-(the file appears after the first launch). The log keeps working either way.
+(the file appears after the first launch). The log keeps working either way. `BadgeScale` (default 0 =
+automatic) enlarges the ribbon and the reason lines on small screens (up to 1.3, so they stay inside the band
+under the card; about 1.2 on the Deck, 1.0 on a desktop monitor); the frame is not scaled.
 
 ## How it ranks (guides first, live state second)
 
@@ -257,10 +263,10 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. Read `companion.log` of a run on 0.5.x: the `[panel]` gate lines during play, on pause and on the results
-   screen, and the `created ... canvas WxH screen WxH` line; then re-enable the gates that read right (expected:
-   players == 0, an open selection screen, `GameplayMaster.IsPauseMenuFlowActive`,
-   `GameplayMaster.IsDefeatResultsFlowActive`) and fix the placement from what the run showed.
+1. Look at 0.5.2 on the Deck: the sidebar must be gone on the pause menu, the selection screens and the results
+   screen (`[panel] hidden` / `shown` lines around each), and the enlarged sidebar and badges must read well
+   (`x1.45` / the ribbon and reason still inside the band under the card). Adjust `PanelScale` / `BadgeScale`
+   defaults from that; a style pass on the sidebar (spacing, header, backdrop) is the next visual item.
 2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
    (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
 3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better
