@@ -92,8 +92,14 @@ namespace YazsCompanion
                 if (got != sha) { Plugin.Logger.LogWarning("[update] sha256 mismatch for " + latestStr + " (expected " + sha + ", got " + got + "), not installed"); return; }
                 string part = target + ".part";
                 File.WriteAllBytes(part, data);
-                try { AssemblyName.GetAssemblyName(part); }
+                AssemblyName asm;
+                try { asm = AssemblyName.GetAssemblyName(part); }
                 catch (Exception e) { File.Delete(part); Plugin.Logger.LogWarning("[update] download is not a valid assembly (" + e.Message + "), not installed"); return; }
+                if (!string.Equals(asm.Name, FilePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    // a wrong asset behind the feed's dll url (BepInEx would load it under our file name and skip us)
+                    File.Delete(part); Plugin.Logger.LogWarning("[update] download is the assembly '" + asm.Name + "', not " + FilePrefix + "; not installed"); return;
+                }
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(part, target);
                 Pending = latestStr; PendingNotes = notes;

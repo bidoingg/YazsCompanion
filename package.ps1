@@ -116,7 +116,8 @@ the right edge lists, per survivor, the weapon line and its next step, the abili
 ability worth taking, then who to rescue (SOS) and which items to grab. Rules follow published guides
 (sources in BepInEx/plugins/YazsCompanion/knowledge.json, which you may edit; delete it to reset).
 Config: BepInEx/config/bidoi.yazs.companion.cfg (ShowBadges, ShowPanel, PanelTop, PanelRight).
-Mod log: BepInEx/plugins/YazsCompanion/companion.log.  Full notes: BepInEx/plugins/YazsCompanion/README.md.
+Mod log: BepInEx/plugins/YazsCompanion/companion.log (rotates to companion.log.1 past 2 MB).
+Full notes: BepInEx/plugins/YazsCompanion/README.md.
 
 AUTO-UPDATE
 -----------
@@ -134,8 +135,9 @@ internals, the mod may stop logging until it is rebuilt against the new build.
 UNINSTALL
 ---------
 Delete winhttp.dll, doorstop_config.ini, .doorstop_version, changelog.txt, the dotnet folder and the
-BepInEx folder from the game folder, and remove the launch option. To only disable the mod, delete
-BepInEx/plugins/YazsCompanion/YazsCompanionMod.dll.
+BepInEx folder from the game folder, and remove the launch option. To only disable the mod, delete every
+YazsCompanionMod*.dll in BepInEx/plugins/YazsCompanion (after an auto-update the running file carries the
+version, e.g. YazsCompanionMod-$version.dll).
 "@
 Set-Content -Path (Join-Path $stage "README-INSTALL.txt") -Value $readme
 

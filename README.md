@@ -6,22 +6,31 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.4.3 — card verdicts accepted; the PLAN sidebar appeared only on the results
-screen of the user's Steam Deck runs (0.4.1), so 0.4.2/0.4.3 are diagnostic builds.** The Deck log showed
-`[panel] created` and a correct `[plan]` line right after the last pick of each run, i.e. once the run was
-over: one of the 0.4.1 gates (`IsGameplayActive`, `IsPaused`, `IsGameplayUIVisible()`,
-`IsDisplayingUpgradeSelection()`) reads false during play and true on the results screen; the plan logic
-itself is fine. 0.3.1's card frame, ribbon and reason line were accepted on sight with the rankings
-behaving (weapon first, guide rescue tiers). 0.4.0 added the sidebar described below; 0.4.1 was a
-code-review pass (HUD-driven tick, rebuild only when the squad changes, evolve line, tree-locked wording,
-fork choice limited to unlocked branches). 0.4.3 also clears the selection-screen tracker on the base
-`Hide` hook instead of waiting for the screen object to deactivate. In 0.4.2+ every signal that could hide
-the sidebar is logged when it changes (`[panel] players=1 active=True paused=False pauseMenu=False
-defeat=False hudVisible=True selecting=False screen=False hud=True`), only the proven ones hide it (no
-players in the run, an open selection screen tracked by the badge code), `[panel] shown` / `hidden` /
-`created ... canvas WxH screen WxH` lines trace the drawing, and `GameplayMaster.Update` ticks it as a
-fallback next to `UIGameplay.Update` (`[panel] first tick from ...` says which fired). Read the log of the
-next run to decide which gates to re-enable.
+Status (2026-09-14): **0.5.0 released on GitHub and installed on both devices (Windows PC and Steam Deck); the
+repository is now the deploy path.** Card verdicts are accepted (0.3.1's frame, ribbon and reason line, rankings behaving:
+weapon first, guide rescue tiers). The PLAN sidebar is still on its diagnostic gating: on the Deck's 0.4.1 runs it appeared
+only on the results screen (`[panel] created` and a correct `[plan]` line right after the last pick), so one of the 0.4.1
+gates (`IsGameplayActive`, `IsPaused`, `IsGameplayUIVisible()`, `IsDisplayingUpgradeSelection()`) reads false during play
+and true on the results screen; the plan logic itself is fine. Since 0.4.2 every signal that could hide the sidebar is
+logged when it changes (`[panel] players=1 active=True paused=False pauseMenu=False defeat=False hudVisible=True
+selecting=False screen=False hud=True`), only the proven ones hide it (no players in the run, an open selection screen
+tracked by the badge code), `[panel] shown` / `hidden` / `created ... canvas WxH screen WxH` lines trace the drawing, and
+`GameplayMaster.Update` ticks it as a fallback next to `UIGameplay.Update` (`[panel] first tick from ...` says which
+fired). 0.4.3 also clears the selection-screen tracker on the base `Hide` hook. **Waiting on the user: the
+`companion.log` of one 0.5.0 run** (either device) decides which gates to re-enable; see *Next steps*. Version history
+is in `CHANGELOG.md`; the unreleased 0.5.1 in this tree only hardens startup, the updater and the log (no game-facing change).
+
+## Installed devices
+
+| Device | Install | Mod | Since |
+| --- | --- | --- | --- |
+| Windows PC | `J:\SteamLibrary\steamapps\common\Yet Another Zombie Survivors`, BepInEx 6.0.0-be.725, deployed by `build.cmd` | 0.5.0 | 2026-09-14 |
+| Steam Deck | SD card (`S:\steamapps\...` under Proton, Wine 11), launch option `WINEDLLOVERRIDES="winhttp=n,b" %command%`, from the release zip | 0.5.0 | 2026-09-14 |
+
+Both run with `AutoUpdate` on, so a `release.cmd` on the PC reaches the Deck at its next launch: no more hand-copied
+files. The project folder on the PC (`mod/`) is the working copy of this repository; `release.ps1` refuses a dirty tree, so
+commit (or merge the PR) first, then release from the PC. Verified 2026-09-14 from outside the game: the feed URL
+resolves through GitHub's redirect to the asset host, `latest.json` names 0.5.0, and the published DLL's SHA-256 matches it.
 
 ## The PLAN sidebar (during play)
 
@@ -124,8 +133,9 @@ x.y.z DOWNLOADED - RESTART THE GAME TO APPLY` (`Notice.cs`, on its own overlay c
 changes, ticked from `GameMaster.Update`). `knowledge.json` is refreshed with a build's new defaults only if
 you never edited it (a hash stamp in `knowledge.json.stamp`; the old file is kept as `.bak`). Config:
 `AutoUpdate` (default on) and `UpdateUrl` in `BepInEx\config\bidoi.yazs.companion.cfg`. Offline launches just
-skip the check; a bad download is discarded on a hash or assembly check failure. Log lines: `[update] ...`,
-`[notice] ...`.
+skip the check; a bad download is discarded on a hash or assembly check failure, or when the assembly is not
+`YazsCompanionMod` (a wrong asset behind the feed). The check starts before the game hooks are applied, so a build that a
+game update has outgrown can still fetch the fixed one. Log lines: `[update] ...`, `[notice] ...`.
 
 ## Prerequisites (already done on this machine)
 
@@ -162,7 +172,8 @@ with the Deck steps. Entry names use forward slashes, so Linux extracts real fol
 Install on the Deck: Desktop Mode, extract the zip into the game folder (Steam > Manage > Browse local
 files), set the launch option `WINEDLLOVERRIDES="winhttp=n,b" %command%`, use Proton Experimental or 9+,
 launch. `BepInEx/LogOutput.log` proves it loaded. Verified on the user's Deck (Wine 11, SD card path
-`S:\steamapps\...`): the card verdicts and the log work as on Windows.
+`S:\steamapps\...`): the card verdicts and the log work as on Windows; 0.5.0 went on from the release zip on 2026-09-14
+and updates itself from there.
 
 ## Publish a release
 
@@ -178,7 +189,8 @@ copies the zip into the Drive folder. Bump `VERSION` in `Plugin.cs` first; the t
 
 ## Logs
 
-- `BepInEx\plugins\YazsCompanion\companion.log` — only this mod's lines, appended across launches:
+- `BepInEx\plugins\YazsCompanion\companion.log` — only this mod's lines, appended across launches (rotated to
+  `companion.log.1` at launch once it passes 2 MB):
   `[offer] LevelUp 03:31 (Normal horde 1)`, `[squad] Tank* L57 Pump-Action Shotgun:4 Sawblade Drone:4 | SWAT L80 ...`,
   one `[card] #1 PICK Rocket Launcher (weapon, Tank) 5.00 - next step of the weapon path` per card,
   then `[pick] LevelUp 03:31: Rocket Launcher (#1, the pick)` when the screen closes.
@@ -186,7 +198,8 @@ copies the zip into the Drive folder. Bump `VERSION` in `Plugin.cs` first; the t
 - Set `Verbose = true` in the config to also log every raw field of every card and survivor
   (`[raw]` lines) when a verdict looks wrong.
 
-To disable the mod without uninstalling BepInEx, delete or rename `BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll`.
+To disable the mod without uninstalling BepInEx, delete or rename every `YazsCompanionMod*.dll` in
+`BepInEx\plugins\YazsCompanion` (after an auto-update the running file is `YazsCompanionMod-<version>.dll`).
 To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in the game folder.
 
 ## How it hooks the game
@@ -206,7 +219,9 @@ own auto-pick lives in `GameOptions.AutoselectionModes` (Off / On / Skip / Liber
 version could drive with this ranking.
 
 Every patch is a post-fix that only reads state, so a game update that renames a member breaks the build
-(compile error), not the game.
+(compile error), not the game. An already installed build meets such a rename at run time instead: the hooks are applied
+one patch class at a time, so the renamed hook is lost (an error line and a `... patch classes FAILED` note in the load
+line) while every other screen keeps working, and the update check has already started by then.
 
 ## Layout
 
@@ -215,6 +230,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
   build.cmd                       build + deploy
   package.cmd / package.ps1       Steam Deck / Windows zip with BepInEx bundled
   release.cmd / release.ps1       tag + GitHub release + latest.json for the auto-updater + Drive copy
+  CHANGELOG.md                    what each version changed (this README keeps only the current state)
   YazsCompanion.Mod/
     YazsCompanion.Mod.csproj      references BepInEx\core + BepInEx\interop from the game folder
     Plugin.cs                     BepInEx entry point, config, Harmony bootstrap, per-mod log file
@@ -233,11 +249,18 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. Play one run with 0.4.1 and look at the PLAN sidebar: placement against the item icons and minimap,
-   line wrapping at 640 units, whether it hides on every screen it should. `companion.log` must show one
-   `[panel] created ...` line and a `[plan]` line per squad change, and no `[panel]` warnings.
-2. Item ranking beyond the guide tiers is still weak (a chest can be won on a keyword alone); either grow the
-   item tiers in `knowledge.json` or add a per-survivor item table.
-3. Run history in-process (the game's run-history save) to restore the damage-share and partner weights.
-4. Optional, opt-in: drive the game's autoselection with this ranking.
-5. Steam Deck: same files under Proton with the `winhttp` override in the launch options (unverified).
+1. **Needs the user (a run and its log)**: play one run on 0.5.0, either device, and read `companion.log`. The `[panel]
+   players=.. active=.. paused=.. pauseMenu=.. defeat=.. hudVisible=.. selecting=.. screen=.. hud=..` lines say what each
+   gate reads during play, on pause, on a selection screen and on the results screen; re-enable in `Panel.Tick` the ones
+   that read false during play and true when the sidebar must hide. Then judge the sidebar itself: placement against the
+   item icons and minimap, wrapping at 640 units, hiding on every screen it should. The log must show one `[panel]
+   created ...` line and a `[plan]` line per squad change, and no `[panel]` warnings.
+2. Release 0.5.1 (this tree) from the PC with `release.cmd -Notes "..."` once it has built and run there once; both devices
+   pick it up at their next launch. Bundle the gate fix from step 1 into it if the log arrives first.
+3. Item ranking beyond the guide tiers is still weak (a chest can be won on a keyword alone); either grow the item tiers
+   in `knowledge.json` or add a per-survivor item table. Needs the wiki's item pages (not reachable from the remote
+   session; read them on the PC).
+4. Hashtag events are shown but scored flat; a `Verbose = true` log of one hashtag screen shows the
+   `HashtagEventUpgrade` fields to rank on.
+5. Run history in-process (the game's run-history save) to restore the damage-share and partner weights.
+6. Optional, opt-in: drive the game's autoselection (`GameOptions.AutoselectionModes`) with this ranking.
