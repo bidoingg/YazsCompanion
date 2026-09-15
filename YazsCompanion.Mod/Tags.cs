@@ -69,10 +69,12 @@ namespace YazsCompanion
             return focus ?? Best();
         }
 
-        /// <summary>"Explosive 6/10, Kinetic 3" (types with points, most first; /N once the special threshold is known).</summary>
-        public string PointsText()
+        /// <summary>"Explosive 6/10, Kinetic 3" (types with points, most first, at most max when max > 0; /N once the special
+        /// threshold is known).</summary>
+        public string PointsText(int max = 0)
         {
             var parts = Points.Where(kv => kv.Value > 0).OrderByDescending(kv => kv.Value).ThenBy(kv => Array.IndexOf(Names, kv.Key))
+                .Take(max > 0 ? max : int.MaxValue)
                 .Select(kv => kv.Key + " " + kv.Value + (SpecialAt > 0 && kv.Value < SpecialAt ? "/" + SpecialAt : ""));
             return string.Join(", ", parts);
         }

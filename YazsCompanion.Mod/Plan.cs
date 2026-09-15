@@ -57,11 +57,11 @@ namespace YazsCompanion
                 // a deeper step that exists but is not unlocked in the Training Yard: the line is not complete, just locked
                 bool locked = next == null && path.Any(x => !x.Available && x.Level < 1 && x.Depth > current.Depth);
                 int max = G.MaxLevel(current.W);
+                // short on purpose: the sidebar wraps at ~45 characters on the Deck
                 string line = G.Name(current.W) + " " + current.Level + "/" + max;
-                if (current.Level < max) line += C(Dim, "  finish it");
+                if (current.Level < max) line += next != null ? C(Dim, "  then ") + G.Name(next.W) : C(Dim, "  finish it");
                 else if (next != null) line += C(Gold, "  then " + G.Name(next.W));
-                else line += C(Dim, locked ? "  next tier locked in the Training Yard" : "  line complete");
-                if (current.Level < max && next != null) line += C(Dim, ", then " + G.Name(next.W));
+                else line += C(Dim, locked ? "  next tier locked" : "  line complete");
                 Lines.Add(line);
             }
 
@@ -122,7 +122,7 @@ namespace YazsCompanion
         // the run's damage type tag points and the type worth stacking at the next Research Pod
         void TagsLine(Snapshot s)
         {
-            string pts = s.Tags.PointsText();
+            string pts = s.Tags.PointsText(3);   // the three highest types; the full list is in the [tags] log line
             if (pts.Length == 0) return;
             string focus = s.Tags.Focus();
             Lines.Add(C(Gold, "TAGS  ") + pts + (focus != null ? C(Dim, "  stack " + focus) : ""));

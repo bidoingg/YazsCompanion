@@ -6,8 +6,11 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.5.2 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
-validated on both.** The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
+Status (2026-09-14): **0.5.3 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
+validated on both.** Deck screenshots of 0.5.2 confirmed the sidebar in play at the enlarged size, gone on the pause
+menu, and the scaled badges under the cards; 0.5.3 keeps a long plan (three survivors) above the minimap by shrinking
+the block (down to 0.75x), widens it to 700 units, shortens the weapon line ("Pump-Action Shotgun 3/4  then Rocket
+Launcher") and shows only the three highest tag types. The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
 `GameplayMaster.IsGameplayUIVisible()`, which the Deck log of 0.5.0 proved to mean "a UI view is showing"
 (false during play; true on the pause menu, the selection screens and the results): the diagnostic builds
 0.4.2–0.5.1 logged every candidate flag (`[panel] players=1 active=True paused=False pauseMenu=False
@@ -263,10 +266,10 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. Look at 0.5.2 on the Deck: the sidebar must be gone on the pause menu, the selection screens and the results
-   screen (`[panel] hidden` / `shown` lines around each), and the enlarged sidebar and badges must read well
-   (`x1.45` / the ribbon and reason still inside the band under the card). Adjust `PanelScale` / `BadgeScale`
-   defaults from that; a style pass on the sidebar (spacing, header, backdrop) is the next visual item.
+1. Look at 0.5.3 on the Deck with a full squad: the block must stay above the minimap (`[panel] scale x.. for ..
+   units` in the log says how far it shrank) and the results screen must not show it (`[panel] hidden` after the
+   run). A style pass on the sidebar (spacing, header, backdrop) is the next visual item; the PC has still not shown
+   the sidebar in a run (its canvas height differs from the Deck's, so check `created ... canvas WxH` there).
 2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
    (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
 3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better

@@ -29,7 +29,10 @@ namespace YazsCompanion
     internal static class Panel
     {
         const string RootName = "YazsPlan";
-        const float Width = 640f, PadTop = 92f, PadSide = 26f, PadBottom = 22f, Font = 31f, LineH = 42f;
+        const float Width = 700f, PadTop = 92f, PadSide = 26f, PadBottom = 22f, Font = 31f, LineH = 42f;
+        // the block must end above the minimap (top at ~0.75 of the screen on the Deck, ~0.78 on 21:9): when the plan is
+        // long (three survivors) it shrinks from its automatic scale down to MinScale to stay inside that band
+        const float BandBottom = 0.74f, MinScale = 0.75f;
         const float HeaderW = 240f, HeaderH = 52f, HeaderTip = 32f;
         // HUD labels worth cloning first (font, material, outline of the quest box / timer), by object name
         static readonly string[] PreferredLabels = { "Quest_Obj1", "QuestName", "QuestStatus_Text", "GameTimer_Txt" };
@@ -42,6 +45,7 @@ namespace YazsCompanion
         static TextMeshProUGUI _text;
         static UIGameplay _hud;                       // remembered from UIGameplay.Update ticks for the fallback ticks
         static float _nextTick, _nextRebuild;
+        static float _canvasH, _autoScale = 1f;       // canvas height in units and the screen-size scale, from Ensure
         static string _sig = "", _stateKey = "", _gates = "";
         static UIGameplayUpgradeSelection _screen;
         static bool _visible, _warnedNoCanvas, _warnedNoLabel, _sourceLogged;
@@ -169,6 +173,7 @@ namespace YazsCompanion
             root.sizeDelta = new Vector2(Width, 300f);
             float scale = Scale(canvas);
             root.localScale = new Vector3(scale, scale, 1f);   // pivot top-right: grows down and to the left
+            _autoScale = scale; try { _canvasH = canvas.rect.height; } catch { _canvasH = 0; }
 
             var bg = Image(root, "Backdrop", Backdrop); Stretch(bg, 0, 0, 0, 0);
 
@@ -184,7 +189,7 @@ namespace YazsCompanion
             var title = CloneText(template, head, "Title");
             if (title != null)
             {
-                Stretch(title.rectTransform, HeaderTip, 0, HeaderTip, 0);
+                Stretch(title.rectTransform, HeaderTip, 8, HeaderTip, 0);   // lifted a little off the gold rule
                 title.text = "PLAN"; title.color = GoldText; title.fontSize = 34f; title.fontStyle = FontStyles.Bold;
                 title.alignment = TextAlignmentOptions.Center; title.characterSpacing = 6f;
             }
@@ -226,6 +231,19 @@ namespace YazsCompanion
             float h = PadTop + Mathf.Max(1, lines) * LineH + PadBottom;
             try { _text.ForceMeshUpdate(); float ph = _text.preferredHeight; if (ph > 0) h = PadTop + ph + PadBottom; } catch { }
             _root.sizeDelta = new Vector2(Width, h);
+            // keep the block above the minimap: shrink it (never below MinScale) when the plan is long
+            float scale = _autoScale;
+            try
+            {
+                float band = _canvasH * BandBottom - Plugin.PanelTop.Value;
+                if (band > 0 && h * scale > band) scale = Mathf.Max(MinScale, band / h);
+            }
+            catch { }
+            if (Mathf.Abs(_root.localScale.x - scale) > 0.005f)
+            {
+                _root.localScale = new Vector3(scale, scale, 1f);
+                Plugin.Logger.LogInfo("[panel] scale x" + scale.ToString("0.00") + " for " + h.ToString("0") + " units (auto x" + _autoScale.ToString("0.00") + ")");
+            }
         }
 
         // a live HUD label to clone (font, material, outline): the quest box or timer text by preference,
