@@ -6,11 +6,11 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.5.3 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
+Status (2026-09-14): **0.5.4 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
 validated on both.** Deck screenshots of 0.5.2 confirmed the sidebar in play at the enlarged size, gone on the pause
-menu, and the scaled badges under the cards; 0.5.3 keeps a long plan (three survivors) above the minimap by shrinking
-the block (down to 0.75x), widens it to 700 units, shortens the weapon line ("Pump-Action Shotgun 3/4  then Rocket
-Launcher") and shows only the three highest tag types. The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
+menu, and the scaled badges under the cards; 0.5.3 keeps a long plan above the minimap by shrinking the block (down
+to 0.75x) and widens it to 700 units; 0.5.4 makes the plan compact (two lines per survivor, nine lines for a full
+squad, see below) and highlights the lines whose advice changed after a pick. The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
 `GameplayMaster.IsGameplayUIVisible()`, which the Deck log of 0.5.0 proved to mean "a UI view is showing"
 (false during play; true on the pause menu, the selection screens and the results): the diagnostic builds
 0.4.2–0.5.1 logged every candidate flag (`[panel] players=1 active=True paused=False pauseMenu=False
@@ -26,22 +26,30 @@ deals, added a `TAGS` line to the plan and an offline bench.
 ## The PLAN sidebar (during play)
 
 A right-aligned block on the right edge, under the held-item icons and above the minimap, in the
-style of the game's quest-objective text: a small diamond-tipped `PLAN` header, then per survivor
+style of the game's quest-objective text: a small diamond-tipped `PLAN` header, then two lines per survivor
 
 ```
-TANK  L95  +1
-Shotgun 2/4  finish it, then Pump-Action Shotgun
-Minefield 4/4  evolve: Taunt / Cluster
-Sawblade Drone 3/4  evolves: Enchantment / Cogwheels
-next ability  Bombing Strike
+TANK  Pump-Action Shotgun 3/4 › Rocket Launcher
+Sawblade Drone 2/4 › Enchantment / Cogwheels  ·  next  Minefield
+PYRO  Fireaxe 1/4 › Blowtorch
+next  No Pain, No Gain
+TAGS  Kinetic 8/10, Slashing 4/10
+SOS  SWAT, Huntress
+GRAB  Accumulator, Bleeding Edge
 ```
 
-(the `evolve:` line appears only while a maxed ability waits for its unlocked evolution card; a maxed
-weapon whose next tier is not bought in the Training Yard reads `next tier locked in the Training Yard`),
-then for the run `TAGS  Explosive 7/10, Kinetic 3/10  stack Explosive` (damage type tag points per type,
-`/N` until the type's special effect, and the type worth stacking at the next Research Pod), and for the
-squad `SOS  Engineer, Huntress` (the two best rescues for this squad by the same rules as the SOS cards) and
-`GRAB  Silencer, Black Box` (items worth a chest slot: S/A tier or quest target, not held). It is driven by
+The weapon line shows the current weapon and its next step (gold once the weapon is maxed; `take Shotgun` for a
+recruit without one; `next tier locked` / `line complete` at the end of a line). The ability line holds at most
+two items in priority order: a maxed ability waiting for its unlocked evolution card (`Minefield 4/4 › Shrapnel /
+Taunt`, gold), the ability to keep feeding (with its evolutions once the Training Yard unlocked them), and the next
+ability worth taking. `TAGS` shows the two highest damage-type tag point counts (`/N` until the type's special
+effect) and `stack X` only when the type to stack at the next Research Pod is not the first one; `SOS` the two
+best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items worth a chest slot (S/A
+tier or quest target, not held). A full squad is nine lines. When a rebuild changes a line (a pick, a recruit,
+a Research Pod), that line comes back gold and fades to white over `PanelHighlight` seconds (default 3; the
+block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.weapon]`).
+The `›` and `·` glyphs are checked against the HUD font at creation and replaced by `>` and `|` when missing
+(`[panel] glyphs: ...`). It is driven by
 the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes (a cheap key of the squad text,
 the active quest and the tag points; a rebuild walks every tree node and item), hides while a selection screen,
 the pause menu, the results screen or any other game view is up, and dies with the HUD when the run ends.

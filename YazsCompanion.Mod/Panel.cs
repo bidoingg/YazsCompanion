@@ -19,6 +19,8 @@
 // Size: the canvas is 3840 units wide on every screen (3840x2400 on the Deck's 1280x800, so one unit is a
 // third of a pixel there), hence the automatic scale that keeps the text at a readable pixel size.
 using System;
+using System.Collections.Generic;
+using System.Text;
 using Il2CppInterop.Runtime;
 using UnityEngine;
 using UnityEngine.UI;
@@ -26,6 +28,9 @@ using TMPro;
 
 namespace YazsCompanion
 {
+    // Change highlight: every plan line has a stable key (Tank.weapon, Tank.ability, tags, sos, grab). When a rebuild
+    // changes a line's text (a pick, a recruit, a Research Pod), that line is rendered gold and fades back to white over
+    // PanelHighlight seconds (30 fps re-render of the text); the block itself never grows or jumps for it.
     internal static class Panel
     {
         const string RootName = "YazsPlan";
@@ -46,6 +51,12 @@ namespace YazsCompanion
         static UIGameplay _hud;                       // remembered from UIGameplay.Update ticks for the fallback ticks
         static float _nextTick, _nextRebuild;
         static float _canvasH, _autoScale = 1f;       // canvas height in units and the screen-size scale, from Ensure
+        static Plan _plan;                                        // the lines on screen, keyed, for the change highlight
+        static Dictionary<string, string> _prev;                  // key -> text of the previous plan (null = first build of a run)
+        static readonly HashSet<string> _changed = new HashSet<string>();
+        static float _hlStart = -100f, _nextFade;
+        static bool _glyphsChecked;
+        static readonly Color HlGold = new Color(1f, 0.85f, 0.40f, 1f), HlWhite = new Color(0.93f, 0.93f, 0.93f, 1f);
         static string _sig = "", _stateKey = "", _gates = "";
         static UIGameplayUpgradeSelection _screen;
         static bool _visible, _warnedNoCanvas, _warnedNoLabel, _sourceLogged;
@@ -53,11 +64,11 @@ namespace YazsCompanion
         public static void ScreenOpened(UIGameplayUpgradeSelection sel) { _screen = sel; SetVisible(false); }
         /// <summary>The base Hide(clicked) ran (validated: once per screen, every type); the game may keep the screen
         /// object active while it animates out, so do not wait for activeInHierarchy to drop.</summary>
-        public static void ScreenClosed() { _screen = null; }
+        public static void ScreenClosed() { _screen = null; _nextRebuild = 0f; }   // rebuild (and highlight) as soon as the sidebar is back
 
         /// <summary>The HUD is being destroyed (scene change): our objects die with it, forget them.</summary>
         public static void Reset() { Forget(); _screen = null; _hud = null; _gates = ""; }
-        static void Forget() { _root = null; _text = null; _sig = ""; _stateKey = ""; _visible = false; }
+        static void Forget() { _root = null; _text = null; _sig = ""; _stateKey = ""; _visible = false; _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f; }
 
         /// <summary>Once per frame from UIGameplay.Update (hud set) and GameplayMaster.Update (hud null); throttled to 0.4 s here.</summary>
         public static void Tick(UIGameplay hud)
@@ -67,6 +78,7 @@ namespace YazsCompanion
                 if (hud != null) _hud = hud; else hud = _hud;
                 if (!_sourceLogged) { _sourceLogged = true; Plugin.Logger.LogInfo("[panel] first tick from " + (hud != null ? "UIGameplay.Update" : "GameplayMaster.Update")); }
                 float now = Time.realtimeSinceStartup;
+                if (_hlStart > 0 && _visible && now >= _nextFade) { _nextFade = now + 0.033f; Render(now); }   // the gold fade, ~30 fps
                 if (now < _nextTick) return;
                 _nextTick = now + 0.4f;
                 if (!Plugin.ShowPanel.Value) { SetVisible(false); return; }
@@ -102,9 +114,16 @@ namespace YazsCompanion
                     if (plan.Signature != _sig)
                     {
                         _sig = plan.Signature;
-                        _text.text = string.Join("\n", plan.Lines);
+                        _changed.Clear();
+                        if (_prev != null) foreach (var l in plan.Lines) { string old; if (!_prev.TryGetValue(l.Key, out old) || old != l.Text) _changed.Add(l.Key); }
+                        _prev = new Dictionary<string, string>();
+                        foreach (var l in plan.Lines) _prev[l.Key] = l.Text;
+                        _plan = plan;
+                        float hlSeconds = 3f; try { hlSeconds = Plugin.PanelHighlight.Value; } catch { }
+                        _hlStart = _changed.Count > 0 && hlSeconds > 0 ? now : -100f;
+                        Render(now);
                         Resize(plan.Lines.Count);
-                        Plugin.Logger.LogInfo("[plan] " + snap.Clock + ": " + plan.PlainText());
+                        Plugin.Logger.LogInfo("[plan] " + snap.Clock + ": " + plan.PlainText() + (_changed.Count > 0 ? "  [changed: " + string.Join(", ", _changed) + "]" : ""));
                     }
                 }
             }
@@ -202,6 +221,22 @@ namespace YazsCompanion
             try { text.enableWordWrapping = true; } catch { }
             try { text.overflowMode = TextOverflowModes.Overflow; } catch { }
             text.text = "";
+            if (!_glyphsChecked)
+            {
+                // the plan's "›" and "·" only if the HUD font (or its fallbacks) has them; ASCII otherwise
+                _glyphsChecked = true;
+                try
+                {
+                    var font = text.font;
+                    if (font != null)
+                    {
+                        if (!font.HasCharacter('›', true, true)) Plan.Arrow = " > ";
+                        if (!font.HasCharacter('·', true, true)) Plan.Sep = "  |  ";
+                    }
+                    Plugin.Logger.LogInfo("[panel] glyphs: arrow '" + Plan.Arrow.Trim() + "' sep '" + Plan.Sep.Trim() + "'");
+                }
+                catch (Exception e) { Plan.Arrow = " > "; Plan.Sep = "  |  "; Plugin.Logger.LogInfo("[panel] glyph check failed (" + e.Message + "), using ascii"); }
+            }
 
             _root = root; _text = text; _visible = true;
             string geo = "";
@@ -224,6 +259,31 @@ namespace YazsCompanion
                 return Mathf.Clamp(MinTextPx / px, 1f, 2f);
             }
             catch { return 1f; }
+        }
+
+        // the text of the block: changed lines wrapped in the highlight colour (gold held for 0.8 s, then fading to white)
+        static void Render(float now)
+        {
+            if (_plan == null || _text == null) return;
+            float dur = 3f; try { dur = Plugin.PanelHighlight.Value; } catch { }
+            float t = now - _hlStart;
+            bool hl = _hlStart > 0 && t < dur && _changed.Count > 0;
+            string hex = null;
+            if (hl)
+            {
+                float k = dur <= 0.8f ? t / dur : Mathf.Clamp01((t - 0.8f) / (dur - 0.8f));
+                Color c = Color.Lerp(HlGold, HlWhite, k);
+                hex = "#" + ((int)(c.r * 255)).ToString("X2") + ((int)(c.g * 255)).ToString("X2") + ((int)(c.b * 255)).ToString("X2");
+            }
+            var sb = new StringBuilder();
+            foreach (var l in _plan.Lines)
+            {
+                if (sb.Length > 0) sb.Append('\n');
+                if (hl && _changed.Contains(l.Key)) sb.Append("<color=").Append(hex).Append('>').Append(l.Text).Append("</color>");
+                else sb.Append(l.Text);
+            }
+            _text.text = sb.ToString();
+            if (!hl) _hlStart = -100f;
         }
 
         static void Resize(int lines)
