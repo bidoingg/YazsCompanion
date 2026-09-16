@@ -79,6 +79,8 @@ namespace YazsCompanion
                 if (!_sourceLogged) { _sourceLogged = true; Plugin.Logger.LogInfo("[panel] first tick from " + (hud != null ? "UIGameplay.Update" : "GameplayMaster.Update")); }
                 float now = Time.realtimeSinceStartup;
                 if (_hlStart > 0 && _visible && now >= _nextFade) { _nextFade = now + 0.033f; Render(now); }   // the gold fade, ~30 fps
+                Shots.Tick();
+                if (_visible) Shots.Baseline();
                 if (now < _nextTick) return;
                 _nextTick = now + 0.4f;
                 if (!Plugin.ShowPanel.Value) { SetVisible(false); return; }
@@ -124,6 +126,8 @@ namespace YazsCompanion
                         Render(now);
                         Resize(plan.Lines.Count);
                         Plugin.Logger.LogInfo("[plan] " + snap.Clock + ": " + plan.PlainText() + (_changed.Count > 0 ? "  [changed: " + string.Join(", ", _changed) + "]" : ""));
+                        if (_hlStart > 0) { Shots.Later(0.3f, "hl1"); Shots.Later(1.5f, "hl2"); Shots.Later(3.5f, "hl3"); }
+                        else Shots.Later(0.5f, "plan");
                     }
                 }
             }
@@ -141,7 +145,7 @@ namespace YazsCompanion
         static void SetVisible(bool v)
         {
             if (_root == null || _visible == v) return;
-            try { _root.gameObject.SetActive(v); _visible = v; Plugin.Logger.LogInfo("[panel] " + (v ? "shown" : "hidden")); } catch { Forget(); }
+            try { _root.gameObject.SetActive(v); _visible = v; Plugin.Logger.LogInfo("[panel] " + (v ? "shown" : "hidden")); Shots.Later(0.3f, v ? "shown" : "hidden"); } catch { Forget(); }
         }
 
         static bool Alive()
@@ -242,6 +246,7 @@ namespace YazsCompanion
             string geo = "";
             try { geo = " canvas " + canvas.rect.width.ToString("0") + "x" + canvas.rect.height.ToString("0") + " screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height +" scale " + canvas.lossyScale.x.ToString("0.000"); } catch { }
             Plugin.Logger.LogInfo("[panel] created under " + canvas.name + " using label '" + template.name + "' at (" + root.anchoredPosition.x + ", " + root.anchoredPosition.y + ") x" + scale.ToString("0.00") + geo);
+            Shots.Later(0.5f, "created");
             return true;
         }
 

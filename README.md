@@ -6,11 +6,15 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-14): **0.5.4 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
+Status (2026-09-15): **0.5.5 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
 validated on both.** Deck screenshots of 0.5.2 confirmed the sidebar in play at the enlarged size, gone on the pause
 menu, and the scaled badges under the cards; 0.5.3 keeps a long plan above the minimap by shrinking the block (down
 to 0.75x) and widens it to 700 units; 0.5.4 makes the plan compact (two lines per survivor, nine lines for a full
-squad, see below) and highlights the lines whose advice changed after a pick. The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
+squad, see below) and highlights the lines whose advice changed after a pick. A PC run of 0.5.4 captured with the
+new debug screenshots (below) confirmed the highlight timing (gold at 0.3 s, mid-fade at 1.5 s, white by 3.5 s),
+the gating on the pause menu and the pick transition, and the PC geometry (canvas 5161x2160 at 3440x1440, scale
+1.00, the font lacks "›" so ">" is used); 0.5.5 stops the ability line from wrapping (evolution names only from one
+level below max) and ships the screenshot flag. The sidebar had appeared only on the results screen in 0.4.1 because it was gated on
 `GameplayMaster.IsGameplayUIVisible()`, which the Deck log of 0.5.0 proved to mean "a UI view is showing"
 (false during play; true on the pause menu, the selection screens and the results): the diagnostic builds
 0.4.2–0.5.1 logged every candidate flag (`[panel] players=1 active=True paused=False pauseMenu=False
@@ -41,8 +45,8 @@ GRAB  Accumulator, Bleeding Edge
 The weapon line shows the current weapon and its next step (gold once the weapon is maxed; `take Shotgun` for a
 recruit without one; `next tier locked` / `line complete` at the end of a line). The ability line holds at most
 two items in priority order: a maxed ability waiting for its unlocked evolution card (`Minefield 4/4 › Shrapnel /
-Taunt`, gold), the ability to keep feeding (with its evolutions once the Training Yard unlocked them), and the next
-ability worth taking. `TAGS` shows the two highest damage-type tag point counts (`/N` until the type's special
+Taunt`, gold), the ability to keep feeding (with its evolutions once it is one level below max and the Training Yard
+unlocked them; earlier the names only made the line wrap), and the next ability worth taking. `TAGS` shows the two highest damage-type tag point counts (`/N` until the type's special
 effect) and `stack X` only when the type to stack at the next Research Pod is not the first one; `SOS` the two
 best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items worth a chest slot (S/A
 tier or quest target, not held). A full squad is nine lines. When a rebuild changes a line (a pick, a recruit,
@@ -222,6 +226,12 @@ build that fails to load leaves every auto-updated install without the mod until
 - `BepInEx\LogOutput.log` — everything BepInEx logged this launch (overwritten per launch).
 - Set `Verbose = true` in the config to also log every raw field of every card and survivor
   (`[raw]` lines) when a verdict looks wrong.
+- Set `Screenshots = true` under `[Debug]` in the config to have the game save a PNG of its own frame
+  (`BepInEx\plugins\YazsCompanion\shots\HHmmss_fff_<label>.png`, logged as `[shot] ...`) at the moments that matter
+  for judging the UI: each offer with its badges (`offer`), each pick (`pick`), the sidebar 0.3 / 1.5 / 3.5 s into
+  a change highlight (`hl1`..`hl3`), every show / hide / creation of the sidebar, and one a minute during play
+  (`base`). At most 90 per session; a 3440x1440 frame is about 4 MB, a Deck frame about 1 MB. This is how the
+  0.5.4 highlight was verified without anyone watching the screen. Off by default; delete the folder afterwards.
 
 To disable the mod without uninstalling BepInEx, delete or rename `BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll`.
 To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in the game folder.
@@ -269,15 +279,16 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Panel.cs                      the PLAN sidebar during play (cloned HUD font, throttled rebuilds)
     Updater.cs                    release-feed check, hash-verified download next to the running DLL, old-build cleanup
     Notice.cs                     the "restart to apply" strip on its own overlay canvas
+    Shots.cs                      debug screenshots of the game frame at UI moments (config [Debug] Screenshots)
     Describe.cs                   verbose raw-field dump (config Verbose)
 ```
 
 ## Next steps
 
-1. Look at 0.5.3 on the Deck with a full squad: the block must stay above the minimap (`[panel] scale x.. for ..
-   units` in the log says how far it shrank) and the results screen must not show it (`[panel] hidden` after the
-   run). A style pass on the sidebar (spacing, header, backdrop) is the next visual item; the PC has still not shown
-   the sidebar in a run (its canvas height differs from the Deck's, so check `created ... canvas WxH` there).
+1. The Deck has not shown the compact sidebar yet (0.5.4+): check it there with a full squad (nine lines must stay
+   above the minimap without shrinking) and the highlight on a 1280x800 screen. The screenshot flag works there too
+   (Desktop Mode to edit the config and to fetch the PNGs). A style pass on the sidebar (spacing, header, backdrop)
+   is the next visual item.
 2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
    (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
 3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better

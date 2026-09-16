@@ -14,7 +14,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.5.4";
+        public const string VERSION = "0.5.5";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -29,6 +29,7 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> Verbose;
         internal static ConfigEntry<bool> AutoUpdate;
         internal static ConfigEntry<string> UpdateUrl;
+        internal static ConfigEntry<bool> Screenshots;
 
         /// <summary>The folder the running DLL was loaded from (auto-updated builds live next to the original).</summary>
         internal static string PluginDir
@@ -54,6 +55,7 @@ namespace YazsCompanion
             Verbose = Config.Bind("Logging", "Verbose", false, "Also log every raw field of every card and survivor (for validating the ranking).");
             AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the screen says so). The older file is removed by the new build.");
             UpdateUrl = Config.Bind("Update", "UpdateUrl", DefaultUpdateUrl, "The latest.json of the release feed to check.");
+            Screenshots = Config.Bind("Debug", "Screenshots", false, "Save PNGs of the game frame into BepInEx\\plugins\\YazsCompanion\\shots at the moments that matter for checking the UI: offers, picks, sidebar changes (0.3 / 1.5 / 3.5 s into the highlight), its show/hide, and one a minute during play. For validating a build; off by default, at most 90 per session.");
 
             // BepInEx overwrites LogOutput.log on every launch; keep our own append-only copy next to the DLL.
             try { BepInEx.Logging.Logger.Listeners.Add(new FileListener(Path.Combine(PluginDir, "companion.log"))); }

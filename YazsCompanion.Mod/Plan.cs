@@ -96,7 +96,9 @@ namespace YazsCompanion
             {
                 var f = open[0];
                 var v = Ranker.AbilityScore(f.Key, sv, s);
-                items.Add(G.Name(f.Key) + " " + f.Value + "/" + G.MaxLevel(f.Key) + (v.EvoOwned ? C(Dim, Arrow + Evos(v, f.Key)) : ""));
+                // the evolution names only from one level below max: earlier they just make the line wrap
+                bool nearMax = f.Value >= G.MaxLevel(f.Key) - 1;
+                items.Add(G.Name(f.Key) + " " + f.Value + "/" + G.MaxLevel(f.Key) + (v.EvoOwned && nearMax ? C(Dim, Arrow + Evos(v, f.Key)) : ""));
             }
             int evolved = owned.Count(kv => { try { return kv.Key.evolutionBaseAbility != null; } catch { return false; } });
             if (owned.Count - evolved < 4 && sv.Props != null && items.Count < 2)

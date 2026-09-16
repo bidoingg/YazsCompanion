@@ -37,6 +37,7 @@ namespace YazsCompanion
 
                 Ranker.Rank(screen, cards, snap);
                 if (Plugin.ShowBadges.Value) foreach (var c in cards) Badge.Show(c);
+                Shots.Later(0.6f, "offer");
 
                 var sb = new StringBuilder();
                 sb.Append("[offer] ").Append(screen).Append(' ').Append(snap.Clock).Append(" (").Append(snap.Mode).Append(" horde ").Append(snap.Horde).Append(")");
@@ -81,6 +82,7 @@ namespace YazsCompanion
                 string screen = "?"; try { screen = sel.GetIl2CppType().Name.Replace("UIGameplay", ""); } catch { }
                 Plugin.Logger.LogInfo("[pick] " + screen + " " + _lastClock + ": " + what);
                 _lastCards = null;
+                Shots.Later(1.2f, "pick");
             }
             catch (Exception e) { Plugin.Logger.LogError("[pick] failed: " + e); }
         }
@@ -116,5 +118,5 @@ namespace YazsCompanion
 
     // ---- the restart notice after an auto-update: GameMaster lives in every scene, menu included ----
     [HarmonyPatch(typeof(GameMaster), nameof(GameMaster.Update))]
-    static class P_Notice { static void Postfix() { Notice.Tick(); } }
+    static class P_Notice { static void Postfix() { Notice.Tick(); Shots.Tick(); } }
 }
