@@ -6,7 +6,11 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-15): **0.5.5 — card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
+Status (2026-09-16): **0.6.0 — the design pass: the PLAN sidebar is a framed panel in the game's own style (body,
+gold hairline, corner diamonds, header band, label column, hairlines between groups, fade in/out), the card
+badges and the restart strip share its palette and primitives (`Ui.cs`), and a preview mode renders the sidebar
+on the main menu with sample plans so the look can be checked from screenshots without a run - verified this
+way at the PC's and the Deck's pixel sizes. 0.5.5:** card verdicts and the PLAN sidebar working on PC and Steam Deck; auto-update
 validated on both.** Deck screenshots of 0.5.2 confirmed the sidebar in play at the enlarged size, gone on the pause
 menu, and the scaled badges under the cards; 0.5.3 keeps a long plan above the minimap by shrinking the block (down
 to 0.75x) and widens it to 700 units; 0.5.4 makes the plan compact (two lines per survivor, nine lines for a full
@@ -29,17 +33,25 @@ deals, added a `TAGS` line to the plan and an offline bench.
 
 ## The PLAN sidebar (during play)
 
-A right-aligned block on the right edge, under the held-item icons and above the minimap, in the
-style of the game's quest-objective text: a small diamond-tipped `PLAN` header, then two lines per survivor
+A framed panel at the right edge, under the held-item icons and above the minimap, in the language of the
+game's own panels (0.6.0): a warm near-black body, a touch lighter at the top, inside a gold hairline with a
+small gold diamond on each corner; a header band with a diamond and `PLAN` over a gold rule; then one group per
+survivor and one for the run, separated by faint gold hairlines. Every row has a label column (the survivor's
+name in bold white on its first row, `TAGS` / `SOS` / `GRAB` in gold) and a value column that wraps under
+itself, names never breaking across lines. The block fades in and out (0.25 / 0.15 s) instead of popping.
 
 ```
-TANK  Pump-Action Shotgun 3/4 › Rocket Launcher
-Sawblade Drone 2/4 › Enchantment / Cogwheels  ·  next  Minefield
-PYRO  Fireaxe 1/4 › Blowtorch
-next  No Pain, No Gain
-TAGS  Kinetic 8/10, Slashing 4/10
-SOS  SWAT, Huntress
-GRAB  Accumulator, Bleeding Edge
+◆ PLAN
+──────────────────────────────────────────────────────
+TANK      Pump-Action Shotgun 3/4 › Rocket Launcher
+          Sawblade Drone 2/4  ·  next  Minefield
+- - - - - - - - - - - - - - - - - - - - - - - - - - -
+PYRO      Fireaxe 1/4 › Blowtorch
+          Molotov 3/4 › Napalm / Cocktail Party  ·  next  No Pain, No Gain
+- - - - - - - - - - - - - - - - - - - - - - - - - - -
+TAGS      Kinetic 8/10, Slashing 4/10
+SOS       SWAT, Huntress
+GRAB      Accumulator, Bleeding Edge
 ```
 
 The weapon line shows the current weapon and its next step (gold once the weapon is maxed; `take Shotgun` for a
@@ -50,15 +62,15 @@ unlocked them; earlier the names only made the line wrap), and the next ability 
 effect) and `stack X` only when the type to stack at the next Research Pod is not the first one; `SOS` the two
 best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items worth a chest slot (S/A
 tier or quest target, not held). A full squad is nine lines. When a rebuild changes a line (a pick, a recruit,
-a Research Pod), that line comes back gold and fades to white over `PanelHighlight` seconds (default 3; the
-block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.weapon]`).
+a Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
+0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.weapon]`).
 The `›` and `·` glyphs are checked against the HUD font at creation and replaced by `>` and `|` when missing
 (`[panel] glyphs: ...`). It is driven by
 the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes (a cheap key of the squad text,
 the active quest and the tag points; a rebuild walks every tree node and item), hides while a selection screen,
 the pause menu, the results screen or any other game view is up, and dies with the HUD when the run ends.
-`ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units; the canvas is 3840
-wide on every screen, 2160 tall on 16:9, 2400 on the Deck's 16:10). `PanelScale` (default 0 = automatic) keeps
+`ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units; the block is 800 units
+wide; the canvas is 3840 wide on every screen, 2160 tall on 16:9, 2400 on the Deck's 16:10). `PanelScale` (default 0 = automatic) keeps
 the text at least 15 px tall: 1.0 on a desktop monitor, about 1.45 on the Deck, where the block grows down and
 to the left from its top-right corner. Every change is logged as a `[plan] 03:31: ...` line; `[panel] created
 under UIGameplay using label 'GameTimer_Txt' at (-44, -780) x1.45 canvas 3840x2400 screen 1280x800` shows which
@@ -232,6 +244,14 @@ build that fails to load leaves every auto-updated install without the mod until
   a change highlight (`hl1`..`hl3`), every show / hide / creation of the sidebar, and one a minute during play
   (`base`). At most 90 per session; a 3440x1440 frame is about 4 MB, a Deck frame about 1 MB. This is how the
   0.5.4 highlight was verified without anyone watching the screen. Off by default; delete the folder afterwards.
+- Set `Preview = true` under `[Debug]` to see the sidebar without playing: about 5 s after launch, on the main
+  menu, it is built on an overlay canvas with sample plans - two survivors, then a pick's change highlight
+  (PNGs at 0.35 / 1.5 / 3.6 s), then a full squad, then the fade-out - and a PNG of each stage goes to the shots
+  folder whatever the Screenshots setting (`[preview] ...` and `[panel] layout: ...` log lines mark the stages).
+  `PreviewResolution = 3440x1440` (or `1280x800`) makes those PNGs show the sidebar with the pixels it has on that
+  screen even when the game runs on another desktop: the frame is rendered at a whole multiple of the window and
+  the block scaled to match, so only the menu art around it differs. This is how 0.6.0 was checked for the PC and
+  the Deck from a 1024x768 remote desktop. Off by default.
 
 To disable the mod without uninstalling BepInEx, delete or rename `BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll`.
 To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in the game folder.
@@ -274,9 +294,11 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Knowledge.cs                  guide-derived tiers; writes/reads plugins\YazsCompanion\knowledge.json
     ItemRules.cs                  item keyword table and the pure item score (squad fit by damage type)
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
+    Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
-    Plan.cs                       the run plan (weapon line, ability to feed, next ability, TAGS, SOS, GRAB)
-    Panel.cs                      the PLAN sidebar during play (cloned HUD font, throttled rebuilds)
+    Plan.cs                       the run plan (keyed rows with label / value / group; sample plans for the preview)
+    Panel.cs                      the PLAN sidebar during play (framed panel, groups + hairlines, fade, highlight)
+    Preview.cs                    the design preview on the main menu (config [Debug] Preview / PreviewResolution)
     Updater.cs                    release-feed check, hash-verified download next to the running DLL, old-build cleanup
     Notice.cs                     the "restart to apply" strip on its own overlay canvas
     Shots.cs                      debug screenshots of the game frame at UI moments (config [Debug] Screenshots)
@@ -285,10 +307,11 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. The Deck has not shown the compact sidebar yet (0.5.4+): check it there with a full squad (nine lines must stay
-   above the minimap without shrinking) and the highlight on a 1280x800 screen. The screenshot flag works there too
-   (Desktop Mode to edit the config and to fetch the PNGs). A style pass on the sidebar (spacing, header, backdrop)
-   is the next visual item.
+1. The Deck has not shown the compact sidebar (0.5.4+) or the 0.6.0 panel yet: check it there with a full squad
+   (the nine-row block computes to 65 % of the canvas height at x1.45, so it should end above the minimap without
+   shrinking) and the highlight on a 1280x800 screen. The screenshot flag works there too (Desktop Mode to edit
+   the config and to fetch the PNGs). The card badges and the restart strip were moved onto the shared palette
+   without a visual check (same geometry as 0.5.5): glance at them on the next offer / update.
 2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
    (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
 3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better

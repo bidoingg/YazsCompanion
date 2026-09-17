@@ -118,5 +118,5 @@ namespace YazsCompanion
 
     // ---- the restart notice after an auto-update: GameMaster lives in every scene, menu included ----
     [HarmonyPatch(typeof(GameMaster), nameof(GameMaster.Update))]
-    static class P_Notice { static void Postfix() { Notice.Tick(); Shots.Tick(); } }
+    static class P_Notice { static void Postfix() { Notice.Tick(); Preview.Tick(); Shots.Tick(); } }
 }

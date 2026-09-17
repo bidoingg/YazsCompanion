@@ -14,7 +14,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.5.5";
+        public const string VERSION = "0.6.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -30,6 +30,8 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> AutoUpdate;
         internal static ConfigEntry<string> UpdateUrl;
         internal static ConfigEntry<bool> Screenshots;
+        internal static ConfigEntry<bool> PreviewFlag;
+        internal static ConfigEntry<string> PreviewResolution;
 
         /// <summary>The folder the running DLL was loaded from (auto-updated builds live next to the original).</summary>
         internal static string PluginDir
@@ -56,6 +58,8 @@ namespace YazsCompanion
             AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the screen says so). The older file is removed by the new build.");
             UpdateUrl = Config.Bind("Update", "UpdateUrl", DefaultUpdateUrl, "The latest.json of the release feed to check.");
             Screenshots = Config.Bind("Debug", "Screenshots", false, "Save PNGs of the game frame into BepInEx\\plugins\\YazsCompanion\\shots at the moments that matter for checking the UI: offers, picks, sidebar changes (0.3 / 1.5 / 3.5 s into the highlight), its show/hide, and one a minute during play. For validating a build; off by default, at most 90 per session.");
+            PreviewFlag = Config.Bind("Debug", "Preview", false, "Show the PLAN sidebar with sample data on the main menu about 5 s after launch (two survivors, then the change highlight after a pick, then a full squad, then the fade-out) and save a screenshot of each stage into the shots folder whatever the Screenshots setting. For checking the design without playing a run; off by default.");
+            PreviewResolution = Config.Bind("Debug", "PreviewResolution", "", "Screen to emulate in the preview captures, WIDTHxHEIGHT (3440x1440 for the PC look, 1280x800 for the Steam Deck look): the frames are rendered so the sidebar has the pixels it would have on that screen, whatever desktop the game runs on. Empty = as the game is running.");
 
             // BepInEx overwrites LogOutput.log on every launch; keep our own append-only copy next to the DLL.
             try { BepInEx.Logging.Logger.Listeners.Add(new FileListener(Path.Combine(PluginDir, "companion.log"))); }

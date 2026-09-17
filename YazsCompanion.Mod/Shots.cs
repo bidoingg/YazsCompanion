@@ -15,16 +15,22 @@ namespace YazsCompanion
         const int MaxPerSession = 90;
         const float MinGap = 0.25f;
         static readonly List<KeyValuePair<float, string>> _pending = new List<KeyValuePair<float, string>>();
+        static readonly HashSet<string> _forced = new HashSet<string>();
         static int _count;
         static float _lastShot = -10f, _nextBase;
         static string _dir;
+        /// <summary>Render scale of forced captures (the design preview emulating a bigger screen); 1 otherwise.</summary>
+        public static int SuperSize = 1;
 
         public static bool Enabled { get { try { return Plugin.Screenshots != null && Plugin.Screenshots.Value; } catch { return false; } } }
 
         /// <summary>Queue a capture <paramref name="seconds"/> from now, labelled.</summary>
-        public static void Later(float seconds, string label)
+        public static void Later(float seconds, string label) { Later(seconds, label, false); }
+        /// <summary>The same; <paramref name="force"/> captures even with the Screenshots setting off (the design preview).</summary>
+        public static void Later(float seconds, string label, bool force)
         {
-            if (!Enabled || _count >= MaxPerSession) return;
+            if ((!Enabled && !force) || _count >= MaxPerSession) return;
+            if (force) _forced.Add(label);
             _pending.Add(new KeyValuePair<float, string>(Time.realtimeSinceStartup + seconds, label));
         }
 
@@ -53,7 +59,8 @@ namespace YazsCompanion
                 {
                     if (_dir == null) { _dir = Path.Combine(Plugin.PluginDir, "shots"); Directory.CreateDirectory(_dir); }
                     string file = Path.Combine(_dir, DateTime.Now.ToString("HHmmss_fff") + "_" + p.Value + ".png");
-                    ScreenCapture.CaptureScreenshot(file, 1);
+                    int size = _forced.Contains(p.Value) ? Math.Max(1, SuperSize) : 1;
+                    ScreenCapture.CaptureScreenshot(file, size);
                     _lastShot = now; _count++;
                     Plugin.Logger.LogInfo("[shot] " + Path.GetFileName(file) + (_count >= MaxPerSession ? " (session cap reached)" : ""));
                 }
