@@ -475,8 +475,8 @@ ranked or logged:
   compiled, 28 ms interpreted; later passes 0.3 - 0.5 ms either way) - and `Warmup.cs` builds two throw-away plans
   on the main menu four seconds after it is up, on separate frames (an empty squad: the GRAB row scores every item,
   ~50 ms; then a stand-in survivor from the game's class data: weapon line, abilities, recruits, ~44 ms). Measured
-  with the first step alone: first plan 174 ms -> 70 ms (`plan.build` 133 -> 42 ms, `read` 30 -> 12 ms); the second
-  step ran cleanly on the menu but its effect on the first plan has not been measured yet.
+  with the first step alone: first plan 174 ms -> 70 ms (`plan.build` 133 -> 42 ms, `read` 30 -> 12 ms); with both
+  steps, on a real run: 31 ms.
 - **Small things**: one per-frame Harmony hook less (the fallback tick on `GameplayMaster.Update` now rides on the
   `GameMaster.Update` hook and only steps in when the HUD's own tick goes quiet), the gating flags are compared as a
   number and only put into words when they change, the gold highlight re-renders only the groups that hold a changed
@@ -498,7 +498,15 @@ of every offer, then pauses; one SWAT, so a late three-survivor squad will cost 
 | the two-second change poll (`refresh`) | a full snapshot each time | 0.17 ms (14 polls = 2.4 ms) |
 | after a pick, back in play: `[panel] shown` -> `[plan]` | 4 - 5 ms (three survivors, from the log) | 2 ms: the plan was built while paused (`plan.ahead` 2.2 ms) |
 | first offer of a session, ranked while paused (`offer`) | not measured | 27 ms |
-| first plan of a session | 170 - 190 ms | 70 ms with the item warm-up; the squad warm-up not yet measured |
+| first plan of a session | 170 - 190 ms | 70 ms with the item warm-up alone; 31 ms with both steps (the real run below) |
+
+And from a real run on the same PC the same day (Normal, 19:49 on the clock, three survivors at the end, 74 offers of
+all five kinds, 110 minutes of session, 394,589 frames, no warnings): `tick.hud` 0.0081 ms a frame on average
+(3.1 s in all), `tick.master` 0.0087 ms; 622 change polls at 0.21 ms; 70 of the 74 plans came from `plan.ahead`
+while the game was paused (2.2 ms on average, worst 52 ms), only 4 were built in play (`plan.build` 4.9 ms on
+average); `[panel] shown` -> `[plan]` after a pick: 1 ms median over 53 picks (worst 8 ms); an offer ranked in
+5.2 ms on average (worst 25 ms, paused). The worst single frame in play was 57 ms: the readout being created anew
+after the mod menu had been used from the pause menu (it searches every label in the scene for one to clone).
 
 Quick Run sometimes starts the run after the team leader screen and sometimes opens the whole run-setup wizard
 (arena, mode, setup); the walk does not click through those - their choices are saved to the profile - and gives
