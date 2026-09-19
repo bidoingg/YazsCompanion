@@ -4,6 +4,11 @@
 // band under the tree: SPEND (what to buy now, in order), THEN (what to save for, what follows) and WHY (the reason
 // for the node under the cursor when it is part of the advice, else for the first purchase).
 //
+// Motion (Fx.cs): on a tab change the rule draws itself from the left, the strip types on and the diamonds stamp in
+// one after the other (big to small with a half turn, then a ping); the first purchase keeps breathing with a ping
+// every few seconds, the node to save for glows slowly, a glint runs along the rule now and then. After a purchase
+// only the diamonds that changed stamp again.
+//
 // Ticked from UIViewSkillTree.Update; the advice is recomputed only when the tab, the points or a node level changes
 // (a cheap signature). Read-only: it never buys anything. Markers are children of the game's node objects and the
 // strip is a child of the view, so they show, hide and die with them.
@@ -14,6 +19,7 @@ using System.Text;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 namespace YazsCompanion
@@ -30,11 +36,13 @@ namespace YazsCompanion
         const float MinTextPx = 15f;
         const int MaxNow = 4;
 
-        sealed class Mark { public RectTransform Root, Fill; public TextMeshProUGUI Text; }
+        sealed class Mark { public RectTransform Root, Fill, Turn, Ring; public CanvasGroup Group, RingGroup; public TextMeshProUGUI Text; public string Label; public float Size; }
 
         static readonly Dictionary<IntPtr, Mark> _marks = new Dictionary<IntPtr, Mark>();
-        static RectTransform _strip; static TextMeshProUGUI _text;
-        static IntPtr _viewPtr;
+        static RectTransform _strip, _rule, _tip, _glint; static Image _glintImage; static TextMeshProUGUI _text;
+        static IntPtr _viewPtr, _containerPtr;
+        static bool _fresh;                            // the tab changed (or the view opened): everything makes its entrance
+        static string _typed = "";
         static float _next, _width = StripSpan, _scale = 1f, _room;
         static string _sig = "", _sep = "  ·  ", _dash = " — ";
         static List<TNode> _nodes; static TAdvice _advice; static List<TStep> _steps;
@@ -49,13 +57,14 @@ namespace YazsCompanion
             try
             {
                 float now = Time.realtimeSinceStartup;
-                if (now < _next) return;
-                _next = now + 0.25f;
-                if (!Enabled) { HideAll(); return; }
-                if (view.Pointer != _viewPtr) { _viewPtr = view.Pointer; _strip = null; _text = null; _marks.Clear(); _sig = ""; }
-
                 var container = view.currentContainer;
                 if (container == null) return;
+                bool tabChanged = container.Pointer != _containerPtr;
+                if (now < _next && !tabChanged) return;
+                _next = now + 0.25f;
+                if (!Enabled) { HideAll(); return; }
+                if (view.Pointer != _viewPtr) { _viewPtr = view.Pointer; _strip = null; _text = null; _rule = null; _tip = null; _glint = null; _marks.Clear(); _sig = ""; Fx.Cancel("yard"); }
+                if (tabChanged) { _containerPtr = container.Pointer; _fresh = true; _sig = ""; }
                 bool isTeam = false; try { var g = view.containerTabGeneral; isTeam = g != null && g.Pointer == container.Pointer; } catch { }
                 string tree;
                 var nodes = TreeState.Read(container, isTeam, out tree);
@@ -74,7 +83,8 @@ namespace YazsCompanion
                 if (Plugin.Verbose.Value || !_logged) { _logged = true; Plugin.Logger.LogInfo("[yard] nodes of " + tree + ":" + TreeState.Describe(nodes)); }
 
                 DrawMarks();
-                if (EnsureStrip(view)) { Place(view); Fit(); }
+                if (EnsureStrip(view)) { Place(view); Fit(); Entrance(); }
+                _fresh = false;
                 Shots.Later(0.4f, "yard");
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[yard] " + e); _next = Time.realtimeSinceStartup + 5f; }
@@ -99,32 +109,74 @@ namespace YazsCompanion
         static void HideAll()
         {
             try { if (Alive()) _strip.gameObject.SetActive(false); } catch { }
-            foreach (var m in _marks.Values) { try { m.Root.gameObject.SetActive(false); } catch { } }
-            _sig = "";
+            foreach (var m in _marks.Values) { try { m.Root.gameObject.SetActive(false); m.Label = null; } catch { } }
+            Fx.Cancel("yard");
+            _sig = ""; _containerPtr = IntPtr.Zero;
         }
 
         // ---- the markers on the nodes ----
         static void DrawMarks()
         {
-            foreach (var m in _marks.Values) { try { m.Root.gameObject.SetActive(false); } catch { } }
+            var wanted = new Dictionary<IntPtr, string>();
+            if (_advice != null)
+            {
+                foreach (var b in _advice.Now) { var ui = b.Node.Ui as UISkillTreeNode; if (ui != null) wanted[ui.Pointer] = b.Order.ToString(); }
+                if (_advice.SaveFor != null && !_advice.Now.Any(b => b.Node == _advice.SaveFor.Node)) { var ui = _advice.SaveFor.Node.Ui as UISkillTreeNode; if (ui != null) wanted[ui.Pointer] = ""; }
+            }
+            foreach (var kv in _marks)
+            {
+                if (wanted.ContainsKey(kv.Key)) continue;
+                try { kv.Value.Root.gameObject.SetActive(false); kv.Value.Label = null; } catch { }
+                Fx.Cancel("yardmark:" + kv.Key);
+            }
             if (_advice == null) return;
-            foreach (var b in _advice.Now) Show(b.Node, b.Order.ToString(), true);
-            if (_advice.SaveFor != null && !_advice.Now.Any(b => b.Node == _advice.SaveFor.Node)) Show(_advice.SaveFor.Node, "", false);
+            int i = 0;
+            foreach (var b in _advice.Now) Show(b.Node, b.Order.ToString(), true, i++);
+            if (_advice.SaveFor != null && !_advice.Now.Any(b => b.Node == _advice.SaveFor.Node)) Show(_advice.SaveFor.Node, "", false, i);
         }
 
-        static void Show(TNode n, string label, bool solid)
+        static void Show(TNode n, string label, bool solid, int index)
         {
             var ui = n.Ui as UISkillTreeNode; if (ui == null) return;
             try
             {
                 Mark m;
                 if (!_marks.TryGetValue(ui.Pointer, out m) || !MarkAlive(m)) { m = Build(ui); if (m == null) return; _marks[ui.Pointer] = m; }
+                bool same = !_fresh && m.Label == label && m.Root.gameObject.activeSelf;
                 m.Fill.gameObject.SetActive(!solid);
                 if (m.Text != null) m.Text.text = label;
+                m.Label = label;
                 m.Root.gameObject.SetActive(true);
                 m.Root.SetAsLastSibling();
+                if (!same) Stamp(m, "yardmark:" + ui.Pointer, index, solid && label == "1", !solid);
             }
             catch (Exception e) { Plugin.Logger.LogInfo("[yard] marker on " + n.Key + ": " + e.Message); }
+        }
+
+        // big to small with a half turn and an overshoot, a ping as it lands; then the first purchase breathes and pings
+        // every few seconds, the node to save for glows slowly, the others rest
+        static void Stamp(Mark m, string key, int index, bool first, bool hollow)
+        {
+            Fx.Cancel(key);
+            var root = m.Root; var turn = m.Turn; var group = m.Group; var ring = m.Ring; var ringGroup = m.RingGroup;
+            if (!Fx.On) { root.localScale = Vector3.one; if (group != null) group.alpha = 1f; if (turn != null) turn.localRotation = Quaternion.identity; if (ringGroup != null) ringGroup.alpha = 0f; return; }
+            Fx.Run(key + ":in", 0.10f + 0.085f * index, 0.36f, k =>
+            {
+                float s = Mathf.LerpUnclamped(2.3f, 1f, Fx.OutBack(k));
+                root.localScale = new Vector3(s, s, 1f);
+                if (group != null) group.alpha = Mathf.Clamp01(k * 3.5f);
+                if (turn != null) turn.localRotation = Quaternion.Euler(0, 0, 180f * (1f - Fx.OutCubic(k)));
+            }, () =>
+            {
+                if (ring != null) Fx.Run(key + ":ping", 0f, 0.55f, k => Fx.PingPose(ring, ringGroup, k, 2.5f));
+                if (first) Fx.Loop(key + ":idle", 2.8f, k =>
+                {
+                    float s = 1f + 0.055f * Mathf.Sin(k * Mathf.PI * 2f);
+                    root.localScale = new Vector3(s, s, 1f);
+                    if (ring != null && k > 0.45f) Fx.PingPose(ring, ringGroup, (k - 0.45f) / 0.24f > 1f ? 1f : (k - 0.45f) / 0.24f, 2.3f);
+                });
+                else if (hollow && group != null) Fx.Loop(key + ":idle", 2.4f, k => { group.alpha = 0.74f + 0.26f * Mathf.Cos(k * Mathf.PI * 2f); });
+            });
         }
 
         static bool MarkAlive(Mark m) { try { return m != null && m.Root != null && m.Root.gameObject != null; } catch { return false; } }
@@ -138,9 +190,13 @@ namespace YazsCompanion
             var root = Ui.NewRect(MarkName, nodeRt);
             root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(0.5f, 0.5f);
             root.anchoredPosition = new Vector2(-size * 0.18f, -size * 0.18f); root.sizeDelta = new Vector2(size, size);
-            Ui.Diamond(root, "Edge", 0.5f, 0.5f, size + 8f, new Color(0.04f, 0.035f, 0.03f, 0.95f));     // a dark rim keeps it readable on bright icons
-            Ui.Diamond(root, "Gold", 0.5f, 0.5f, size, Theme.Gold);
-            var fill = Ui.Diamond(root, "Hollow", 0.5f, 0.5f, size - 12f, new Color(0.05f, 0.045f, 0.04f, 1f));
+            CanvasGroup group = null, ringGroup = null; RectTransform ring = null;
+            try { group = root.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); group.blocksRaycasts = false; group.interactable = false; } catch { }
+            try { ring = Fx.Ring(root, size, 4f, Theme.Gold, true, out ringGroup); } catch { }
+            var turn = Ui.NewRect("Turn", root); Ui.Stretch(turn, 0, 0, 0, 0);                              // the diamonds turn, the number stays upright
+            Ui.Diamond(turn, "Edge", 0.5f, 0.5f, size + 8f, new Color(0.04f, 0.035f, 0.03f, 0.95f));     // a dark rim keeps it readable on bright icons
+            Ui.Diamond(turn, "Gold", 0.5f, 0.5f, size, Theme.Gold);
+            var fill = Ui.Diamond(turn, "Hollow", 0.5f, 0.5f, size - 12f, new Color(0.05f, 0.045f, 0.04f, 1f));
             TextMeshProUGUI text = null;
             TextMeshProUGUI template = null; try { template = ui.levelText; } catch { }
             if (template == null) template = _text;
@@ -154,7 +210,7 @@ namespace YazsCompanion
                     text.color = new Color(0.07f, 0.055f, 0.03f, 1f);
                 }
             }
-            return new Mark { Root = root, Fill = fill, Text = text };
+            return new Mark { Root = root, Fill = fill, Text = text, Turn = turn, Ring = ring, Group = group, RingGroup = ringGroup, Size = size };
         }
 
         // ---- the strip under the tree ----
@@ -173,9 +229,12 @@ namespace YazsCompanion
             var head = Ui.NewRect("Header", root);
             head.anchorMin = new Vector2(0, 1); head.anchorMax = new Vector2(1, 1); head.pivot = new Vector2(0.5f, 1f);
             head.anchoredPosition = Vector2.zero; head.sizeDelta = new Vector2(0, HeadH);
-            var rule = Ui.FadeRule(head, "Rule", Theme.GoldLine); rule.anchorMin = new Vector2(0, 0.5f); rule.anchorMax = new Vector2(1, 0.5f); rule.pivot = new Vector2(0.5f, 0.5f);
-            rule.anchoredPosition = Vector2.zero; rule.sizeDelta = new Vector2(0, HeadRule);
-            Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold).anchoredPosition = new Vector2(HeadDiamond / 2, 0f);
+            var rule = Ui.FadeRule(head, "Rule", Theme.GoldLine); Ui.LeftPivot(rule, 0.5f, HeadRule);
+            var glint = Ui.Image(head, "Glint", new Color(1f, 0.95f, 0.75f, 0f));
+            glint.anchorMin = glint.anchorMax = new Vector2(0, 0.5f); glint.pivot = new Vector2(0.5f, 0.5f); glint.sizeDelta = new Vector2(260f, HeadRule * 3f);
+            try { var gi = glint.GetComponent<Image>(); var sp = Ui.GlowSprite(); if (sp != null) gi.sprite = sp; _glintImage = gi; } catch { }
+            var tip = Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold); tip.anchoredPosition = new Vector2(HeadDiamond / 2, 0f);
+            _rule = rule; _tip = tip; _glint = glint;
 
             var text = Ui.CloneText(template, root, "Text");
             if (text == null) { UnityEngine.Object.Destroy(root.gameObject); return false; }
@@ -233,6 +292,35 @@ namespace YazsCompanion
             _strip.localPosition = new Vector3(minX, minY - GapUnderNodes, 0f);
             Plugin.Logger.LogInfo("[yard] strip at (" + minX.ToString("0") + ", " + (minY - GapUnderNodes).ToString("0") + ") x" + scale.ToString("0.00") + "; nodes span x " + minX.ToString("0") + ".." + maxX.ToString("0")
                 + ", lowest y " + minY.ToString("0") + ", node height " + nodeH.ToString("0") + "; view rect " + viewRt.rect.width.ToString("0") + "x" + viewRt.rect.height.ToString("0"));
+        }
+
+        // the strip's entrance on a tab change: the rule draws, its diamond spins in, the rows type on; after a purchase
+        // (same tab) only the rows type again, and only when SPEND / THEN changed (the WHY row follows the cursor silently)
+        static void Entrance()
+        {
+            try
+            {
+                string text = _text.text ?? "";
+                int why = text.LastIndexOf("WHY", StringComparison.Ordinal);
+                string head = why > 0 ? text.Substring(0, why) : text;
+                if (_fresh)
+                {
+                    Fx.Draw("yardrule", _rule, 0f, 0.45f);
+                    Fx.Spin("yardtip", _tip, 0f, 0.5f, 0.5f);
+                    Fx.Cancel("yardglint");
+                    var glint = _glint; var image = _glintImage;
+                    if (glint != null && image != null) Fx.Loop("yardglint", 6f, k =>
+                    {
+                        float kk = (k - 0.5f) / 0.13f;                       // one pass every six seconds
+                        if (kk < 0f || kk > 1f) { if (image.color.a > 0f) image.color = new Color(1f, 0.95f, 0.75f, 0f); return; }
+                        glint.anchoredPosition = new Vector2(_width * 0.7f * kk, 0f);
+                        image.color = new Color(1f, 0.95f, 0.75f, 0.85f * Mathf.Sin(kk * Mathf.PI));
+                    });
+                }
+                if (_fresh || head != _typed) Fx.Type("yardtype", _text, _fresh ? 0.12f : 0f, 240f);
+                _typed = head;
+            }
+            catch { }
         }
 
         static float _auto = 1f;

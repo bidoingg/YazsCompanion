@@ -41,6 +41,7 @@ namespace YazsCompanion
 
                 var ribbon = Ribbon(root, c.Button, s);
                 if (ribbon != null) ribbon.gameObject.SetActive(best);
+                if (best) Entrance(frame, ribbon, "badge:" + c.Button.Pointer);
 
                 var reason = Reason(root, c.Button, s);
                 if (reason != null)
@@ -52,6 +53,33 @@ namespace YazsCompanion
                 }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[badge] " + e.Message); }
+        }
+
+        // the offer appears: the gold frame settles onto the card, the ribbon unfolds from its middle, its tips ping
+        static void Entrance(RectTransform frame, RectTransform ribbon, string key)
+        {
+            try
+            {
+                Fx.Cancel(key);
+                CanvasGroup group = null;
+                try { group = frame.GetComponent<CanvasGroup>(); if (group == null) { group = frame.gameObject.AddComponent(Il2CppInterop.Runtime.Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); group.blocksRaycasts = false; group.interactable = false; } } catch { }
+                Fx.Run(key + ":frame", 0.12f, 0.45f, k =>
+                {
+                    float s = 1f + 0.05f * (1f - Fx.OutCubic(k));
+                    frame.localScale = new Vector3(s, s, 1f);
+                    if (group != null) group.alpha = Fx.Smooth(k * 1.6f);
+                });
+                if (ribbon == null) return;
+                Fx.Run(key + ":ribbon", 0.32f, 0.4f, k => { ribbon.localScale = new Vector3(Mathf.Max(0.0001f, Fx.OutBack(k)), 1f, 1f); }, () =>
+                {
+                    foreach (var name in new[] { "TipL", "TipR" })
+                    {
+                        var tip = ribbon.Find(name); var rt = tip == null ? null : tip.TryCast<RectTransform>();
+                        if (rt != null) Fx.Ping(key + ":" + name, rt, RibbonTip * 1.45f, 4f, Theme.Gold, false, 0f, 0.6f, 2.6f, false);
+                    }
+                });
+            }
+            catch { }
         }
 
         public static void Hide(UIPowerupButtonBase b)

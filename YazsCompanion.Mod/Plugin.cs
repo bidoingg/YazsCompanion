@@ -17,13 +17,14 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.8.0";
+        public const string VERSION = "0.9.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> ShowBadges;
         internal static ConfigEntry<bool> ShowPanel;
         internal static ConfigEntry<bool> ShowYard;
+        internal static ConfigEntry<bool> Motion;
         internal static ConfigEntry<PanelPlace> PanelPosition;
         internal static ConfigEntry<PanelDetailLevel> PanelDetail;
         internal static ConfigEntry<float> PanelOpacity;
@@ -60,6 +61,7 @@ namespace YazsCompanion
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
             ShowYard = Config.Bind("General", "ShowYard", true, "Training Yard advice: number the nodes worth buying with the points on hand (gold diamonds, in purchase order), ring the node to save for next, and print a PLAN strip under the tree (SPEND / THEN / WHY). Read-only: it never buys anything.");
+            Motion = Config.Bind("General", "Motion", true, "Animate what the mod draws: Training Yard diamonds stamp in and the next purchase pings, rules draw themselves, the strip types on, the RECOMMENDED ribbon unfolds, the PLAN readout slides in and its title diamond spins when the advice changes. During play nothing loops. false = everything appears in place.");
             PanelPosition = Config.Bind("General", "PanelPosition", PanelPlace.BottomLeft, "Where the PLAN readout sits during play. BottomLeft = the empty corner under the weapon and ability icons (PanelLeft / PanelBottom); Right = the right edge between the item icons and the minimap (PanelRight / PanelTop), where it was up to 0.6.0.");
             PanelDetail = Config.Bind("General", "PanelDetail", PanelDetailLevel.Compact, "Compact = one row per survivor with only what to pick next (the weapon level to finish or the next tier, the ability to evolve, feed or take), then TAGS / SOS / GRAB cut short. Full = two rows per survivor with the next steps and the evolution names.");
             PanelOpacity = Config.Bind("General", "PanelOpacity", 0.42f, "Darkness of the soft backing under the PLAN text, 0 (none) to 1 (black). The backing dissolves towards the middle of the screen and has no frame, so the surroundings stay visible.");

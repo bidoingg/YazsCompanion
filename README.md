@@ -6,7 +6,10 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-18): **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
+Status (2026-09-18): **0.9.0 (built, NOT released yet) — the motion pass**, see "Motion" below: verified frame by
+frame on the Training Yard and for the PLAN readout's change cue; the readout's entrance after the last timing fix
+and the card badges' entrance still have to be seen once before the release (the game was running on the Steam Deck,
+which blocks PC launches). **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
 buying with the points on hand (gold diamonds, in purchase order), rings the node to save for next, and prints a
 SPEND / THEN / WHY strip under the tree; see "Training Yard advice" below. Checked on all nine tabs at 3440x1440
 and in a real 1280x800 window (the Steam Deck's layout and pixels) by a preview walk that opens the Training Yard
@@ -145,6 +148,30 @@ and, where the band is short (the Deck letterboxes this 16:9 view), shrinks to 1
 saves `yard1_general` .. `yard9_mechanic` and `yard10_highlight` (the cursor moved onto a node) into the shots
 folder and goes back. With `PreviewResolution = 1280x800` the walk runs in a window of that size - the real Deck
 layout and pixels - and restores the display mode afterwards (`[preview] yard: display back to ...`).
+
+## Motion (0.9.0)
+
+`Fx.cs` is a small tween runner (ticked once per frame from `GameMaster.Update`, `UIGameplay.Update` and
+`UIViewSkillTree.Update`; every tween has its own clock advanced by the frame time capped at 50 ms, so a hitch delays
+an entrance instead of swallowing it; unscaled, so it runs on paused selection screens) plus effects made from the
+game's own vocabulary:
+
+- **Training Yard:** on a tab change the gold rule draws itself from the left and its diamond spins in, the SPEND /
+  THEN / WHY rows type on (TMP `maxVisibleCharacters`, 240 characters a second), and the order diamonds stamp in one
+  after the other - 2.3x to 1x with an overshoot and a half turn (the number stays upright), then a **ping**: a
+  hollow gold diamond that expands and fades like a sonar ring. Diamond 1 keeps breathing and pings every 2.8 s,
+  the hollow "save for" diamond glows slowly, a glint runs along the rule every 6 s. After a purchase only the
+  diamonds that changed stamp again, and the rows type again only when SPEND / THEN changed.
+- **PLAN readout (during play): only when it matters.** On appearing, the rule draws, the title diamond spins in
+  and the groups slide in from the screen edge (0.3 s, staggered); when the advice changes, the title diamond spins
+  and pings once while the changed values do their gold-to-white fade. Nothing loops over the field.
+- **Cards:** the gold frame settles onto the recommended card (fade + 5 % scale), the RECOMMENDED ribbon unfolds
+  from its middle with an overshoot, and its two diamond tips ping.
+
+Fail-safes: with `Motion = false`, or when no tween clock has ticked in the last half second, every element is put
+straight into its end pose (nothing can wait, hidden, for a tween that will not run); a step that throws ends its
+tween in the end pose. The previews capture the entrances frame by frame (`fxyard0..7`, `fxplan0..4`,
+`fxpulse0..3`; captures whose label starts with `fx` may be 50 ms apart).
 
 ## What you see in the game
 
@@ -369,6 +396,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Knowledge.cs                  guide-derived tiers; writes/reads plugins\YazsCompanion\knowledge.json
     ItemRules.cs                  item keyword table and the pure item score (squad fit by damage type)
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
+    Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
     Plan.cs                       the run plan, Compact or Full (keyed rows with label / value / group; sample plans for the preview)

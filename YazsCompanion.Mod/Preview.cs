@@ -116,6 +116,8 @@ namespace YazsCompanion
                 {
                     // the game's own tab change (what LB / RB do, a step of +1): it refreshes the levels, locks and points
                     if (tab > 0) view.ChangeTabIdx(1);
+                    if (YardOrder[tab] == "pyro")   // the entrance, frame by frame: the rule draws, the rows type on, the diamonds stamp in and ping
+                        for (int f = 0; f < 8; f++) Shots.Later(0.06f + 0.11f * f, "fxyard" + f, true);
                     Shots.Later(1.3f, "yard" + (tab + 1) + "_" + YardOrder[tab], true);
                     _yardAt = now + 1.9f; _yardStage++; return;
                 }
@@ -167,12 +169,14 @@ namespace YazsCompanion
                             Panel.CheckGlyphs(template);   // before the sample plans, so they use the glyphs the font has
                             if (!Panel.PreviewBuild(canvas, template, Plan.Sample(0, true), scaleOverride, _posScale, _bgH)) { Plugin.Logger.LogWarning("[preview] readout could not be built"); Finish(); return; }
                             Plugin.Logger.LogInfo("[preview] compact, two survivors, cloned label '" + template.name + "'");
+                            for (int f = 0; f < 5; f++) Shots.Later(0.08f + 0.09f * f, "fxplan" + f, true);     // the entrance, frame by frame
                             Shots.Later(1.0f, "preview_a", true);
                             _at = now + 2.5f; _stage = 2; break;
                         }
                     case 2:
                         Panel.PreviewApply(Plan.Sample(1, true));    // the weapon maxed and tags up: two changed lines highlighted
                         Plugin.Logger.LogInfo("[preview] change highlight");
+                        for (int f = 0; f < 4; f++) Shots.Later(0.12f + 0.12f * f, "fxpulse" + f, true);      // the title diamond spins and pings
                         Shots.Later(0.35f, "preview_hl1", true); Shots.Later(1.5f, "preview_hl2", true); Shots.Later(3.6f, "preview_hl3", true);
                         _at = now + 4.2f; _stage = 3; break;
                     case 3:

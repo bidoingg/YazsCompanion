@@ -4,7 +4,9 @@
 // screen and has no frame, so the surroundings stay readable (0.6.0's framed, nearly opaque 800-unit panel hid too
 // much of the field). It sits in the empty bottom-left corner under the weapon and ability icons by default (the
 // right edge between the items and the minimap is still available), is only as wide as its text, fades in and out,
-// and dims to PanelIdle when nothing has changed for a few seconds. Compact detail (the default) is one row per
+// and dims to PanelIdle when nothing has changed for a few seconds. Motion (Fx.cs) only when it matters: on
+// appearing the rule draws itself, the title diamond spins in and the groups slide in from the edge; when the advice
+// changes the diamond spins and pings once. Nothing loops over the field. Compact detail (the default) is one row per
 // survivor; Full keeps two rows per survivor with a hairline between the groups.
 //
 // Ticked from the HUD's own Update (UIGameplay, the object that owns the gameplay canvas) and, as a
@@ -66,7 +68,8 @@ namespace YazsCompanion
             public readonly List<PlanLine> Rows = new List<PlanLine>();
         }
 
-        static RectTransform _root, _content, _head;
+        static RectTransform _root, _content, _head, _rule, _tip;
+        static bool _intro;                           // just became visible: play the entrance on the next frame (the groups exist by then)
         static CanvasGroup _fade;
         static bool _flip, _compact = true;           // at the right edge (backing dissolves to the left); one row per survivor
         static float _margin = 1f;                    // 1 live; the preview's screen emulation scales the margins
@@ -96,7 +99,7 @@ namespace YazsCompanion
         public static void Reset() { Forget(); _screen = null; _hud = null; _gates = ""; }
         static void Forget()
         {
-            _root = null; _content = null; _head = null; _fade = null; _template = null; _groups.Clear(); _rules.Clear();
+            _root = null; _content = null; _head = null; _rule = null; _tip = null; _intro = false; Fx.Cancel("plan"); _fade = null; _template = null; _groups.Clear(); _rules.Clear();
             _sig = ""; _stateKey = ""; _visible = false; _alpha = 0f; _target = 0f; _level = 1f; _awakeUntil = 0f;
             _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f;
         }
@@ -166,6 +169,7 @@ namespace YazsCompanion
             float dt = _lastFrame > 0 ? Mathf.Clamp(now - _lastFrame, 0f, 0.1f) : 0f;
             _lastFrame = now;
             Fade(dt);
+            if (_intro && _root != null) { _intro = false; Intro(); }
             if (_hlStart > 0 && _target > 0 && now >= _nextFade) { _nextFade = now + 0.033f; Render(now); }   // the gold ramp, ~30 fps
         }
 
@@ -177,6 +181,36 @@ namespace YazsCompanion
             return s.Squad.Count + "|" + s.SquadText() + "|" + quest + "|" + s.Tags.Key();
         }
 
+        // ---- motion: the entrance, and the cue that the advice changed ----
+        static void Intro()
+        {
+            try
+            {
+                Fx.Draw("planrule", _rule, 0.05f, 0.4f);
+                Fx.Spin("plantip", _tip, 0f, 0.45f, 0.5f);
+                float from = _flip ? 30f : -30f; int i = 0;
+                foreach (var g in _groups)
+                {
+                    if (g.Rows.Count == 0 || g.Block == null) continue;
+                    var block = g.Block;
+                    Fx.Run("plangroup" + i, 0.06f + 0.07f * i, 0.32f, k => { block.anchoredPosition = new Vector2(from * (1f - Fx.OutCubic(k)), block.anchoredPosition.y); });
+                    i++;
+                }
+            }
+            catch { }
+        }
+
+        static void Pulse()
+        {
+            try
+            {
+                if (_tip == null) return;
+                Fx.Spin("plantip", _tip, 0f, 0.5f, 0.5f);
+                Fx.Ping("planping", _tip, HeadDiamond * 1.4f, 3f, Theme.Gold, false, 0.1f, 0.6f, 3.2f, false);
+            }
+            catch { }
+        }
+
         // ---- visibility: a short fade each way; the object is deactivated only once fully transparent ----
         static void SetVisible(bool v)
         {
@@ -186,7 +220,7 @@ namespace YazsCompanion
                 _visible = v; _target = v ? 1f : 0f;
                 if (v)
                 {
-                    if (!_root.gameObject.activeSelf) { _alpha = 0f; if (_fade != null) _fade.alpha = 0f; }
+                    if (!_root.gameObject.activeSelf) { _alpha = 0f; if (_fade != null) _fade.alpha = 0f; _intro = true; }
                     _root.gameObject.SetActive(true);
                     Wake(4f);
                 }
@@ -298,11 +332,11 @@ namespace YazsCompanion
             var head = Ui.NewRect("Header", root);
             head.anchorMin = head.anchorMax = new Vector2(0, 1); head.pivot = new Vector2(0, 1f);
             head.anchoredPosition = new Vector2(PadSide, -PadTop); head.sizeDelta = new Vector2(MaxWidth - 2 * PadSide, HeadH);
-            var rule = Ui.FadeRule(head, "Rule", Theme.GoldLine); rule.anchorMin = new Vector2(0, 0); rule.anchorMax = new Vector2(1, 0); rule.pivot = new Vector2(0.5f, 0);
-            rule.anchoredPosition = Vector2.zero; rule.sizeDelta = new Vector2(0, HeadRule);
-            Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold).anchoredPosition = new Vector2(HeadDiamond / 2, 2f);
+            var rule = Ui.FadeRule(head, "Rule", Theme.GoldLine); Ui.LeftPivot(rule, 0f, HeadRule);
+            var tip = Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold); tip.anchoredPosition = new Vector2(HeadDiamond / 2, 2f);
             var title = Ui.CloneText(template, head, "Title");
             if (title == null) { UnityEngine.Object.Destroy(root.gameObject); return false; }
+            _rule = rule; _tip = tip;
             Ui.Stretch(title.rectTransform, HeadDiamond + 12f, HeadRule + 1f, 0, 0);
             title.text = "PLAN"; title.color = Theme.GoldText; title.fontSize = TitleSize; title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Left; title.characterSpacing = 8f;
@@ -399,6 +433,7 @@ namespace YazsCompanion
             float hlSeconds = 3f; try { hlSeconds = Plugin.PanelHighlight.Value; } catch { }
             _hlStart = _changed.Count > 0 && hlSeconds > 0 ? now : -100f;
             Wake(_changed.Count > 0 ? Mathf.Max(6f, hlSeconds + 3f) : 5f);   // new advice is shown at full strength, then settles
+            if (_changed.Count > 0 && !_intro) Pulse();
             Render(now);
             Layout();
         }

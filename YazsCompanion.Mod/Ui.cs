@@ -185,6 +185,33 @@ namespace YazsCompanion
             return s;
         }
 
+        /// <summary>Make a full-width rule of height <paramref name="h"/> at the vertical anchor <paramref name="ay"/> of its
+        /// parent scale from its left end (so it can draw itself in); the rect stays where it was.</summary>
+        public static void LeftPivot(RectTransform rule, float ay, float h)
+        {
+            rule.anchorMin = new Vector2(0, ay); rule.anchorMax = new Vector2(1, ay); rule.pivot = new Vector2(0f, ay);
+            rule.offsetMin = new Vector2(0, -h * ay); rule.offsetMax = new Vector2(0, h * (1f - ay));
+        }
+
+        static Sprite _glow;
+        /// <summary>A white sprite with a soft bell of alpha from left to right: the glint that runs along a gold line.</summary>
+        public static Sprite GlowSprite()
+        {
+            try { if (_glow != null && _glow.texture != null) return _glow; } catch { _glow = null; }
+            try
+            {
+                const int W = 32;
+                var tex = new Texture2D(W, 1, TextureFormat.RGBA32, false);
+                tex.wrapMode = TextureWrapMode.Clamp; tex.filterMode = FilterMode.Bilinear; tex.hideFlags = HideFlags.HideAndDontSave;
+                for (int x = 0; x < W; x++) { float u = (float)x / (W - 1) * 2f - 1f; float a = Mathf.Clamp01(1f - u * u); tex.SetPixel(x, 0, new Color(1f, 1f, 1f, a * a)); }
+                tex.Apply();
+                _glow = Sprite.Create(tex, new Rect(0, 0, W, 1), new Vector2(0.5f, 0.5f));
+                _glow.hideFlags = HideFlags.HideAndDontSave;
+                return _glow;
+            }
+            catch { return null; }
+        }
+
         /// <summary>A hairline that is solid on the left and fades out to the right (the rule under a HUD title).</summary>
         public static RectTransform FadeRule(RectTransform parent, string name, Color color)
         {

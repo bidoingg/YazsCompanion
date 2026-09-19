@@ -54,7 +54,8 @@ namespace YazsCompanion
                 var p = _pending[i];
                 if (now < p.Key) continue;
                 _pending.RemoveAt(i);
-                if (now - _lastShot < MinGap) { _pending.Add(new KeyValuePair<float, string>(_lastShot + MinGap, p.Value)); return; }
+                float gap = p.Value.StartsWith("fx") ? 0.05f : MinGap;      // animation frames of the previews
+                if (now - _lastShot < gap) { _pending.Add(new KeyValuePair<float, string>(_lastShot + gap, p.Value)); return; }
                 try
                 {
                     if (_dir == null) { _dir = Path.Combine(Plugin.PluginDir, "shots"); Directory.CreateDirectory(_dir); }
