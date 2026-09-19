@@ -19,7 +19,8 @@ namespace YazsCompanion
         public static readonly Color Body = new Color(0.035f, 0.032f, 0.03f, 0.84f);      // panel body (flat fallback)
         public static readonly Color BodyTop = new Color(0.055f, 0.05f, 0.045f, 0.92f);   // panel body gradient, top
         public static readonly Color BodyBottom = new Color(0.025f, 0.023f, 0.022f, 0.85f);
-        public static readonly Color Plate = new Color(0.05f, 0.045f, 0.04f, 0.94f);      // ribbon and strip plates
+        public static readonly Color Scrim = new Color(0.02f, 0.018f, 0.016f, 1f);        // the PLAN readout's soft backing (alpha from the config)
+        public static readonly Color Plate =new Color(0.05f, 0.045f, 0.04f, 0.94f);      // ribbon and strip plates
         public static readonly Color Band = new Color(1f, 1f, 1f, 0.045f);               // header band tint over the body
         public static readonly Color White = new Color(0.93f, 0.93f, 0.93f, 1f);
         public static readonly Color Grey = new Color(0.66f, 0.66f, 0.66f, 1f);
@@ -118,6 +119,76 @@ namespace YazsCompanion
                 return sprite;
             }
             catch (Exception e) { Plugin.Logger.LogInfo("[ui] gradient unavailable (" + e.Message + "), flat body"); return null; }
+        }
+
+        static readonly Sprite[] _fades = new Sprite[3];
+        /// <summary>A white sprite whose alpha is solid on the left and eases out to nothing on the right (the last 45 %),
+        /// for backings that dissolve into the game instead of ending in an edge; tint it with Image.color. Kind 0 = the
+        /// ramp alone, 1 = the ramp feathered out towards its top edge, 2 = towards its bottom edge. Null when the
+        /// texture API is unavailable.</summary>
+        public static Sprite FadeSprite(int kind)
+        {
+            try { if (_fades[kind] != null && _fades[kind].texture != null) return _fades[kind]; } catch { _fades[kind] = null; }
+            try
+            {
+                const int W = 64, H = 16;
+                int h = kind == 0 ? 1 : H;
+                var tex = new Texture2D(W, h, TextureFormat.RGBA32, false);
+                tex.wrapMode = TextureWrapMode.Clamp; tex.filterMode = FilterMode.Bilinear;
+                tex.hideFlags = HideFlags.HideAndDontSave;
+                for (int x = 0; x < W; x++)
+                {
+                    float u = (float)x / (W - 1);
+                    float k = Mathf.Clamp01((u - 0.55f) / 0.45f);
+                    float ax = 1f - k * k * (3f - 2f * k);
+                    for (int y = 0; y < h; y++)
+                    {
+                        float v = h == 1 ? 1f : (float)y / (h - 1);             // y = 0 is the bottom row
+                        float ay = kind == 1 ? 1f - v : kind == 2 ? v : 1f;
+                        ay = ay * ay * (3f - 2f * ay);
+                        tex.SetPixel(x, y, new Color(1f, 1f, 1f, ax * ay));
+                    }
+                }
+                tex.Apply();
+                var sprite = Sprite.Create(tex, new Rect(0, 0, W, h), new Vector2(0.5f, 0.5f));
+                sprite.hideFlags = HideFlags.HideAndDontSave;
+                _fades[kind] = sprite;
+                return sprite;
+            }
+            catch (Exception e) { Plugin.Logger.LogInfo("[ui] fade sprite unavailable (" + e.Message + "), flat backing"); return null; }
+        }
+
+        static RectTransform FadeImage(RectTransform parent, string name, Color color, int kind)
+        {
+            var rt = Image(parent, name, color);
+            var sprite = FadeSprite(kind);
+            if (sprite != null) { try { var img = rt.GetComponent<Image>(); img.sprite = sprite; img.type = UnityEngine.UI.Image.Type.Simple; } catch { } }
+            return rt;
+        }
+
+        /// <summary>A soft backing for text drawn over the live game: <paramref name="color"/> under the text, dissolving
+        /// to the right and feathered over <paramref name="feather"/> units at the top and bottom, so there is no box to
+        /// look at. Stretched over <paramref name="parent"/>; <paramref name="flip"/> dissolves to the left instead.</summary>
+        public static RectTransform Scrim(RectTransform parent, string name, Color color, float feather, bool flip)
+        {
+            var s = NewRect(name, parent);
+            Stretch(s, 0, 0, 0, 0);
+            if (flip) s.localScale = new Vector3(-1f, 1f, 1f);
+            var top = FadeImage(s, "Top", color, 1);
+            top.anchorMin = new Vector2(0, 1); top.anchorMax = new Vector2(1, 1); top.pivot = new Vector2(0.5f, 1f);
+            top.anchoredPosition = Vector2.zero; top.sizeDelta = new Vector2(0, feather);
+            var mid = FadeImage(s, "Mid", color, 0);
+            Stretch(mid, 0, feather, 0, feather);
+            var bottom = FadeImage(s, "Bottom", color, 2);
+            bottom.anchorMin = new Vector2(0, 0); bottom.anchorMax = new Vector2(1, 0); bottom.pivot = new Vector2(0.5f, 0f);
+            bottom.anchoredPosition = Vector2.zero; bottom.sizeDelta = new Vector2(0, feather);
+            return s;
+        }
+
+        /// <summary>A hairline that is solid on the left and fades out to the right (the rule under a HUD title).</summary>
+        public static RectTransform FadeRule(RectTransform parent, string name, Color color)
+        {
+            return FadeImage(parent, name, color, 0);
         }
 
         /// <summary>Clone one of the game's labels to inherit its font, material and canvas settings; strip everything but

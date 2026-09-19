@@ -9,17 +9,26 @@ using HarmonyLib;
 
 namespace YazsCompanion
 {
+    public enum PanelPlace { BottomLeft, Right }
+    public enum PanelDetailLevel { Compact, Full }
+
     [BepInPlugin(GUID, NAME, VERSION)]
     public class Plugin : BasePlugin
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.6.0";
+        public const string VERSION = "0.7.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> ShowBadges;
         internal static ConfigEntry<bool> ShowPanel;
+        internal static ConfigEntry<PanelPlace> PanelPosition;
+        internal static ConfigEntry<PanelDetailLevel> PanelDetail;
+        internal static ConfigEntry<float> PanelOpacity;
+        internal static ConfigEntry<float> PanelIdle;
+        internal static ConfigEntry<float> PanelLeft;
+        internal static ConfigEntry<float> PanelBottom;
         internal static ConfigEntry<float> PanelTop;
         internal static ConfigEntry<float> PanelRight;
         internal static ConfigEntry<float> PanelScale;
@@ -48,8 +57,14 @@ namespace YazsCompanion
             Logger = Log;
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
-            PanelTop = Config.Bind("General", "PanelTop", 780f, "Sidebar distance from the top of the screen, in canvas units (the canvas is 3840 x 2160).");
-            PanelRight = Config.Bind("General", "PanelRight", 44f, "Sidebar distance from the right edge of the screen, in canvas units.");
+            PanelPosition = Config.Bind("General", "PanelPosition", PanelPlace.BottomLeft, "Where the PLAN readout sits during play. BottomLeft = the empty corner under the weapon and ability icons (PanelLeft / PanelBottom); Right = the right edge between the item icons and the minimap (PanelRight / PanelTop), where it was up to 0.6.0.");
+            PanelDetail = Config.Bind("General", "PanelDetail", PanelDetailLevel.Compact, "Compact = one row per survivor with only what to pick next (the weapon level to finish or the next tier, the ability to evolve, feed or take), then TAGS / SOS / GRAB cut short. Full = two rows per survivor with the next steps and the evolution names.");
+            PanelOpacity = Config.Bind("General", "PanelOpacity", 0.42f, "Darkness of the soft backing under the PLAN text, 0 (none) to 1 (black). The backing dissolves towards the middle of the screen and has no frame, so the surroundings stay visible.");
+            PanelIdle = Config.Bind("General", "PanelIdle", 0.7f, "Opacity of the whole PLAN readout while nothing has changed for a few seconds (it is at full strength right after a pick, a recruit or a pause). 1 = never dims.");
+            PanelLeft = Config.Bind("General", "PanelLeft", 44f, "BottomLeft position: distance from the left edge of the screen, in canvas units (the canvas is 3840 x 2160).");
+            PanelBottom = Config.Bind("General", "PanelBottom", 70f, "BottomLeft position: distance from the bottom of the screen, in canvas units.");
+            PanelTop = Config.Bind("General", "PanelTop", 780f, "Right position: distance from the top of the screen, in canvas units.");
+            PanelRight = Config.Bind("General", "PanelRight", 44f, "Right position: distance from the right edge of the screen, in canvas units.");
             PanelScale = Config.Bind("General", "PanelScale", 0f, "Size multiplier of the sidebar. 0 = automatic: enlarged on small screens (Steam Deck) so its text stays about 15 px tall, 1 on a desktop monitor.");
             BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
             PanelHighlight = Config.Bind("General", "PanelHighlight", 3f, "Seconds the sidebar lines whose advice changed (after a pick, a recruit or a Research Pod) glow gold before fading back to white. 0 = off.");

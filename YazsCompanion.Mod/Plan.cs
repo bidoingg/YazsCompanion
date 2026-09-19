@@ -63,19 +63,94 @@ namespace YazsCompanion
             return string.Join(" / ", evos);
         }
 
-        public static Plan Build(Snapshot s)
+        /// <summary>The compact plan (the default during play): one row per survivor holding only what to pick next - the
+        /// weapon level to finish or the next tier once it is maxed, and the ability to evolve, feed or take - and the run
+        /// rows cut to their head. The full plan keeps two rows per survivor with the next steps and evolution names.</summary>
+        public bool Compact;
+
+        public static Plan Build(Snapshot s, bool compact = false)
         {
-            var p = new Plan();
+            var p = new Plan { Compact = compact };
             foreach (var sv in s.Squad)
             {
-                try { p.Survivor(sv, s); }
-                catch (Exception e) { p.Add(sv.Name, sv.Name + ".weapon", sv.Name.ToUpperInvariant(), C(Dim, e.GetType().Name), true); }
+                try { if (compact) p.SurvivorCompact(sv, s); else p.Survivor(sv, s); }
+                catch (Exception e) { p.Add(compact ? "squad" : sv.Name, sv.Name + (compact ? ".plan" : ".weapon"), sv.Name.ToUpperInvariant(), C(Dim, e.GetType().Name), true); }
             }
             try { p.TagsLine(s); } catch { }
             try { p.Recruits(s); } catch { }
             try { p.Items(s); } catch { }
             p.Signature = string.Join("|", p.Rows);
             return p;
+        }
+
+        // one row: "Pump-Action Shotgun 3/4 · Sawblade Drone 2/4"; gold marks a step that is ready now (the next weapon
+        // tier once the current one is maxed, an evolution whose base ability is maxed)
+        void SurvivorCompact(Survivor sv, Snapshot s)
+        {
+            var items = new List<string>();
+            var path = Ranker.WeaponPath(sv);
+            var current = path.Where(x => x.Level >= 1).OrderByDescending(x => x.Depth).FirstOrDefault();
+            if (current == null)
+            {
+                var first = path.FirstOrDefault(x => x.Depth == 0);
+                if (first != null) items.Add(C(Gold, N("take " + G.Name(first.W))));
+            }
+            else
+            {
+                int max = G.MaxLevel(current.W);
+                if (current.Level < max) items.Add(N(G.Name(current.W) + " " + current.Level + "/" + max));
+                else
+                {
+                    var next = path.FirstOrDefault(x => x.Recommended && x.Available && x.Level < 1 && x.Depth > current.Depth);
+                    if (next != null) items.Add(C(Gold, N(Arrow.TrimStart() + G.Name(next.W))));
+                }
+            }
+
+            var owned = sv.Powerups.Where(kv => kv.Value >= 1 && kv.Key != null && G.IsAbility(kv.Key)).ToList();
+            string ability = null;
+            foreach (var kv in owned)
+            {
+                if (kv.Value < G.MaxLevel(kv.Key)) continue;
+                bool isEvo = false; try { isEvo = kv.Key.evolutionBaseAbility != null; } catch { }
+                if (isEvo) continue;
+                var v = Ranker.AbilityScore(kv.Key, sv, s);
+                if (!v.EvoOwned) continue;
+                if ((v.EvoA != null && sv.Owns(v.EvoA)) || (v.EvoB != null && sv.Owns(v.EvoB))) continue;
+                ability = C(Gold, N("evolve " + G.Name(kv.Key)));
+                break;
+            }
+            if (ability == null)
+            {
+                var open = owned.Where(kv => kv.Value < G.MaxLevel(kv.Key)).OrderByDescending(kv => kv.Value).ToList();
+                if (open.Count > 0) ability = N(G.Name(open[0].Key) + " " + open[0].Value + "/" + G.MaxLevel(open[0].Key));
+            }
+            if (ability == null)
+            {
+                int evolved = owned.Count(kv => { try { return kv.Key.evolutionBaseAbility != null; } catch { return false; } });
+                if (owned.Count - evolved < 4 && sv.Props != null)
+                {
+                    var best = NextAbility(sv, s);
+                    if (best != null) ability = Nx(G.Name(best));
+                }
+            }
+            if (ability != null) items.Add(ability);
+            Add("squad", sv.Name + ".plan", sv.Name.ToUpperInvariant(), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
+        }
+
+        // the best ability this survivor does not own yet and whose tree node is bought
+        static PowerupBase NextAbility(Survivor sv, Snapshot s)
+        {
+            PowerupBase best = null; double bestScore = double.MinValue;
+            foreach (var a in G.Each(sv.Props.abilityBasePowerups))
+            {
+                if (a == null || sv.LevelOf(a) >= 1) continue;
+                SkillTreeUpgradeBase node = null; try { node = a.skillTreeAbilityBoost; } catch { }
+                if (node == null) { try { node = a.skillTreeRequirement; } catch { } }
+                if (node != null && !G.NodeOwned(node)) continue;
+                double sc = Ranker.AbilityScore(a, sv, s).Score;
+                if (sc > bestScore) { bestScore = sc; best = a; }
+            }
+            return best;
         }
 
         void Survivor(Survivor sv, Snapshot s)
@@ -126,17 +201,8 @@ namespace YazsCompanion
             int evolved = owned.Count(kv => { try { return kv.Key.evolutionBaseAbility != null; } catch { return false; } });
             if (owned.Count - evolved < 4 && sv.Props != null && items.Count < 2)
             {
-                PowerupBase best = null; double bestScore = double.MinValue;
-                foreach (var a in G.Each(sv.Props.abilityBasePowerups))
-                {
-                    if (a == null || sv.LevelOf(a) >= 1) continue;
-                    SkillTreeUpgradeBase node = null; try { node = a.skillTreeAbilityBoost; } catch { }
-                    if (node == null) { try { node = a.skillTreeRequirement; } catch { } }
-                    if (node != null && !G.NodeOwned(node)) continue;
-                    double sc = Ranker.AbilityScore(a, sv, s).Score;
-                    if (sc > bestScore) { bestScore = sc; best = a; }
-                }
-                if (best != null) items.Add(N(C(Dim, "next  ") + G.Name(best)));
+                var best = NextAbility(sv, s);
+                if (best != null) items.Add(Nx(G.Name(best)));
             }
             if (items.Count > 0) Add(sv.Name, sv.Name + ".ability", "", Join(items.Take(2).ToList()));
         }
@@ -144,7 +210,7 @@ namespace YazsCompanion
         // the run's damage type tag points (two highest types) and, when it is not the first one, the type to stack
         void TagsLine(Snapshot s)
         {
-            string pts = s.Tags.PointsText(2);
+            string pts = s.Tags.PointsText(Compact ? 1 : 2);
             if (pts.Length == 0) return;
             string focus = s.Tags.Focus();
             bool first = focus != null && pts.StartsWith(focus + " ", StringComparison.OrdinalIgnoreCase);
@@ -192,10 +258,32 @@ namespace YazsCompanion
 
         /// <summary>Sample plans for the design preview on the main menu (no game state needed): 0 = two survivors,
         /// 1 = the same after a pick (the weapon maxed, tags up: two changed lines), 2 = a full squad, nine lines.</summary>
-        public static Plan Sample(int variant)
+        public static Plan Sample(int variant, bool compact = false)
         {
-            var p = new Plan();
+            var p = new Plan { Compact = compact };
             string a = Arrow;
+            if (compact)
+            {
+                if (variant <= 1)
+                {
+                    bool after = variant == 1;
+                    p.Add("squad", "Tank.plan", "TANK", Join(new List<string> { after ? C(Gold, N(a.TrimStart() + "Rocket Launcher")) : N("Pump-Action Shotgun 3/4"), N("Sawblade Drone 2/4") }), true);
+                    p.Add("squad", "Pyro.plan", "PYRO", Join(new List<string> { N("Fireaxe 1/4"), N("Molotov 3/4") }), true);
+                    p.Add("run", "tags", "TAGS", after ? "Kinetic 9/10" : "Kinetic 8/10");
+                    p.Add("run", "sos", "SOS", "SWAT, Huntress");
+                    p.Add("run", "grab", "GRAB", "Accumulator, Bleeding Edge");
+                }
+                else
+                {
+                    p.Add("squad", "SWAT.plan", "SWAT", N("Automatic Turret 3/4"), true);
+                    p.Add("squad", "Engineer.plan", "ENGINEER", Join(new List<string> { N("Tesla 3/4"), N("Electric Turret 2/4") }), true);
+                    p.Add("squad", "Huntress.plan", "HUNTRESS", Join(new List<string> { N("Multishot 1/4"), C(Gold, N("evolve Arrow Rain")) }), true);
+                    p.Add("run", "tags", "TAGS", "Kinetic 31" + C(Dim, Sep + "stack Explosive"));
+                    p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
+                }
+                p.Signature = string.Join("|", p.Rows);
+                return p;
+            }
             if (variant <= 1)
             {
                 bool after = variant == 1;

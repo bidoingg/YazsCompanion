@@ -1,8 +1,11 @@
-// The live sidebar during play: a framed block at the right edge under the item icons and above the minimap, in
-// the language of the game's own panels - a warm near-black body inside a gold hairline with a diamond on each
-// corner, a header band reading PLAN over a gold rule, then one group per survivor and one for the run (TAGS,
-// SOS, GRAB) separated by faint gold hairlines. Each row has a label column (the survivor's name, TAGS / SOS /
-// GRAB) and a value column that wraps under itself. The block fades in and out instead of popping.
+// The live PLAN readout during play, drawn like the HUD's own quest tracker rather than like a menu panel: a small
+// gold title over a hairline that fades out, then the rows - a label column (the survivor's name, TAGS / SOS / GRAB)
+// and a value column that wraps under itself - on a soft dark backing that dissolves towards the middle of the
+// screen and has no frame, so the surroundings stay readable (0.6.0's framed, nearly opaque 800-unit panel hid too
+// much of the field). It sits in the empty bottom-left corner under the weapon and ability icons by default (the
+// right edge between the items and the minimap is still available), is only as wide as its text, fades in and out,
+// and dims to PanelIdle when nothing has changed for a few seconds. Compact detail (the default) is one row per
+// survivor; Full keeps two rows per survivor with a hairline between the groups.
 //
 // Ticked from the HUD's own Update (UIGameplay, the object that owns the gameplay canvas) and, as a
 // fallback, from GameplayMaster.Update; parented to that canvas so it dies with the HUD. The plan is
@@ -36,17 +39,22 @@ namespace YazsCompanion
     internal static class Panel
     {
         const string RootName = "YazsPlan";
-        const float Width = 800f, PadSide = 26f, PadBottom = 24f, Font = 31f, LineGap = 6f;
-        const float HeadH = 66f, HeadRule = 3f, HeadGap = 18f, HeadDiamond = 18f, TitleSize = 30f;  // header band, its gold rule, the gap under it
-        const float LabelW = 152f, LabelSize = 28f;             // the label column: survivor names (HUNTRESS, ENGINEER), TAGS / SOS / GRAB
+        const float WidthCompact = 640f, WidthFull = 800f;     // the widest the block gets per detail level; it shrinks to its text
+        const float PadSide = 22f, PadTop = 14f, PadBottom = 18f, Font = 31f, LineGap = 6f;
+        const float HeadH = 40f, HeadRule = 3f, HeadGap = 12f, HeadDiamond = 13f, TitleSize = 23f;  // the title line, its fading gold rule, the gap under it
+        const float LabelW = 136f, LabelSize = 25f;             // the label column: survivor names (HUNTRESS, ENGINEER), TAGS / SOS / GRAB
         // the hairline between two groups: 3 units so it is at least 1.45 px on the Deck (2 units was 0.97 px there and
-        // vanished when it fell between two pixel rows); the same reasoning sets FrameThick
-        const float GroupGap = 14f, RuleH = 3f;
-        const float FrameThick = 3f, CornerDiamond = 16f;
-        // the block must end above the minimap (top at ~0.75 of the screen on the Deck, ~0.78 on 21:9): when the plan is
-        // long (three survivors) it shrinks from its automatic scale down to MinScale to stay inside that band
-        const float BandBottom = 0.74f, MinScale = 0.75f;
+        // vanished when it fell between two pixel rows)
+        const float GroupGap = 12f, RuleH = 3f;
+        // the backing: feathered over Feather units at the top and bottom; the block is TailFactor times as wide as its
+        // padded text so the text sits on the solid part of the fade sprite (solid up to 62 %) and the rest dissolves
+        const float Feather = 22f, TailFactor = 1.5f;
+        // the block must stay clear of the HUD around it: at the right edge it ends above the minimap (top at ~0.75 of
+        // the screen on the Deck, ~0.78 on 21:9); in the bottom-left corner it stays under the weapon / ability icons
+        // (the column ends at ~0.59 of the screen). A long plan shrinks from its automatic scale down to MinScale.
+        const float BandBottom = 0.74f, LeftBandTop = 0.62f, MinScale = 0.75f;
         const float FadeIn = 0.25f, FadeOut = 0.15f;            // seconds
+        const float WakeUp = 0.3f, Doze = 1.2f;                 // seconds to reach full strength / to settle at PanelIdle
         // HUD labels worth cloning first (font, material, outline of the quest box / timer), by object name
         static readonly string[] PreferredLabels = { "Quest_Obj1", "QuestName", "QuestStatus_Text", "GameTimer_Txt" };
 
@@ -58,8 +66,11 @@ namespace YazsCompanion
             public readonly List<PlanLine> Rows = new List<PlanLine>();
         }
 
-        static RectTransform _root, _content;
+        static RectTransform _root, _content, _head;
         static CanvasGroup _fade;
+        static bool _flip, _compact = true;           // at the right edge (backing dissolves to the left); one row per survivor
+        static float _margin = 1f;                    // 1 live; the preview's screen emulation scales the margins
+        static float _level = 1f, _awakeUntil;        // idle dimming: current strength, and until when the readout is at full strength
         static TextMeshProUGUI _template;
         static readonly List<Group> _groups = new List<Group>();
         static readonly List<RectTransform> _rules = new List<RectTransform>();
@@ -85,8 +96,8 @@ namespace YazsCompanion
         public static void Reset() { Forget(); _screen = null; _hud = null; _gates = ""; }
         static void Forget()
         {
-            _root = null; _content = null; _fade = null; _template = null; _groups.Clear(); _rules.Clear();
-            _sig = ""; _stateKey = ""; _visible = false; _alpha = 0f; _target = 0f;
+            _root = null; _content = null; _head = null; _fade = null; _template = null; _groups.Clear(); _rules.Clear();
+            _sig = ""; _stateKey = ""; _visible = false; _alpha = 0f; _target = 0f; _level = 1f; _awakeUntil = 0f;
             _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f;
         }
 
@@ -133,7 +144,8 @@ namespace YazsCompanion
                     string key = StateKey(snap);
                     if (key == _stateKey) return;
                     _stateKey = key;
-                    var plan = Plan.Build(snap);
+                    bool compact = true; try { compact = Plugin.PanelDetail.Value == PanelDetailLevel.Compact; } catch { }
+                    var plan = Plan.Build(snap, compact);
                     if (plan.Signature != _sig)
                     {
                         _sig = plan.Signature;
@@ -176,6 +188,7 @@ namespace YazsCompanion
                 {
                     if (!_root.gameObject.activeSelf) { _alpha = 0f; if (_fade != null) _fade.alpha = 0f; }
                     _root.gameObject.SetActive(true);
+                    Wake(4f);
                 }
                 Plugin.Logger.LogInfo("[panel] " + (v ? "shown" : "hidden"));
                 Shots.Later(v ? 0.5f : 0.3f, v ? "shown" : "hidden");
@@ -183,14 +196,20 @@ namespace YazsCompanion
             catch { Forget(); }
         }
 
+        /// <summary>Full strength for the next <paramref name="seconds"/>; afterwards the readout settles at PanelIdle.</summary>
+        static void Wake(float seconds) { _awakeUntil = Mathf.Max(_awakeUntil, Time.realtimeSinceStartup + seconds); }
+
         static void Fade(float dt)
         {
-            if (_root == null || _fade == null || Mathf.Abs(_alpha - _target) < 0.0001f) return;
-            float speed = _target > _alpha ? 1f / FadeIn : 1f / FadeOut;
-            _alpha = Mathf.MoveTowards(_alpha, _target, dt * speed);
+            if (_root == null || _fade == null) return;
+            float idle = 0.7f; try { idle = Mathf.Clamp(Plugin.PanelIdle.Value, 0.25f, 1f); } catch { }
+            float level = Time.realtimeSinceStartup < _awakeUntil ? 1f : idle;
+            if (Mathf.Abs(_alpha - _target) < 0.0001f && Mathf.Abs(_level - level) < 0.0001f) return;
+            _alpha = Mathf.MoveTowards(_alpha, _target, dt / (_target > _alpha ? FadeIn : FadeOut));
+            _level = Mathf.MoveTowards(_level, level, dt / (level > _level ? WakeUp : Doze));
             try
             {
-                _fade.alpha = _alpha * _alpha * (3f - 2f * _alpha);    // smoothstep
+                _fade.alpha = _alpha * _alpha * (3f - 2f * _alpha) * _level;    // smoothstep
                 if (_alpha <= 0f && _target <= 0f) _root.gameObject.SetActive(false);
             }
             catch { Forget(); }
@@ -248,47 +267,54 @@ namespace YazsCompanion
             return true;
         }
 
-        // ---- the widget: body, frame, header band, and an empty content rect the groups are laid out in ----
+        static float MaxWidth { get { return _compact ? WidthCompact : WidthFull; } }
+
+        // ---- the widget: the soft backing, the title line, and an empty content rect the groups are laid out in ----
         static bool Build(RectTransform canvas, TextMeshProUGUI template, float scale)
         {
+            try { _flip = Plugin.PanelPosition.Value == PanelPlace.Right; } catch { _flip = false; }
             var root = Ui.NewRect(RootName, canvas);
-            root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(1f, 1f);
-            root.anchoredPosition = new Vector2(-Plugin.PanelRight.Value, -Plugin.PanelTop.Value);
-            root.sizeDelta = new Vector2(Width, 300f);
-            root.localScale = new Vector3(scale, scale, 1f);   // pivot top-right: grows down and to the left
+            if (_flip)
+            {   // the right edge, under the item icons: grows down and to the left
+                root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(1f, 1f);
+                root.anchoredPosition = new Vector2(-Plugin.PanelRight.Value, -Plugin.PanelTop.Value);
+            }
+            else
+            {   // the bottom-left corner: grows up and to the right
+                root.anchorMin = root.anchorMax = Vector2.zero; root.pivot = Vector2.zero;
+                root.anchoredPosition = new Vector2(Plugin.PanelLeft.Value, Plugin.PanelBottom.Value);
+            }
+            root.sizeDelta = new Vector2(MaxWidth * TailFactor, 300f);
+            root.localScale = new Vector3(scale, scale, 1f);
             CanvasGroup fade = null;
             try { fade = root.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); fade.alpha = 0f; fade.blocksRaycasts = false; fade.interactable = false; }
             catch (Exception e) { Plugin.Logger.LogInfo("[panel] no CanvasGroup (" + e.Message + "), no fade"); }
 
-            // body: the game's near-black panel, a touch lighter at the top, inside a gold hairline with a diamond on each corner
-            var body = Ui.Image(root, "Body", Theme.Body); Ui.Stretch(body, 0, 0, 0, 0);
-            var grad = Ui.VerticalGradient(Theme.BodyTop, Theme.BodyBottom, 32);
-            if (grad != null) { try { var img = body.GetComponent<Image>(); img.sprite = grad; img.type = Image.Type.Simple; img.color = Color.white; } catch { } }
-            Ui.Frame(root, "Frame", 0, FrameThick, Theme.GoldLine, CornerDiamond);
+            // backing: no box - a dark wash under the text that dissolves towards the middle of the screen
+            float opacity = 0.42f; try { opacity = Mathf.Clamp01(Plugin.PanelOpacity.Value); } catch { }
+            if (opacity > 0.01f) Ui.Scrim(root, "Scrim", new Color(Theme.Scrim.r, Theme.Scrim.g, Theme.Scrim.b, opacity), Feather, _flip);
 
-            // header band: a diamond, PLAN in gold, a gold rule underneath - the section headers of the game's pause panels
+            // title line: a diamond, PLAN in small gold capitals, a gold rule underneath that fades out - the HUD's quest tracker
             var head = Ui.NewRect("Header", root);
-            head.anchorMin = new Vector2(0, 1); head.anchorMax = new Vector2(1, 1); head.pivot = new Vector2(0.5f, 1f);
-            head.anchoredPosition = new Vector2(0, -FrameThick); head.sizeDelta = new Vector2(-2 * FrameThick, HeadH);
-            var band = Ui.Image(head, "Band", Theme.Band); Ui.Stretch(band, 0, 0, 0, 0);
-            var rule = Ui.Image(head, "Rule", Theme.GoldLine); rule.anchorMin = new Vector2(0, 0); rule.anchorMax = new Vector2(1, 0); rule.pivot = new Vector2(0.5f, 0);
+            head.anchorMin = head.anchorMax = new Vector2(0, 1); head.pivot = new Vector2(0, 1f);
+            head.anchoredPosition = new Vector2(PadSide, -PadTop); head.sizeDelta = new Vector2(MaxWidth - 2 * PadSide, HeadH);
+            var rule = Ui.FadeRule(head, "Rule", Theme.GoldLine); rule.anchorMin = new Vector2(0, 0); rule.anchorMax = new Vector2(1, 0); rule.pivot = new Vector2(0.5f, 0);
             rule.anchoredPosition = Vector2.zero; rule.sizeDelta = new Vector2(0, HeadRule);
-            float inset = PadSide - FrameThick;
-            Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold).anchoredPosition = new Vector2(inset + HeadDiamond / 2, 1f);
+            Ui.Diamond(head, "Tip", 0, 0.5f, HeadDiamond, Theme.Gold).anchoredPosition = new Vector2(HeadDiamond / 2, 2f);
             var title = Ui.CloneText(template, head, "Title");
             if (title == null) { UnityEngine.Object.Destroy(root.gameObject); return false; }
-            Ui.Stretch(title.rectTransform, inset + HeadDiamond + 14f, 2f, inset, 0);
+            Ui.Stretch(title.rectTransform, HeadDiamond + 12f, HeadRule + 1f, 0, 0);
             title.text = "PLAN"; title.color = Theme.GoldText; title.fontSize = TitleSize; title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Left; title.characterSpacing = 8f;
 
-            // the groups go into a content rect under the header; Layout positions them by hand after every render
+            // the groups go into a content rect under the title; Layout positions them by hand after every new plan
             var content = Ui.NewRect("Content", root);
-            content.anchorMin = new Vector2(0, 1); content.anchorMax = new Vector2(1, 1); content.pivot = new Vector2(0.5f, 1f);
-            content.anchoredPosition = new Vector2(0, -(FrameThick + HeadH + HeadGap)); content.sizeDelta = new Vector2(-2 * PadSide, 100f);
+            content.anchorMin = content.anchorMax = new Vector2(0, 1); content.pivot = new Vector2(0, 1f);
+            content.anchoredPosition = new Vector2(PadSide, -(PadTop + HeadH + HeadGap)); content.sizeDelta = new Vector2(MaxWidth - 2 * PadSide, 100f);
 
-            _root = root; _content = content; _fade = fade; _template = template;
+            _root = root; _content = content; _head = head; _fade = fade; _template = template;
             _groups.Clear(); _rules.Clear();
-            _alpha = 0f; _target = 0f; _visible = false;
+            _alpha = 0f; _target = 0f; _visible = false; _level = 1f;
             CheckGlyphs(template);
             return true;
         }
@@ -343,7 +369,7 @@ namespace YazsCompanion
         {
             while (_rules.Count <= i)
             {
-                var r = Ui.Image(_content, "Rule" + _rules.Count, Theme.GoldRule);
+                var r = Ui.FadeRule(_content, "Rule" + _rules.Count, Theme.GoldRule);
                 r.anchorMin = new Vector2(0, 1); r.anchorMax = new Vector2(1, 1); r.pivot = new Vector2(0.5f, 1f);
                 r.sizeDelta = new Vector2(0, RuleH);
                 _rules.Add(r);
@@ -360,7 +386,7 @@ namespace YazsCompanion
             if (_prev != null) foreach (var l in plan.Lines) { string old; if (!_prev.TryGetValue(l.Key, out old) || old != l.Text) _changed.Add(l.Key); }
             _prev = new Dictionary<string, string>();
             foreach (var l in plan.Lines) _prev[l.Key] = l.Text;
-            _plan = plan;
+            _plan = plan; _compact = plan.Compact;      // the block's widest width follows the detail level of the plan it shows
 
             int gi = 0; Group g = null;
             foreach (var l in plan.Lines)
@@ -372,6 +398,7 @@ namespace YazsCompanion
 
             float hlSeconds = 3f; try { hlSeconds = Plugin.PanelHighlight.Value; } catch { }
             _hlStart = _changed.Count > 0 && hlSeconds > 0 ? now : -100f;
+            Wake(_changed.Count > 0 ? Mathf.Max(6f, hlSeconds + 3f) : 5f);   // new advice is shown at full strength, then settles
             Render(now);
             Layout();
         }
@@ -416,9 +443,20 @@ namespace YazsCompanion
             if (!hl) _hlStart = -100f;
         }
 
-        // stack the groups top-down with a hairline between them, size the block, and keep it above the minimap
+        // stack the groups top-down with a hairline between them, shrink the block to its text, and keep it clear of the HUD
         static void Layout()
         {
+            // measure at the widest the block may get (the text wraps there), then take the width the text really uses
+            float maxText = MaxWidth - 2 * PadSide, w = 0f;
+            _content.sizeDelta = new Vector2(maxText, _content.sizeDelta.y);
+            foreach (var g in _groups)
+            {
+                if (g.Rows.Count == 0 || g.Text == null) continue;
+                try { g.Text.ForceMeshUpdate(); w = Mathf.Max(w, g.Text.renderedWidth); } catch { w = maxText; }
+            }
+            w = w <= 0 ? maxText : Mathf.Min(maxText, Mathf.Ceil(w) + 6f);   // a little slack so the same lines still fit
+            _content.sizeDelta = new Vector2(w, _content.sizeDelta.y);
+
             float y = 0f; int ri = 0; bool first = true;
             foreach (var g in _groups)
             {
@@ -436,7 +474,14 @@ namespace YazsCompanion
                 y += h;
             }
             for (int i = ri; i < _rules.Count; i++) { try { _rules[i].gameObject.SetActive(false); } catch { } }
-            _content.sizeDelta = new Vector2(-2 * PadSide, y);
+            _content.sizeDelta = new Vector2(w, y);
+
+            // the block is wider than its text: the backing is solid under the text and dissolves over the rest, towards
+            // the middle of the screen (to the right in the bottom-left corner, to the left at the right edge)
+            float blockW = (w + 2 * PadSide) * TailFactor;
+            float x0 = _flip ? blockW - (w + 2 * PadSide) : 0f;
+            _head.anchoredPosition = new Vector2(x0 + PadSide, -PadTop); _head.sizeDelta = new Vector2(w, HeadH);
+            _content.anchoredPosition = new Vector2(x0 + PadSide, -(PadTop + HeadH + HeadGap));
             if (_preview)
             {
                 var sb = new StringBuilder("[panel] layout:");
@@ -444,13 +489,13 @@ namespace YazsCompanion
                 for (int i = 0; i < _rules.Count; i++) { try { sb.Append(" rule").Append(i).Append("@").Append((-_rules[i].anchoredPosition.y).ToString("0")).Append(_rules[i].gameObject.activeSelf ? "" : "(off)").Append(" parent=").Append(_rules[i].parent == null ? "none" : _rules[i].parent.name).Append(" sib=").Append(_rules[i].GetSiblingIndex()); } catch (Exception e) { sb.Append(" rule").Append(i).Append("!").Append(e.Message); } }
                 Plugin.Logger.LogInfo(sb.ToString());
             }
-            float total = FrameThick + HeadH + HeadGap + y + PadBottom + FrameThick;
-            _root.sizeDelta = new Vector2(Width, total);
+            float total = PadTop + HeadH + HeadGap + y + PadBottom;
+            _root.sizeDelta = new Vector2(blockW, total);
 
             float scale = _autoScale;
             try
             {
-                float band = _canvasH * BandBottom - Plugin.PanelTop.Value;
+                float band = _flip ? _canvasH * BandBottom - Plugin.PanelTop.Value * _margin : _canvasH * (1f - LeftBandTop) - Plugin.PanelBottom.Value * _margin;
                 if (band > 0 && total * scale > band) scale = Mathf.Max(MinScale, band / total);
             }
             catch { }
@@ -478,12 +523,14 @@ namespace YazsCompanion
         }
 
         // ---- the design preview on the main menu (Preview.cs): the same widget on an overlay canvas with sample plans ----
-        public static bool PreviewBuild(RectTransform canvas, TextMeshProUGUI template, Plan plan, float scaleOverride)
+        public static bool PreviewBuild(RectTransform canvas, TextMeshProUGUI template, Plan plan, float scaleOverride, float posScale, float canvasH)
         {
             Forget(); _preview = true;
             float scale = scaleOverride > 0 ? scaleOverride : Scale(canvas);
-            _autoScale = scale; try { _canvasH = canvas.rect.height; } catch { _canvasH = 0; }
+            _autoScale = scale; try { _canvasH = canvasH > 0 ? canvasH : canvas.rect.height; } catch { _canvasH = 0; }
+            _margin = posScale;
             if (!Build(canvas, template, scale)) { _preview = false; return false; }
+            _root.anchoredPosition = _root.anchoredPosition * posScale;     // an emulated screen: its margins in this canvas's units
             SetVisible(true);
             Apply(plan, Time.realtimeSinceStartup);
             Plugin.Logger.LogInfo("[panel] preview built x" + scale.ToString("0.00") + ", " + _root.sizeDelta.y.ToString("0") + " units tall");
@@ -491,10 +538,14 @@ namespace YazsCompanion
         }
         public static void PreviewApply(Plan plan) { if (_root != null) Apply(plan, Time.realtimeSinceStartup); }
         public static void PreviewHide() { SetVisible(false); }
+        /// <summary>Let the readout settle at PanelIdle now (the preview photographs the resting state).</summary>
+        public static void PreviewDoze() { _awakeUntil = 0f; }
+        /// <summary>Forget the previous plan so the next one is drawn without a change highlight.</summary>
+        public static void PreviewFresh() { _prev = null; }
         public static void PreviewEnd()
         {
             try { if (_root != null) UnityEngine.Object.Destroy(_root.gameObject); } catch { }
-            Forget(); _preview = false;
+            Forget(); _preview = false; _margin = 1f;
         }
     }
 }

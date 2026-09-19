@@ -6,7 +6,16 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-16): **0.6.0 — the design pass: the PLAN sidebar is a framed panel in the game's own style (body,
+Status (2026-09-18): **0.7.0 — the PLAN readout gets out of the way.** The user's verdict on 0.6.0: polished, but
+"over-opaque/sized - it's blocking essential awareness of surroundings". So the framed, nearly opaque 800-unit
+panel at the right edge became a HUD readout in the style of the game's quest tracker: a small gold title over a
+fading rule, the rows on a soft dark wash (42 % at most) that dissolves towards the middle of the screen, no
+frame; it sits in the empty bottom-left corner under the weapon / ability icons, is only as wide as its text,
+shows one row per survivor (`PanelDetail = Compact`), and dims to 70 % when nothing has changed for a few seconds.
+Checked with the preview mode over real gameplay frames at the PC's and the Deck's pixels (new: a backdrop image
+behind the preview): on the Deck a full squad covers about 22 % x 21 % of the screen, see-through, where 0.6.0
+covered up to 30 % x 65 %, opaque. `PanelPosition = Right` and `PanelDetail = Full` bring the old place and the
+two-rows-per-survivor plan back. **0.6.0 (2026-09-16) — the design pass: the PLAN sidebar is a framed panel in the game's own style (body,
 gold hairline, corner diamonds, header band, label column, hairlines between groups, fade in/out), the card
 badges and the restart strip share its palette and primitives (`Ui.cs`), and a preview mode renders the sidebar
 on the main menu with sample plans so the look can be checked from screenshots without a run - verified this
@@ -31,50 +40,72 @@ screen WxH`. 0.5.2 also scales the sidebar and the card badges up on small scree
 repository; 0.5.1 ranked the Research Pod reward cards, scored chest items against what the squad actually
 deals, added a `TAGS` line to the plan and an offline bench.
 
-## The PLAN sidebar (during play)
+## The PLAN readout (during play)
 
-A framed panel at the right edge, under the held-item icons and above the minimap, in the language of the
-game's own panels (0.6.0): a warm near-black body, a touch lighter at the top, inside a gold hairline with a
-small gold diamond on each corner; a header band with a diamond and `PLAN` over a gold rule; then one group per
-survivor and one for the run, separated by faint gold hairlines. Every row has a label column (the survivor's
-name in bold white on its first row, `TAGS` / `SOS` / `GRAB` in gold) and a value column that wraps under
-itself, names never breaking across lines. The block fades in and out (0.25 / 0.15 s) instead of popping.
+A HUD readout in the empty bottom-left corner, under the weapon and ability icons (0.7.0; up to 0.6.0 it was a
+framed panel at the right edge, which hid too much of the field). It is drawn like the game's quest tracker, not
+like a menu panel: a small gold diamond and `PLAN` over a gold rule that fades out, then the rows on a soft dark
+wash that is solid only under the text, dissolves towards the middle of the screen and is feathered at the top
+and bottom - no frame, no box. Every row has a label column (the survivor's name in bold white, `TAGS` / `SOS` /
+`GRAB` in gold) and a value column that wraps under itself, names never breaking across lines. The block is only
+as wide as its text (at most 640 units in Compact, 800 in Full), fades in and out (0.25 / 0.15 s), is at full
+strength for a few seconds after new advice (a pick, a recruit, coming back from a pause) and then settles at
+`PanelIdle` (70 %).
 
 ```
 ◆ PLAN
-──────────────────────────────────────────────────────
-TANK      Pump-Action Shotgun 3/4 › Rocket Launcher
-          Sawblade Drone 2/4  ·  next  Minefield
-- - - - - - - - - - - - - - - - - - - - - - - - - - -
-PYRO      Fireaxe 1/4 › Blowtorch
-          Molotov 3/4 › Napalm / Cocktail Party  ·  next  No Pain, No Gain
-- - - - - - - - - - - - - - - - - - - - - - - - - - -
-TAGS      Kinetic 8/10, Slashing 4/10
+────────────────────────────── ─ ─  ─
+TANK      Pump-Action Shotgun 3/4  ·  Sawblade Drone 2/4
+PYRO      Fireaxe 1/4  ·  Molotov 3/4
+─────────────────────── ─ ─  ─
+TAGS      Kinetic 8/10
 SOS       SWAT, Huntress
 GRAB      Accumulator, Bleeding Edge
+```
+
+**Compact (the default):** one row per survivor with only what to pick next. The weapon item is the level to
+finish (`Pump-Action Shotgun 3/4`), or the next tier in gold once the weapon is maxed (`› Rocket Launcher`), or
+nothing when the line is complete; the ability item is, in priority order, a maxed ability whose unlocked
+evolution is waiting (`evolve Arrow Rain`, gold), the ability to keep feeding (`Sawblade Drone 2/4`), or the next
+ability worth taking (`next Minefield`). `TAGS` shows the highest damage-type tag count and `stack X` only when
+the type to stack at the next Research Pod is another one. A full squad is five or six rows.
+
+**Full (`PanelDetail = Full`):** two rows per survivor with a hairline between the groups, as in 0.5.4 - 0.6.0:
+
+```
+TANK      Pump-Action Shotgun 3/4 › Rocket Launcher
+          Sawblade Drone 2/4  ·  next  Minefield
+PYRO      Fireaxe 1/4 › Blowtorch
+          Molotov 3/4 › Napalm / Cocktail Party  ·  next  No Pain, No Gain
+TAGS      Kinetic 8/10, Slashing 4/10
 ```
 
 The weapon line shows the current weapon and its next step (gold once the weapon is maxed; `take Shotgun` for a
 recruit without one; `next tier locked` / `line complete` at the end of a line). The ability line holds at most
 two items in priority order: a maxed ability waiting for its unlocked evolution card (`Minefield 4/4 › Shrapnel /
 Taunt`, gold), the ability to keep feeding (with its evolutions once it is one level below max and the Training Yard
-unlocked them; earlier the names only made the line wrap), and the next ability worth taking. `TAGS` shows the two highest damage-type tag point counts (`/N` until the type's special
-effect) and `stack X` only when the type to stack at the next Research Pod is not the first one; `SOS` the two
-best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items worth a chest slot (S/A
-tier or quest target, not held). A full squad is nine lines. When a rebuild changes a line (a pick, a recruit,
-a Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
-0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.weapon]`).
+unlocked them; earlier the names only made the line wrap), and the next ability worth taking. `TAGS` shows the two
+highest tag point counts. A full squad is nine lines.
+
+In both: `SOS` is the two best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items
+worth a chest slot (S/A tier or quest target, not held). When a rebuild changes a line (a pick, a recruit, a
+Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
+0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.plan]`).
 The `›` and `·` glyphs are checked against the HUD font at creation and replaced by `>` and `|` when missing
 (`[panel] glyphs: ...`). It is driven by
 the HUD's own `UIGameplay.Update`, rebuilds only when the squad state changes (a cheap key of the squad text,
 the active quest and the tag points; a rebuild walks every tree node and item), hides while a selection screen,
 the pause menu, the results screen or any other game view is up, and dies with the HUD when the run ends.
-`ShowPanel`, `PanelTop` and `PanelRight` in the config move or disable it (canvas units; the block is 800 units
-wide; the canvas is 3840 wide on every screen, 2160 tall on 16:9, 2400 on the Deck's 16:10). `PanelScale` (default 0 = automatic) keeps
-the text at least 15 px tall: 1.0 on a desktop monitor, about 1.45 on the Deck, where the block grows down and
-to the left from its top-right corner. Every change is logged as a `[plan] 03:31: ...` line; `[panel] created
-under UIGameplay using label 'GameTimer_Txt' at (-44, -780) x1.45 canvas 3840x2400 screen 1280x800` shows which
-HUD text it cloned for the font, the scale and the geometry.
+
+Config (`[General]`, canvas units; the canvas is 3840 wide on every screen, 2160 tall on 16:9, 2400 on the Deck's
+16:10): `ShowPanel`; `PanelPosition` = `BottomLeft` (with `PanelLeft` 44 / `PanelBottom` 70; the block grows up
+and to the right and stays under 62 % of the screen height, where the icon column ends) or `Right` (with
+`PanelRight` 44 / `PanelTop` 780; the block grows down and to the left, stays above the minimap, and its backing
+dissolves to the left); `PanelDetail` = `Compact` / `Full`; `PanelOpacity` (0.42; 0 = text only); `PanelIdle`
+(0.7; 1 = never dims); `PanelHighlight`. `PanelScale` (default 0 = automatic) keeps the text at least 15 px tall:
+1.0 on a desktop monitor, about 1.45 on the Deck. Every change is logged as a `[plan] 03:31: ...` line; `[panel]
+created under UIGameplay using label 'GameTimer_Txt' at (44, 70) x1.45 canvas 3840x2400 screen 1280x800` shows
+which HUD text it cloned for the font, the scale and the geometry.
 
 ## What you see in the game
 
@@ -248,6 +279,11 @@ build that fails to load leaves every auto-updated install without the mod until
   menu, it is built on an overlay canvas with sample plans - two survivors, then a pick's change highlight
   (PNGs at 0.35 / 1.5 / 3.6 s), then a full squad, then the fade-out - and a PNG of each stage goes to the shots
   folder whatever the Screenshots setting (`[preview] ...` and `[panel] layout: ...` log lines mark the stages).
+  Put a gameplay frame next to the DLL as `preview_bg_<WIDTH>x<HEIGHT>.jpg` (or `.png`; `preview_bg.jpg` without a
+  target resolution) and it is drawn behind the readout at that screen's pixels, so the captures show how much of
+  the field the readout hides - the menu art cannot tell. Stages since 0.7.0: `preview_a`, `preview_hl1..3`,
+  `preview_squad` (full squad, compact), `preview_idle` (settled at `PanelIdle`), `preview_detail` (Full),
+  `preview_fade`.
   `PreviewResolution = 3440x1440` (or `1280x800`) makes those PNGs show the sidebar with the pixels it has on that
   screen even when the game runs on another desktop: the frame is rendered at a whole multiple of the window and
   the block scaled to match, so only the menu art around it differs. This is how 0.6.0 was checked for the PC and
@@ -296,8 +332,8 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
-    Plan.cs                       the run plan (keyed rows with label / value / group; sample plans for the preview)
-    Panel.cs                      the PLAN sidebar during play (framed panel, groups + hairlines, fade, highlight)
+    Plan.cs                       the run plan, Compact or Full (keyed rows with label / value / group; sample plans for the preview)
+    Panel.cs                      the PLAN readout during play (soft backing, corner placement, text-hugging width, fade, idle dimming, highlight)
     Preview.cs                    the design preview on the main menu (config [Debug] Preview / PreviewResolution)
     Updater.cs                    release-feed check, hash-verified download next to the running DLL, old-build cleanup
     Notice.cs                     the "restart to apply" strip on its own overlay canvas
