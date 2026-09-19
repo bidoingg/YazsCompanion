@@ -445,8 +445,12 @@ ranked or logged:
   the pause menu with `Resources.FindObjectsOfTypeAll` twice every half second - also in the middle of a run, where
   that walks every loaded object - and every frame while the mod menu was open. The menus now report themselves: the
   hold-still prefixes on `UIViewMainMenu.Update` / `UIPauseMenu.Update` run every frame a menu is live, so the view
-  they saw within the last three frames is the live one. The search remains as a fallback (before a view's Update has
-  ever been seen, never while a run is being played; and for an explicit open the hooks cannot place).
+  they saw within the last three frames is the live one. The search remains as a fenced-in fallback (the main menu
+  before its first Update of the session; the pause menu only while the game's `IsPauseMenuFlowActive` is on and its
+  Update has never been seen; an explicit open the hooks cannot place). MEASURED with `[Debug] Perf` on the PC, on
+  the run-setup screens (no main menu, no run): one search costs about 41 ms - with the search still running there
+  twice a second the mod took 4,524 - 4,951 ms of every minute (worst single frame 145 ms); fenced in, 41.7 ms a
+  minute (worst 0.14 ms), 0.012 ms a frame. In 0.10.0 two such searches ran every half second of every run.
 - **The plan is rebuilt while the game is still paused.** A new plan re-scores every item that can still drop and
   every recruit: 4-5 ms on the PC (measured from the log: `[panel] shown` to `[plan]`), more on the Deck - and it
   ran on the first tick back in play after every pick. It now runs in the `Hide` post-fix, in the second the screen
@@ -473,8 +477,10 @@ ranked or logged:
 `[perf] 60 s, <frames> frames: tick.hud <calls>x <total> ms (max <worst>) | tick.master ... | refresh ... | read ...
 | plan.build ... | offer ... | plan.ahead ...` - calls, total and the worst single call per section (sections nest:
 a tick contains the refresh it triggered). `offer` and `plan.ahead` run while the game is paused; `tick.*`,
-`refresh`, `read` and `plan.build` are what play pays. No such numbers have been taken yet (0.10.1 was written while
-a run was being played on the PC, so the game could not be restarted).
+`refresh`, `read` and `plan.build` are what play pays. Taken so far: the menu numbers above. NOT yet taken: a run
+(`tick.hud`, `refresh`, `plan.ahead`, `offer`) - Quick Run opened the full run-setup wizard on the day, which the
+scripted walk does not click through (its choices are saved to the profile); `[Debug] PreviewPause` now presses
+Start on the team leader screen, plays thirty seconds taking the recommended cards, then pauses.
 
 Outside the mod: BepInEx's console window (`[Logging.Console] Enabled = true` in `BepInEx.cfg`, as on the
 development PC) makes every log line of every plugin and of the game a synchronous console write; the packaged

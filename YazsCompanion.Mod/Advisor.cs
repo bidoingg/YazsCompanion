@@ -73,6 +73,7 @@ namespace YazsCompanion
                 }
                 if (Plugin.Verbose.Value) Describe.Offer(sel, screen.ToString());
                 _lastCards = cards; _lastScreen = screen; _lastClock = snap.Clock;
+                _debugScreen = sel; _debugOfferAt = UnityEngine.Time.realtimeSinceStartup;
             }
             catch (Exception e) { Plugin.Logger.LogError("[offer] " + screen + " failed: " + e); }
         }
@@ -103,6 +104,26 @@ namespace YazsCompanion
         }
 
         static string Best(List<Card> cards) { foreach (var c in cards) if (c.Rank == 1) return c.Name; return "?"; }
+
+        // ---- for the scripted pause walk ([Debug] PreviewPause) only: click the recommended card of the offer on screen ----
+        static UIGameplayUpgradeSelection _debugScreen; static float _debugOfferAt;
+        internal static bool DebugPickDue(float now)
+        {
+            try
+            {
+                if (_lastCards == null || _debugScreen == null || now < _debugOfferAt + 2f) return false;      // let the cards land first
+                foreach (var c in _lastCards)
+                {
+                    if (c.Rank != 1 || c.Button == null) continue;
+                    Plugin.Logger.LogInfo("[menu] pause walk: taking " + c.Name);
+                    var screen = _debugScreen; _debugScreen = null;
+                    screen.OnPowerupButtonClicked(c.Button);
+                    return true;
+                }
+            }
+            catch (Exception e) { _debugScreen = null; Plugin.Logger.LogWarning("[menu] pause walk: pick failed: " + e.Message); }
+            return false;
+        }
 
         static string BuildsText(Snapshot s)
         {

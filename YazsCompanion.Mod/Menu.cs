@@ -66,9 +66,9 @@ namespace YazsCompanion
         // every frame a menu is live (also while they skip the original), so the view they saw within the last few
         // frames IS the live one - no search. Resources.FindObjectsOfTypeAll walks every loaded object (thousands in a
         // run) and used to run twice every half second during play for the button upkeep, and every frame while the mod
-        // menu was open. The search remains as the fallback: until a view's Update has been seen once this session
-        // (never while a run is being played: no menu can be up then), and for an explicit Open() that the hooks cannot
-        // place - the search then stands in for the hooks until the mod menu closes again.
+        // menu was open. The search remains as the fallback, fenced in: for the main menu until its Update has been
+        // seen once (the start-up seconds), for the pause menu only while the game's pause-menu flow is on, and for an
+        // explicit Open() the hooks cannot place - the search then stands in for the hooks until the mod menu closes.
         const int SeenFrames = 3;
         static UIViewMainMenu _mainView; static UIPauseMenu _pauseView;
         static int _mainFrame = -100, _pauseFrame = -100;
@@ -86,17 +86,29 @@ namespace YazsCompanion
         static UIViewMainMenu MainMenu()
         {
             if (_mainHooked && !_viaSearch) return Live(_mainView, _mainFrame) ? _mainView : null;
-            return InRun() && !_viaSearch ? null : FindActive<UIViewMainMenu>();
+            return FindActive<UIViewMainMenu>();        // only before its first Update of the session: the start-up seconds
         }
+        // One search costs about 41 ms on the PC (measured with [Debug] Perf on the team-leader screen, where it still ran
+        // twice a second: 4.9 s of every minute). Until the pause menu's Update has been seen, it is only looked for while
+        // the game says its pause-menu flow is on - which its first Update then ends.
         static UIPauseMenu PauseMenu()
         {
             if (_pauseHooked && !_viaSearch) return Live(_pauseView, _pauseFrame) ? _pauseView : null;
-            return InRun() && !_viaSearch ? null : FindActive<UIPauseMenu>();
+            return _viaSearch || PauseFlow() ? FindActive<UIPauseMenu>() : null;
         }
-        /// <summary>A run is being played right now (not paused): neither menu can be up, so nothing is searched for.</summary>
+        static bool PauseFlow() { try { return GameplayMaster.IsPauseMenuFlowActive; } catch { return false; } }
+        /// <summary>A run is being played right now (not paused): neither menu can be up, so nothing is searched for. The
+        /// main menu scene has a GameplayMaster of its own, without a game mode - hence the mode test.</summary>
         static bool InRun()
         {
-            try { var gm = GameplayMaster.s_instance; return gm != null && !GameplayMaster.IsPaused; } catch { return false; }
+            try
+            {
+                var gm = GameplayMaster.s_instance;
+                if (gm == null || GameplayMaster.IsPaused) return false;
+                var mode = gm.currentGameMode;
+                return mode != null && mode.IsGameplayActive;
+            }
+            catch { return false; }
         }
 
         static T FindActive<T>() where T : Component
@@ -116,10 +128,10 @@ namespace YazsCompanion
             try
             {
                 Transform host = null; var mm = MainMenu(); var pm = mm == null ? PauseMenu() : null;
-                if (mm == null && pm == null && !_viaSearch && !InRun())
-                {   // asked for and the hooks cannot place it: look the old way, once, and trust the search while the menu is open
-                    mm = FindActive<UIViewMainMenu>(); pm = mm == null ? FindActive<UIPauseMenu>() : null;
-                    if (mm != null || pm != null) { _viaSearch = true; Plugin.Logger.LogInfo("[menu] the game's menu was found by search, its Update hook had not reported it"); }
+                if (mm == null && pm == null && !_viaSearch && !_pauseHooked && !InRun())
+                {   // asked for, and the pause menu has never reported itself: look the old way, once, and trust the search while the mod menu is open
+                    pm = FindActive<UIPauseMenu>();
+                    if (pm != null) { _viaSearch = true; Plugin.Logger.LogInfo("[menu] the pause menu was found by search, its Update hook had not reported it"); }
                 }
                 if (mm != null) host = mm.transform; else if (pm != null) host = pm.transform;
                 if (host == null) { Plugin.Logger.LogInfo("[menu] not on the main menu or the pause menu"); return; }
@@ -892,7 +904,7 @@ namespace YazsCompanion
         // Start a Quick Run with the game's own button, let the game open its own pause menu a few seconds in (the
         // pause-key prefix below answers "pressed" once), check the COMPANION button arrived there, open the mod menu over
         // the paused run, close it, and check the pause menu is still up. Under fifteen seconds of play: no save is written.
-        static bool _ppDone; static int _ppStage; static float _ppAt = -1f;
+        static bool _ppDone, _ppHero; static int _ppStage; static float _ppAt = -1f;
         internal static bool FakePauseOnce;
 
         static void PausePreviewTick()
@@ -916,7 +928,17 @@ namespace YazsCompanion
                         {
                             bool playing = false; float t = 0f;
                             try { var gm = GameplayMaster.s_instance; if (gm != null && gm.currentGameMode != null) { playing = gm.currentGameMode.IsGameplayActive; t = gm.currentGameMode.CurrentModePlayTime; } } catch { }
-                            if (!playing || t < 3f) { _ppAt = now + 1f; if (now > 120f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; } return; }
+                            // thirty seconds of play first, taking the recommended card of every offer on the way: that is what
+                            // exercises the readout, the plan worked out while a screen closes, and the [Debug] Perf sections
+                            if (playing && t < 30f && Advisor.DebugPickDue(now)) { _ppAt = now + 0.5f; return; }
+                            if (!playing || t < 30f)
+                            {
+                                _ppAt = now + (playing ? 0.5f : 1f);
+                                // Quick Run can stop at SELECT TEAM LEADER first: press its Start once, with the leader it proposes
+                                if (!playing && !_ppHero) { var hero = FindActive<UIViewChooseHero>(); if (hero != null) { _ppHero = true; Plugin.Logger.LogInfo("[menu] pause walk: team leader screen, Start"); hero.OnClickStart(); _ppAt = now + 3f; } }
+                                if (now > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; }
+                                return;
+                            }
                             Plugin.Logger.LogInfo("[menu] pause walk: pausing at " + t.ToString("0.0") + " s of play"); FakePauseOnce = true;
                             _ppAt = now + 2.5f; _ppStage = 2; return;
                         }
