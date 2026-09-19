@@ -220,7 +220,8 @@ namespace YazsCompanion
                 _visible = v; _target = v ? 1f : 0f;
                 if (v)
                 {
-                    if (!_root.gameObject.activeSelf) { _alpha = 0f; if (_fade != null) _fade.alpha = 0f; _intro = true; }
+                    if (!_root.gameObject.activeSelf) { _alpha = 0f; if (_fade != null) _fade.alpha = 0f; }
+                    if (_alpha <= 0.001f) _intro = true;       // from nothing (also the first show: a new widget is born active): play the entrance
                     _root.gameObject.SetActive(true);
                     Wake(4f);
                 }

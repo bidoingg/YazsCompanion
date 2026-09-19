@@ -6,10 +6,9 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-18): **0.9.0 (built, NOT released yet) — the motion pass**, see "Motion" below: verified frame by
-frame on the Training Yard and for the PLAN readout's change cue; the readout's entrance after the last timing fix
-and the card badges' entrance still have to be seen once before the release (the game was running on the Steam Deck,
-which blocks PC launches). **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
+Status (2026-09-18): **0.9.0 — the motion pass**, see "Motion" below: verified frame by frame on the Training Yard and for the
+PLAN readout's entrance and change cue; the card badges' entrance uses the same primitives but has not been seen on a
+real selection screen yet. **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
 buying with the points on hand (gold diamonds, in purchase order), rings the node to save for next, and prints a
 SPEND / THEN / WHY strip under the tree; see "Training Yard advice" below. Checked on all nine tabs at 3440x1440
 and in a real 1280x800 window (the Steam Deck's layout and pixels) by a preview walk that opens the Training Yard
