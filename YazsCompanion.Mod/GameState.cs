@@ -33,6 +33,26 @@ namespace YazsCompanion
             return 0;
         }
         public bool Owns(PowerupBase p) { return LevelOf(p) >= 1; }
+
+        /// <summary>The build the advice follows for this survivor (mod menu); null = Auto.</summary>
+        public Build Build { get { return Builds.For(Name); } }
+
+        /// <summary>Owned base abilities with their levels. An evolution is its own level-1 powerup next to the maxed base
+        /// ability, so it is left out here: it is not a fifth ability.</summary>
+        public List<KeyValuePair<PowerupBase, int>> Abilities()
+        {
+            var list = new List<KeyValuePair<PowerupBase, int>>();
+            foreach (var kv in Powerups) if (kv.Value >= 1 && kv.Key != null && G.IsAbility(kv.Key) && !G.IsEvolution(kv.Key)) list.Add(kv);
+            return list;
+        }
+        /// <summary>The evolution this survivor took of a base ability, or null.</summary>
+        public PowerupBase EvolutionOf(PowerupBase ability)
+        {
+            PowerupBase a = null, b = null; try { a = ability.abilityEvolutionA; b = ability.abilityEvolutionB; } catch { }
+            if (a != null && Owns(a)) return a;
+            if (b != null && Owns(b)) return b;
+            return null;
+        }
         public bool Has(ItemBase it) { foreach (var kv in Items) if (G.Same(kv.Key, it)) return true; return false; }
     }
 
@@ -44,6 +64,9 @@ namespace YazsCompanion
         public string Mode = "?";
         public int Horde;
         public readonly TagProfile Tags = new TagProfile();   // what the squad deals + the run's damage type tag points
+        public RunContext Ctx = new RunContext();             // mode, clock, pace: what the timing curves read
+        public readonly List<TeamBoost> Boosts = new List<TeamBoost>();   // owned team passives whose owner is on the squad
+        public int ItemsHeld;
         public bool SquadFull { get { return Squad.Count >= 3; } }
         public Survivor Find(CT t) { foreach (var s in Squad) if (s.Type == t) return s; return null; }
         public bool OnSquad(CT t) { return Find(t) != null; }
@@ -162,6 +185,21 @@ namespace YazsCompanion
         public static int MaxLevel(PowerupBase p) { try { int m = p.MaxLevel; return m > 0 ? m : 4; } catch { return 4; } }
         public static bool Unlocked(ClassProperties cp) { try { return cp.isCharacterUnlocked || cp.isCharacterAlwaysUnlocked; } catch { return false; } }
         public static bool IsAbility(PowerupBase p) { try { return p.isAbility && p.TryCast<BasicLevelPowerup>() == null; } catch { return false; } }
+        public static bool IsEvolution(PowerupBase p) { try { return p != null && p.evolutionBaseAbility != null; } catch { return false; } }
+
+        /// <summary>The powerup in the game's own terms (damage types, powerup tags), for the pure synergy rules.</summary>
+        public static PowerFacts Facts(PowerupBase p)
+        {
+            var f = new PowerFacts();
+            if (p == null) return f;
+            f.Name = Name(p);
+            try { f.IsWeapon = p.TryCast<WeaponUpgradePowerup>() != null; } catch { }
+            f.IsAbility = IsAbility(p);
+            try { f.Healing = p.isHealingAbility; } catch { }
+            try { foreach (var t in Each(p.hashtagTypes)) { string n = TagName(t); if (n != null && !f.Damage.Contains(n)) f.Damage.Add(n); } } catch { }
+            try { foreach (var t in Each(p.powerupTags)) f.Tags.Add(t.ToString()); } catch { }
+            return f;
+        }
 
         // ---- damage type tags ----
         static readonly HashtagSystem.EHashtagType[] TagTypes =
@@ -190,13 +228,15 @@ namespace YazsCompanion
         static void ReadTags(GameplayMaster master, Snapshot s)
         {
             var p = s.Tags;
+            try { p.Plan = Doctrine.Current.TagPlan ?? "Auto"; } catch { }
             foreach (var sv in s.Squad)
             {
-                if (sv.Weapon != null && sv.LevelOf(sv.Weapon) >= 1) Deals(p, sv.Weapon, 1.0);
+                if (sv.Weapon != null && sv.LevelOf(sv.Weapon) >= 1) Deals(p, sv.Weapon, 1.0 * Levelled(sv.LevelOf(sv.Weapon), MaxLevel(sv.Weapon)));
                 foreach (var kv in sv.Powerups)
                 {
                     if (kv.Value < 1 || kv.Key == null || !IsAbility(kv.Key)) continue;
-                    Deals(p, kv.Key, 0.5);
+                    if (!IsEvolution(kv.Key) && sv.EvolutionOf(kv.Key) != null) continue;      // the evolution stands in for its maxed base ability
+                    Deals(p, kv.Key, 0.5 * (IsEvolution(kv.Key) ? 1.15 : Levelled(kv.Value, MaxLevel(kv.Key))));
                 }
             }
             try
@@ -214,10 +254,100 @@ namespace YazsCompanion
             }
             catch { }
         }
+        /// <summary>What the squad deals when <paramref name="without"/>'s current weapon is left out: the weapon is about
+        /// to be replaced by a tier-2 branch, so it must not vote for its own damage type. The run's tag points are kept.</summary>
+        public static TagProfile SquadProfile(Snapshot s, Survivor without)
+        {
+            var p = new TagProfile { SpecialAt = s.Tags.SpecialAt, Plan = s.Tags.Plan };
+            foreach (var kv in s.Tags.Points) p.Points[kv.Key] = kv.Value;
+            foreach (var sv in s.Squad)
+            {
+                if (sv != without && sv.Weapon != null && sv.LevelOf(sv.Weapon) >= 1) Deals(p, sv.Weapon, 1.0 * Levelled(sv.LevelOf(sv.Weapon), MaxLevel(sv.Weapon)));
+                foreach (var kv in sv.Powerups)
+                {
+                    if (kv.Value < 1 || kv.Key == null || !IsAbility(kv.Key)) continue;
+                    if (!IsEvolution(kv.Key) && sv.EvolutionOf(kv.Key) != null) continue;
+                    Deals(p, kv.Key, 0.5 * (IsEvolution(kv.Key) ? 1.15 : Levelled(kv.Value, MaxLevel(kv.Key))));
+                }
+            }
+            return p;
+        }
+
         static void Deals(TagProfile p, PowerupBase powerup, double weight)
         {
             string name = Name(powerup);
-            try { foreach (var t in Each(powerup.hashtagTypes)) p.Deals(TagName(t), name, weight); } catch { }
+            var types = new List<string>();
+            try { foreach (var t in Each(powerup.hashtagTypes)) { string n = TagName(t); if (n != null && !types.Contains(n)) types.Add(n); } } catch { }
+            p.Source(name, weight, types);
+        }
+        // a level-1 powerup carries 40 % of what it will at its maximum
+        static double Levelled(int level, int max) { return 0.4 + 0.6 * Math.Min(1.0, level / (double)Math.Max(1, max)); }
+
+        /// <summary>The run's pace, kept across snapshots: level-up screens seen and when (Advisor feeds it).</summary>
+        internal static class Pace
+        {
+            static readonly List<float> _at = new List<float>();
+            static float _lastSeconds = -1f;
+            public static int Count { get { return _at.Count; } }
+            public static void Clock(float seconds) { if (seconds + 5f < _lastSeconds) _at.Clear(); _lastSeconds = seconds; }   // the clock jumped back: a new run
+            public static void LevelUp(float seconds) { Clock(seconds); _at.Add(seconds); }
+            /// <summary>Level-ups per minute over the last three minutes of play (0 = too early to say).</summary>
+            public static double Rate(float seconds)
+            {
+                if (seconds < 45f) return 0;
+                float window = Math.Min(180f, seconds); int n = 0;
+                foreach (var t in _at) if (t >= seconds - window) n++;
+                return n / (window / 60.0);
+            }
+        }
+
+        static void ReadContext(GameplayMaster master, Snapshot s)
+        {
+            var c = s.Ctx;
+            c.D = Doctrine.Current;
+            c.Mode = s.Mode; c.Seconds = s.Seconds; c.Horde = s.Horde;
+            try
+            {
+                var gm = master.currentGameMode;
+                if (gm != null)
+                {
+                    try { c.Difficulty = (int)gm.difficulty + 1; } catch { }
+                    try { c.Goal = gm.TimeRequiredForSuccess; } catch { }
+                    if (s.Mode == "Extermination")
+                    {
+                        try { var ex = gm.TryCast<GameModeExtermination>(); if (ex != null) c.Wave = ex.CompletedWaveCount() + 1; } catch { }
+                        try { var def = master.gameModeDefinition; if (def != null && def.waveDefinitions != null) c.Waves = def.waveDefinitions.Count; } catch { }
+                    }
+                }
+            }
+            catch { }
+            Pace.Clock(s.Seconds);
+            c.LevelUps = Pace.Count; c.LevelRate = Pace.Rate(s.Seconds);
+            // recruits carry a sentinel health value, so the leader's health bar speaks for the squad
+            foreach (var sv in s.Squad)
+            {
+                if (!sv.Leader || sv.Player == null) continue;
+                try { var h = sv.Player.health; if (h != null && h.MaxHealth > 0 && h.MaxHealth < 1e7f) c.Health = Math.Max(0, Math.Min(1, h.CurrentHealth / h.MaxHealth)); } catch { }
+            }
+        }
+
+        // the team passives (Grenade / Turret / Trap Expertise, Cold Chain) that are bought and whose owner is on the squad
+        static void ReadBoosts(Snapshot s)
+        {
+            foreach (var n in AllNodes())
+            {
+                SkillTreeUpgradeTaggedPowerupBoost t = null; try { t = n.TryCast<SkillTreeUpgradeTaggedPowerupBoost>(); } catch { }
+                if (t == null || !NodeOwned(n)) continue;
+                ClassProperties cp = null; try { cp = n.targetClassProperties; } catch { }
+                if (cp == null || !s.OnSquad(cp.characterType)) continue;
+                var b = new TeamBoost { Owner = ClassName(cp.characterType) };
+                try { b.Tag = t.requiredTag.ToString(); } catch { continue; }
+                try { if (t.excludeTag) b.NotTag = t.excludedTag.ToString(); } catch { }
+                try { b.AbilitiesOnly = t.abilitiesOnly; } catch { }
+                try { b.Name = n.GetName(); } catch { }
+                if (string.IsNullOrEmpty(b.Name)) b.Name = b.Tag + " Expertise";
+                s.Boosts.Add(b);
+            }
         }
 
         // ---- the run right now ----
@@ -265,6 +395,9 @@ namespace YazsCompanion
                 (owner ?? h.Key).Powerups.Add(h.Value);
             }
             try { ReadTags(master, s); } catch (Exception e) { Plugin.Logger.LogWarning("[tags] " + e.Message); }
+            try { ReadContext(master, s); } catch (Exception e) { Plugin.Logger.LogWarning("[ctx] " + e.Message); }
+            try { ReadBoosts(s); } catch (Exception e) { Plugin.Logger.LogWarning("[boosts] " + e.Message); }
+            foreach (var sv in s.Squad) foreach (var kv in sv.Items) s.ItemsHeld += Math.Max(1, kv.Value);
             return s;
         }
     }

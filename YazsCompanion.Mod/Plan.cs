@@ -55,12 +55,32 @@ namespace YazsCompanion
             else if (n.StartsWith(b + " ")) n = n.Substring(b.Length + 1).Trim();
             return n;
         }
-        static string Evos(Ranker.AbilityVerdict v, PowerupBase baseAbility)
+        static string Evos(Ranker.AbilityVerdict v, PowerupBase baseAbility, Survivor sv = null, Snapshot s = null)
         {
+            var pick = PickEvolution(v, baseAbility, sv, s);
+            if (pick != null) return N(EvoShort(pick, baseAbility));
             var evos = new List<string>();
             if (v.EvoA != null) evos.Add(N(EvoShort(v.EvoA, baseAbility)));
             if (v.EvoB != null) evos.Add(N(EvoShort(v.EvoB, baseAbility)));
             return string.Join(" / ", evos);
+        }
+
+        // the evolution to take: the build's pick, else the one that clearly fits the squad better (damage types, team
+        // passives); null while the two are a toss-up
+        static PowerupBase PickEvolution(Ranker.AbilityVerdict v, PowerupBase baseAbility, Survivor sv, Snapshot s)
+        {
+            if (sv == null || s == null || v.EvoA == null || v.EvoB == null) return null;
+            var build = sv.Build; string want = build == null ? null : build.EvolutionOf(G.Name(baseAbility));
+            if (want != null)
+            {
+                if (Ranker.SameName(want, G.Name(v.EvoA))) return v.EvoA;
+                if (Ranker.SameName(want, G.Name(v.EvoB))) return v.EvoB;
+            }
+            var bf = G.Facts(baseAbility);
+            double a = Synergy.EvolutionFit(G.Facts(v.EvoA), bf, s.Tags, s.Boosts, s.Ctx, null);
+            double b = Synergy.EvolutionFit(G.Facts(v.EvoB), bf, s.Tags, s.Boosts, s.Ctx, null);
+            if (Math.Abs(a - b) < 0.25) return null;
+            return a > b ? v.EvoA : v.EvoB;
         }
 
         /// <summary>The compact plan (the default during play): one row per survivor holding only what to pick next - the
@@ -89,7 +109,7 @@ namespace YazsCompanion
         {
             var items = new List<string>();
             var path = Ranker.WeaponPath(sv);
-            var current = path.Where(x => x.Level >= 1).OrderByDescending(x => x.Depth).FirstOrDefault();
+            var current = Ranker.CurrentStep(sv, path);
             if (current == null)
             {
                 var first = path.FirstOrDefault(x => x.Depth == 0);
@@ -106,32 +126,27 @@ namespace YazsCompanion
                 }
             }
 
-            var owned = sv.Powerups.Where(kv => kv.Value >= 1 && kv.Key != null && G.IsAbility(kv.Key)).ToList();
+            var owned = sv.Abilities();
             string ability = null;
             foreach (var kv in owned)
             {
                 if (kv.Value < G.MaxLevel(kv.Key)) continue;
-                bool isEvo = false; try { isEvo = kv.Key.evolutionBaseAbility != null; } catch { }
-                if (isEvo) continue;
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
-                if (!v.EvoOwned) continue;
-                if ((v.EvoA != null && sv.Owns(v.EvoA)) || (v.EvoB != null && sv.Owns(v.EvoB))) continue;
-                ability = C(Gold, N("evolve " + G.Name(kv.Key)));
+                if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
+                var pick = PickEvolution(v, kv.Key, sv, s);
+                ability = C(Gold, N(pick != null ? "evolve " + G.Name(pick) : "evolve " + G.Name(kv.Key)));
                 break;
             }
-            if (ability == null)
+            // "take each ability once": while abilities are still missing and there is time for them, the next one comes first
+            if (ability == null && owned.Count < 4 && sv.Props != null && s.Ctx.Reach(3) >= 0.6)
             {
-                var open = owned.Where(kv => kv.Value < G.MaxLevel(kv.Key)).OrderByDescending(kv => kv.Value).ToList();
-                if (open.Count > 0) ability = N(G.Name(open[0].Key) + " " + open[0].Value + "/" + G.MaxLevel(open[0].Key));
+                var best = NextAbility(sv, s);
+                if (best != null) ability = Nx(G.Name(best));
             }
             if (ability == null)
             {
-                int evolved = owned.Count(kv => { try { return kv.Key.evolutionBaseAbility != null; } catch { return false; } });
-                if (owned.Count - evolved < 4 && sv.Props != null)
-                {
-                    var best = NextAbility(sv, s);
-                    if (best != null) ability = Nx(G.Name(best));
-                }
+                var focus = Ranker.FocusAbility(sv, s);
+                if (focus != null) ability = N(G.Name(focus) + " " + sv.LevelOf(focus) + "/" + G.MaxLevel(focus));
             }
             if (ability != null) items.Add(ability);
             Add("squad", sv.Name + ".plan", sv.Name.ToUpperInvariant(), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
@@ -147,7 +162,9 @@ namespace YazsCompanion
                 SkillTreeUpgradeBase node = null; try { node = a.skillTreeAbilityBoost; } catch { }
                 if (node == null) { try { node = a.skillTreeRequirement; } catch { } }
                 if (node != null && !G.NodeOwned(node)) continue;
-                double sc = Ranker.AbilityScore(a, sv, s).Score;
+                var v = Ranker.AbilityScore(a, sv, s);
+                if (v.Skipped) continue;
+                double sc = v.Score;
                 if (sc > bestScore) { bestScore = sc; best = a; }
             }
             return best;
@@ -157,7 +174,7 @@ namespace YazsCompanion
         {
             // weapon line: "Pump-Action Shotgun 3/4 › Rocket Launcher" (the next step gold once the weapon is maxed)
             var path = Ranker.WeaponPath(sv);
-            var current = path.Where(x => x.Level >= 1).OrderByDescending(x => x.Depth).FirstOrDefault();
+            var current = Ranker.CurrentStep(sv, path);
             var next = path.FirstOrDefault(x => x.Recommended && x.Available && x.Level < 1 && x.Depth > 0 && (current == null || x.Depth > current.Depth));
             string w;
             if (current == null)
@@ -176,30 +193,26 @@ namespace YazsCompanion
             Add(sv.Name, sv.Name + ".weapon", sv.Name.ToUpperInvariant(), w, true);
 
             // ability line, two items at most: the evolution card to wait for > the ability to feed > the next ability
-            var owned = sv.Powerups.Where(kv => kv.Value >= 1 && kv.Key != null && G.IsAbility(kv.Key)).ToList();
+            var owned = sv.Abilities();
             var items = new List<string>();
             foreach (var kv in owned)
             {
                 if (kv.Value < G.MaxLevel(kv.Key)) continue;
-                bool isEvo = false; try { isEvo = kv.Key.evolutionBaseAbility != null; } catch { }
-                if (isEvo) continue;
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
-                if (!v.EvoOwned) continue;
-                if ((v.EvoA != null && sv.Owns(v.EvoA)) || (v.EvoB != null && sv.Owns(v.EvoB))) continue;
-                items.Add(N(G.Name(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key)));
+                if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
+                items.Add(N(G.Name(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key, sv, s)));
                 break;
             }
-            var open = owned.Where(kv => kv.Value < G.MaxLevel(kv.Key)).OrderByDescending(kv => kv.Value).ToList();
-            if (open.Count > 0)
+            var focusAbility = Ranker.FocusAbility(sv, s);
+            if (focusAbility != null)
             {
-                var f = open[0];
-                var v = Ranker.AbilityScore(f.Key, sv, s);
+                int fl = sv.LevelOf(focusAbility);
+                var v = Ranker.AbilityScore(focusAbility, sv, s);
                 // the evolution names only from one level below max: earlier they just make the line wrap
-                bool nearMax = f.Value >= G.MaxLevel(f.Key) - 1;
-                items.Add(N(G.Name(f.Key) + " " + f.Value + "/" + G.MaxLevel(f.Key)) + (v.EvoOwned && nearMax ? C(Dim, Arrow + Evos(v, f.Key)) : ""));
+                bool nearMax = fl >= G.MaxLevel(focusAbility) - 1;
+                items.Add(N(G.Name(focusAbility) + " " + fl + "/" + G.MaxLevel(focusAbility)) + (v.EvoOwned && nearMax ? C(Dim, Arrow + Evos(v, focusAbility, sv, s)) : ""));
             }
-            int evolved = owned.Count(kv => { try { return kv.Key.evolutionBaseAbility != null; } catch { return false; } });
-            if (owned.Count - evolved < 4 && sv.Props != null && items.Count < 2)
+            if (owned.Count < 4 && sv.Props != null && items.Count < 2)
             {
                 var best = NextAbility(sv, s);
                 if (best != null) items.Add(Nx(G.Name(best)));
@@ -231,6 +244,7 @@ namespace YazsCompanion
                 ranked.Add(new KeyValuePair<string, double>(G.ClassName(cls), sc));
             }
             if (ranked.Count == 0) return;
+            if (s.Ctx.RecruitValue < 0.45) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
             var top = ranked.OrderByDescending(kv => kv.Value).Take(2).Select(kv => kv.Key);
             Add("run", "sos", "SOS", string.Join(", ", top.Select(N)));
         }
@@ -240,13 +254,21 @@ namespace YazsCompanion
             PowerupReferences refs = null; try { refs = PowerupReferences.Get; } catch { }
             if (refs == null) return;
             var ranked = new List<KeyValuePair<string, double>>();
-            foreach (var it in G.Each(refs.items))
+            // the game keeps the list of what can still drop this run (its mode masks, the item pool, what was banished)
+            var pool = refs.items; bool live = false;
+            try { if (refs.stillAvailableItems != null && refs.stillAvailableItems.Count > 0) { pool = refs.stillAvailableItems; live = true; } } catch { }
+            var shared = Ranker.ItemContextOf(s);
+            foreach (var it in G.Each(pool))
             {
                 if (it == null) continue;
-                try { if (refs.IsItemDisabled(it)) continue; } catch { }
+                if (!live)
+                {
+                    try { if (refs.IsItemDisabled(it)) continue; } catch { }
+                    try { if (!it.IsAvailable()) continue; } catch { }
+                }
                 if (s.AnyoneHas(it)) continue;
                 var why = new List<string>();
-                double sc = Ranker.ItemScore(it, s, why);
+                double sc = Ranker.ItemScore(it, s, why, shared);
                 if (sc >= 3.0) ranked.Add(new KeyValuePair<string, double>(G.Name(it), sc));
             }
             if (ranked.Count == 0) return;

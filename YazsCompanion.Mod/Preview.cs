@@ -45,6 +45,11 @@ namespace YazsCompanion
         static bool _yardDone; static int _yardStage; static float _yardAt = -1f;
         static int _backW, _backH; static FullScreenMode _backMode; static bool _resized;
 
+        /// <summary>Put the game in a window of [Debug] PreviewResolution (the real layout and pixels of that screen);
+        /// false when none is set or the game already has that size. Undo with <see cref="Restore"/>.</summary>
+        internal static bool Window() { return YardWindow(); }
+        internal static void Restore() { YardRestore(); }
+
         static bool YardWindow()
         {
             string want = ""; try { want = (Plugin.PreviewResolution.Value ?? "").Trim().ToLowerInvariant(); } catch { }

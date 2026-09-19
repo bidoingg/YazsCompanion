@@ -17,6 +17,13 @@ namespace YazsCompanion
             try
             {
                 Panel.ScreenOpened(sel);
+                if (screen == Screen.LevelUp)
+                {
+                    // the pace of the run: how many level-ups are still to come decides what is worth starting now
+                    float t = 0f; try { var gm = GameplayMaster.s_instance.currentGameMode; if (gm != null) t = gm.CurrentModePlayTime; } catch { }
+                    bool reroll0 = false; try { reroll0 = sel.isReroll; } catch { }
+                    if (!reroll0) G.Pace.LevelUp(t);
+                }
                 var snap = G.Read();
                 var cards = new List<Card>();
                 var buttons = sel.powerupButtons;
@@ -44,6 +51,7 @@ namespace YazsCompanion
                 bool reroll = false; try { reroll = sel.isReroll; } catch { }
                 if (reroll) sb.Append(" reroll");
                 Plugin.Logger.LogInfo(sb.ToString());
+                Plugin.Logger.LogInfo("[ctx] " + snap.Ctx + BuildsText(snap) + (snap.Boosts.Count > 0 ? " | boosts: " + string.Join(", ", snap.Boosts.ConvertAll(b => b.Name + " (" + b.Tag + ")")) : ""));
                 if (Plugin.LogSquad.Value) Plugin.Logger.LogInfo("[squad] " + snap.SquadText());
                 if (Plugin.LogSquad.Value && (snap.Tags.Known || snap.Tags.Points.Count > 0))
                     Plugin.Logger.LogInfo("[tags] points: " + (snap.Tags.PointsText().Length > 0 ? snap.Tags.PointsText() : "none") + (snap.Tags.SpecialAt > 0 ? " (special at " + snap.Tags.SpecialAt + ")" : "")
@@ -88,6 +96,13 @@ namespace YazsCompanion
         }
 
         static string Best(List<Card> cards) { foreach (var c in cards) if (c.Rank == 1) return c.Name; return "?"; }
+
+        static string BuildsText(Snapshot s)
+        {
+            var parts = new List<string>();
+            foreach (var sv in s.Squad) { var b = sv.Build; parts.Add(sv.Name + " " + (b != null ? b.Name + " (" + b.Style + ")" : "Auto (" + Doctrine.Current.Style + ")")); }
+            return parts.Count > 0 ? " | builds: " + string.Join(", ", parts) : "";
+        }
     }
 
     // ---- offers: AssignGeneratedElements is virtual and overridden per screen, so patch each override ----
@@ -124,5 +139,5 @@ namespace YazsCompanion
     static class P_YardHighlight { static void Postfix(UISkillTreeNode __0) { TreeUi.Highlighted(__0); } }
 
     [HarmonyPatch(typeof(GameMaster), nameof(GameMaster.Update))]
-    static class P_Notice { static void Postfix() { Fx.Tick(); Notice.Tick(); Preview.Tick(); Shots.Tick(); } }
+    static class P_Notice { static void Postfix() { Fx.Tick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); } }
 }

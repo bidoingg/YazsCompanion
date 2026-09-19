@@ -14,6 +14,10 @@
     <Compile Include="..\..\YazsCompanion.Mod\ItemRules.cs" Link="mod\ItemRules.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Knowledge.cs" Link="mod\Knowledge.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Tags.cs" Link="mod\Tags.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Context.cs" Link="mod\Context.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Synergy.cs" Link="mod\Synergy.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Builds.cs" Link="mod\Builds.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\BuildPresets.cs" Link="mod\BuildPresets.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Updater.cs" Link="mod\Updater.cs" />
   </ItemGroup>
 </Project>

@@ -29,6 +29,9 @@ namespace YazsCompanion.Bench
         {
             string path = args.FirstOrDefault(a => !a.StartsWith("--")) ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "data", "gamedata.json"));
             bool all = args.Contains("--all");
+            int pi = Array.IndexOf(args, "--probe");
+            string probe = pi >= 0 && pi + 1 < args.Length ? args[pi + 1] : Path.Combine(Path.GetDirectoryName(path) ?? ".", "probe.json");
+            path = args.Where((a, i) => !a.StartsWith("--") && (pi < 0 || i != pi + 1)).FirstOrDefault() ?? path;
             if (!File.Exists(path)) { Console.Error.WriteLine("gamedata.json not found: " + path + " (run tools/extract_gamedata.py of the PC app, or pass the path)"); return 2; }
             var items = new List<KeyValuePair<string, string>>();
             using (var doc = JsonDocument.Parse(File.ReadAllText(path)))
@@ -81,7 +84,7 @@ namespace YazsCompanion.Bench
                 cards.Sort((a, b) => b.Item1.CompareTo(a.Item1));
                 foreach (var c in cards) Console.WriteLine("  " + c.Item1.ToString("0.00").PadLeft(5) + "  " + c.Item2.PadRight(16) + " " + c.Item3);
             }
-            return 0;
+            return Checks.Run(probe);
         }
     }
 }

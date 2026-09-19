@@ -25,7 +25,8 @@ namespace YazsCompanion
         public bool RankOpen = true, Perm;
         public string Tier = "";          // the guides' tier of the ability this node boosts or evolves (S / A / B / C / "")
         public string BaseKey = "";       // evolution: the key of the ability node it evolves
-        public bool GuideBranch;          // weapon: the guides' pick at the tier-2 fork
+        public bool GuideBranch;          // weapon: the pick at the tier-2 fork (the selected build's branch, else the guides')
+        public string BranchWhy = "";     // set when the pick comes from the player's build
         public object Ui;                 // the UISkillTreeNode it was read from
 
         public int CostFrom(int level)
@@ -124,7 +125,7 @@ namespace YazsCompanion
             foreach (var a in a1) push(a, 3, "");
             foreach (var w in w1) push(w, w.Max, "Tier-1 weapon levels are cheap and speed up the start.");
             foreach (var a in a1) push(evoOf(a), 1, "Unlocks both evolutions of " + a.Name + ": the biggest spike in the tree.");
-            if (mainFork != null) push(mainFork, 3, mainFork.GuideBranch ? "The guides' weapon branch for this survivor." : "One tier-2 weapon first: the one you levelled most.");
+            if (mainFork != null) push(mainFork, 3, mainFork.BranchWhy.Length > 0 ? mainFork.BranchWhy : mainFork.GuideBranch ? "The guides' weapon branch for this survivor." : "One tier-2 weapon first: the one you levelled most.");
             foreach (var a in a1) push(a, a.Max, "Max the starting abilities" + tierTxt(a) + ".");
             if (mainFork != null) push(mainFork, mainFork.Max, "");
             foreach (var w in final) push(w, 3, "The final weapon of the line.");

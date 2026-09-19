@@ -17,7 +17,11 @@ namespace YazsCompanion
             ClassProperties cp = null; try { cp = container.targetClassProperties; } catch { }
             CT cls = CT.None; try { if (cp != null) cls = cp.characterType; } catch { }
             treeName = isTeam || cls == CT.None ? "General" : G.ClassName(cls);
-            string branch = null; if (!isTeam) Knowledge.Current.WeaponBranch.TryGetValue(treeName, out branch);
+            // the build the player follows for this survivor decides the branch and the ability order; Auto = the guides
+            _build = isTeam ? null : Builds.For(treeName);
+            string branch = null;
+            if (_build != null && !string.IsNullOrEmpty(_build.Branch)) branch = _build.Branch;
+            else if (!isTeam) Knowledge.Current.WeaponBranch.TryGetValue(treeName, out branch);
 
             var cols = container._columns;
             if (cols == null) return nodes;
@@ -49,6 +53,8 @@ namespace YazsCompanion
             return nodes;
         }
 
+        static Build _build;
+
         static void Classify(TNode n, SkillTreeUpgradeBase up, string guideBranch)
         {
             try
@@ -58,7 +64,8 @@ namespace YazsCompanion
                 {
                     n.Kind = TKind.Weapon;
                     string name = G.Name(w.targetWeapon);
-                    n.GuideBranch = guideBranch != null && string.Equals(name, guideBranch, StringComparison.OrdinalIgnoreCase);
+                    n.GuideBranch = guideBranch != null && Ranker.SameName(name, guideBranch);
+                    if (n.GuideBranch && _build != null && !string.IsNullOrEmpty(_build.Branch)) n.BranchWhy = "The weapon branch of your " + _build.Name + " build.";
                     return;
                 }
                 var a = up.TryCast<SkillTreeUpgradeAbilityBoost>();
@@ -88,6 +95,14 @@ namespace YazsCompanion
         static string TierOf(PowerupBase ability)
         {
             if (ability == null) return "";
+            if (_build != null)
+            {
+                // the build's own order stands in for the guides' tiers: first = S ... fourth = C, skipped = C
+                string name = G.Name(ability);
+                if (_build.Skips(name)) return "C";
+                int i = _build.PriorityOf(name);
+                if (i >= 0) return i == 0 ? "S" : i == 1 ? "A" : i == 2 ? "B" : "C";
+            }
             string tier; return Knowledge.Current.AbilityTier.TryGetValue(G.Name(ability), out tier) ? tier : "";
         }
 

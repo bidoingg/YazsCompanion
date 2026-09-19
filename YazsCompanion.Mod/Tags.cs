@@ -17,26 +17,49 @@ namespace YazsCompanion
     {
         public static readonly string[] Names = { "Fire", "Electric", "Chemical", "Ice", "Explosive", "Kinetic", "Slashing" };
 
-        /// <summary>type -> how much of the squad's damage carries it: weapons count 1, abilities 0.5 (uncapped).</summary>
+        /// <summary>type -> how much of the squad's damage carries it: a weapon counts 1, an ability 0.5, each scaled by how
+        /// far it is levelled (a recruit's level-1 weapon is not the leader's maxed one).</summary>
         public readonly Dictionary<string, double> Weight = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>The weight of every damage source, each counted once however many types it deals.</summary>
+        public double Total;
         /// <summary>type -> the powerups dealing it, for the reason lines ("Shotgun, Minefield").</summary>
         public readonly Dictionary<string, List<string>> Sources = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         /// <summary>type -> tag points the run has right now.</summary>
         public readonly Dictionary<string, int> Points = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Points needed for a type's special effect (0 = unknown).</summary>
         public int SpecialAt;
+        /// <summary>"Auto" = stack what the squad deals most, "Spread" = no stacking, or a type name to force (Doctrine.TagPlan).</summary>
+        public string Plan = "Auto";
         public bool Known { get { return Weight.Count > 0; } }
 
+        /// <summary>One damage source with all the types it deals (the live reader): counted once in <see cref="Total"/>.</summary>
+        public void Source(string source, double weight, IEnumerable<string> types)
+        {
+            bool any = false;
+            foreach (var t in types) { if (string.IsNullOrEmpty(t)) continue; Add(t, source, weight); any = true; }
+            if (any) Total += weight;
+        }
+
+        /// <summary>One type of one source (the bench's scenarios; a source dealing two types is counted twice in the total).</summary>
         public void Deals(string type, string source, double weight)
         {
             if (string.IsNullOrEmpty(type)) return;
+            Add(type, source, weight); Total += weight;
+        }
+
+        void Add(string type, string source, double weight)
+        {
             double w; Weight.TryGetValue(type, out w); Weight[type] = w + weight;
             List<string> list; if (!Sources.TryGetValue(type, out list)) Sources[type] = list = new List<string>();
             if (!string.IsNullOrEmpty(source) && !list.Contains(source)) list.Add(source);
         }
 
-        /// <summary>0..1 share of the squad's damage carrying the type (a weapon alone is 1).</summary>
-        public double Fit(string type) { double w; return Weight.TryGetValue(type, out w) ? Math.Min(1.0, w) : 0; }
+        /// <summary>0..1: the share of the squad's damage that carries the type. One fire weapon among three is a third,
+        /// not "fully fire"; a solo Pyro is 1.</summary>
+        public double Share(string type) { double w; return Total > 0 && Weight.TryGetValue(type ?? "", out w) ? Math.Min(1.0, w / Total) : 0; }
+        /// <summary>How well a bonus to the type fits the squad, 0..1 (the share, lifted a little: half the squad's damage
+        /// is already a full fit for an item).</summary>
+        public double Fit(string type) { return Math.Min(1.0, Share(type) * 1.6); }
         public int PointsOf(string type) { int n; return Points.TryGetValue(type, out n) ? n : 0; }
         public string SourceText(string type)
         {
@@ -59,6 +82,10 @@ namespace YazsCompanion
         /// <summary>The type worth stacking: most points among the types the squad deals, else the type it deals most.</summary>
         public string Focus()
         {
+            // the player's standing order (mod menu, ADVICE tab): a fixed type, or no stacking at all
+            if (string.Equals(Plan, "Spread", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!string.IsNullOrEmpty(Plan) && !string.Equals(Plan, "Auto", StringComparison.OrdinalIgnoreCase))
+                foreach (var n in Names) if (string.Equals(n, Plan, StringComparison.OrdinalIgnoreCase)) return n;
             string focus = null; double key = double.MinValue;
             foreach (var t in Names)
             {

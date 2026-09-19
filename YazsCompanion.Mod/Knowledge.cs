@@ -18,6 +18,8 @@ namespace YazsCompanion
         public readonly Dictionary<string, string> ItemNote = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, double> MilitaryStat = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> CritSquad = new List<string>();      // survivors that make crit items shine
+        public readonly List<KeyValuePair<string, string>> ItemPairs = new List<KeyValuePair<string, string>>();   // items that name each other: worth more once the other is held
+        public readonly HashSet<string> ScalingItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);        // items that grow over the run: early or not at all
         public string Source = "defaults";
 
         public static Knowledge Current = new Knowledge();
@@ -108,6 +110,13 @@ namespace YazsCompanion
                 if (root.TryGetProperty("itemNotes", out e)) foreach (var p in e.EnumerateObject()) ItemNote[p.Name] = p.Value.GetString();
                 if (root.TryGetProperty("militaryStats", out e)) foreach (var p in e.EnumerateObject()) MilitaryStat[p.Name] = p.Value.GetDouble();
                 if (root.TryGetProperty("critSquad", out e)) foreach (var v in e.EnumerateArray()) CritSquad.Add(v.GetString());
+                if (root.TryGetProperty("scalingItems", out e)) foreach (var v in e.EnumerateArray()) ScalingItems.Add(v.GetString());
+                if (root.TryGetProperty("itemPairs", out e))
+                    foreach (var pair in e.EnumerateArray())
+                    {
+                        var two = new List<string>(); foreach (var v in pair.EnumerateArray()) two.Add(v.GetString());
+                        if (two.Count == 2) ItemPairs.Add(new KeyValuePair<string, string>(two[0], two[1]));
+                    }
             }
         }
 
@@ -115,51 +124,62 @@ namespace YazsCompanion
         public const string DefaultJson = @"{
   // YAZS Companion - ranking knowledge. Edit freely; delete the file to restore these defaults.
   // Tiers: S / A / B / C. Names must match the game's English names exactly.
-  // Sources (2026-09):
-  //  - GoldMath, 'Synergy Guide' (Steam Community, id 3352985777): pair rankings by synergy count; the mod
-  //    recomputes those counts from the game's own synergy nodes at run time.
-  //  - yetanotherzombiesurvivors.wiki tier lists (survivors, weapons, squads, items) and its rule
-  //    'take each ability once, finish the weapon, then dump into the one ability that is already working'.
-  //  - yetanotherzombiesurvivorswiki.wiki 'best upgrades': max the starting weapon first, one weapon line,
-  //    then crit / turret-shield / poison / dodge-regen depending on the squad identity.
+  // What the advice follows per survivor (weapon branch, ability order, evolutions) is chosen in the mod menu
+  // (BUILDS tab, stored in builds.json); this file holds what is left: tiers, item notes, stat weights.
+  //
+  // Sources, graded (2026-09 review). Most '1.0 wikis' for this game are auto-generated and contradict the game's
+  // own data (wrong weapon forks, abilities that do not exist), so they only count where a human source agrees:
+  //  [official] Steam patch notes 0.3 - 1.0.1a and developer forum replies: modes, tag rules, item changes.
+  //  [human]    Kudesnik, '0.7 General guide' (Steam id 3345006120); GoldMath, 'Synergy Guide' (id 3352985777; the mod
+  //             recomputes its synergy counts from the game's own nodes); JHG's achievements guide (id 3006467623);
+  //             Steam forum threads on builds, weapons and modes (2023 - 2026); Destructoid's 1.0 class tier list.
+  //  [wiki]     yetanotherzombiesurvivors.wiki item and survivor tier lists: kept as a weak prior only.
+  // The game's own data (damage types, powerup tags, tag points per level, mode masks) always wins over any of them.
   ""survivors"": {
     ""SWAT"":     { ""leader"": ""S"", ""rescue"": ""S"" },
     ""Engineer"": { ""leader"": ""A"", ""rescue"": ""S"" },
     ""Huntress"": { ""leader"": ""A"", ""rescue"": ""S"" },
     ""Tank"":     { ""leader"": ""A"", ""rescue"": ""A"" },
     ""Ranger"":   { ""leader"": ""A"", ""rescue"": ""A"" },
+    ""Medic"":    { ""leader"": ""B"", ""rescue"": ""A"" },
     ""Ghost"":    { ""leader"": ""B"", ""rescue"": ""B"" },
     ""Mechanic"": { ""leader"": ""B"", ""rescue"": ""B"" },
-    ""Pyro"":     { ""leader"": ""B"", ""rescue"": ""B"" },
-    ""Medic"":    { ""leader"": ""C"", ""rescue"": ""C"" }
+    ""Pyro"":     { ""leader"": ""B"", ""rescue"": ""B"" }
   },
-  // preferred tier-2 branch per survivor (the two rank-2 weapons are exclusive); unlisted = decided by tree investment
+  // the tier-2 branch the guides prefer when a survivor is on Auto (no build selected) AND the squad's damage types
+  // do not decide it; unlisted = decided by the squad and the Training Yard investment alone
   ""weaponBranch"": {
     ""SWAT"": ""Assault Rifle"",
     ""Tank"": ""Rocket Launcher"",
     ""Ghost"": ""Thousand Cuts"",
     ""Mechanic"": ""Nitro-Gun"",
-    ""Pyro"": ""Flamethrower""
+    ""Pyro"": ""Infernax""
   },
-  // abilities the guides single out; unlisted abilities are neutral
+  // abilities the guides single out, used while a survivor is on Auto; a selected build's own order replaces this
   ""abilities"": {
     ""Helicopter Strike"": ""S"",
+    ""Energy Shield"": ""S"",
+    ""Arrow Rain"": ""S"",
     ""Automatic Turret"": ""A"",
     ""Bombing Strike"": ""A"",
-    ""Energy Shield"": ""S"",
+    ""Sawblade Drone"": ""A"",
     ""Electric Turret"": ""A"",
     ""Electrocution"": ""A"",
+    ""Fire Walk"": ""A"",
+    ""Experiment 21"": ""A"",
     ""Cooling Mods"": ""A"",
-    ""Ice Turret"": ""A""
+    ""Ice Turret"": ""A"",
+    ""Transmitter"": ""C"",
+    ""Remote Control Car"": ""C""
   },
-  // item tiers from the wiki's item tier list (1.0.0c2, 2026-08-30): S = pickup radius / magnet items, Accumulator,
-  // Silencer on crit squads; A and B as listed there; 'tag toys' (items whose effect is +N to a damage type tag)
-  // are B, and the mod adds the fit with what the squad actually deals on top of the tier
+  // item tiers. S / A from the wiki list where a human source agrees or is silent; [human] marks items the forum
+  // and guide writers name as go-to picks. The mod adds the fit with the squad, the run clock and what is held on top.
   ""items"": {
     ""Silencer"": ""S"", ""Accumulator"": ""S"",
     ""Chick Magnet"": ""A"", ""Electric Personality"": ""A"",
     ""Black Box"": ""A"", ""Mana Potion"": ""A"", ""Dartboard"": ""A"", ""Fishing Pole"": ""A"", ""Last Round"": ""A"",
     ""Ragged Patch"": ""A"", ""Power Generator"": ""A"",
+    ""Giant Enemy Crab"": ""A"", ""Homing Pigeon"": ""A"", ""Scouter"": ""A"", ""Magazine Clip"": ""A"", ""Gaslighter"": ""A"", ""Wooden Stick"": ""A"",
     ""Heavy Metal"": ""B"", ""Pickup Pick"": ""B"",
     ""Hijacked Signal"": ""B"", ""Jailbroken Phone"": ""B"", ""Access Keycard"": ""B"", ""Great Nade"": ""B"",
     ""Hyperactivity"": ""B"", ""The Word"": ""B"", ""Boiling Pot"": ""B"", ""Pawn Shop Receipt"": ""B"",
@@ -167,28 +187,47 @@ namespace YazsCompanion
     ""Nine Inch Nails"": ""B"", ""Bloody Axe"": ""B"", ""Bleeding Edge"": ""B"", ""The Bomb"": ""B"", ""Explosive Surprise"": ""B"",
     ""Icon of Cinder"": ""B"", ""Icon of Pestilence"": ""B"", ""Icon of Stillness"": ""B"", ""Icon of Tempest"": ""B"",
     ""Slingshot"": ""B"", ""Magical Hat"": ""B"", ""Omnigeode"": ""B"", ""Ultra Instinct"": ""B"", ""One For All"": ""B"",
-    ""Glass Cannon"": ""C"", ""Brave Toaster"": ""C"", ""Acoustic Guitar"": ""C"", ""Easter Egg"": ""C"", ""Mushroom Mushroom"": ""C""
+    ""Solar Panel"": ""B"", ""Power Glove"": ""B"", ""Detective's Pipe"": ""B"", ""Stretcher"": ""B"", ""Frozen Heart"": ""B"",
+    ""Boxing Gloves"": ""B"", ""Ruby Gem"": ""B"", ""Sapphire Gem"": ""B"", ""Emerald Gem"": ""B"", ""Acoustic Guitar"": ""B"",
+    ""Glass Cannon"": ""C"", ""Brave Toaster"": ""C"", ""Easter Egg"": ""C"", ""Mushroom Mushroom"": ""C""
   },
   ""itemNotes"": {
-    ""Silencer"": ""shines on crit squads"",
+    ""Silencer"": ""short-range weapons"",
+    ""Dartboard"": ""long-range weapons"",
     ""Accumulator"": ""magnet pickups nuke the screen"",
-    ""Chick Magnet"": ""pickup radius, the wiki's Default-mode staple"",
-    ""Electric Personality"": ""pickup radius, magnets collect everything"",
-    ""Glass Cannon"": ""only behind Engineer's shield"",
+    ""Chick Magnet"": ""pickup range, and cooldowns on every magnet"",
+    ""Electric Personality"": ""magnets collect everything"",
     ""Mana Potion"": ""strong on Mechanic with Engineer"",
-    ""Power Generator"": ""Endurance staple after elite bosses"",
-    ""Boiling Pot"": ""Pyro on Green Hell"",
-    ""Ultra Instinct"": ""pools every tag into one type at 30 points"",
+    ""Power Generator"": ""ability crits reload the weapons"",
+    ""Giant Enemy Crab"": ""a forum and guide staple"",
+    ""Homing Pigeon"": ""ability hits on full health enemies always crit"",
+    ""Gaslighter"": ""+20% damage per status effect on the target"",
+    ""Wooden Stick"": ""XP: an early pick"",
+    ""Boxing Gloves"": ""+30% against elites and bosses"",
+    ""Acoustic Guitar"": ""guides disagree (a must-have in one, avoid in another)"",
     ""Magical Hat"": ""+2 to every elemental tag (+4 at 4 or more)""
   },
+  // pairs the items themselves name: the second half is worth more once the first is held
+  ""itemPairs"": [
+    [""Accumulator"", ""Electric Personality""], [""Accumulator"", ""Heavy Metal""], [""Accumulator"", ""Chick Magnet""],
+    [""Golden Key"", ""Silver Padlock""],
+    [""Access Keycard"", ""Black Box""], [""Access Keycard"", ""Jailbroken Phone""], [""Access Keycard"", ""Ragged Patch""], [""Access Keycard"", ""Hijacked Signal""],
+    [""Omnigeode"", ""Emerald Gem""], [""Ultra Instinct"", ""One For All""]
+  ],
+  // items that grow over the run (a stack per kill, per chest, per second): worth the slot early, not late
+  ""scalingItems"": [ ""Ring Of Power"", ""Glass of Milk"", ""Black Box"", ""Wooden Stick"", ""Frozen Heart"", ""99'th Balloon"", ""Hijacked Signal"", ""Reserve Bench"", ""Life Savings"" ],
   ""critSquad"": [ ""Huntress"", ""Ghost"", ""SWAT"", ""Ranger"" ],
-  // military-training stat weights (added to rarity: Common 1, Rare 2, Legendary 3, Endless 2.5)
+  // military-training stat weights, by the card's asset name (MilitaryTraining_<Stat>). The mod scales them live: weapon
+  // stats by how much of the squad is weapons, ability stats likewise, XP / luck / magnet range by the run clock,
+  // health / armor / regeneration by how much survival matters right now; rarity multiplies the result.
   ""militaryStats"": {
-    ""WeaponDamage"": 1.0, ""AbilityDamage"": 1.0, ""Damage"": 0.9,
-    ""CritChance"": 0.9, ""CriticalChance"": 0.9, ""CritDamage"": 0.9, ""CriticalDamage"": 0.9,
-    ""AbilityCooldown"": 0.9, ""WeaponCooldownMod"": 0.8, ""ReloadSpeed"": 0.7,
-    ""MaxHealth"": 0.6, ""Armor"": 0.5, ""DodgeChance"": 0.5, ""HealthRegen"": 0.4,
-    ""MovementSpeed"": 0.4, ""XP"": 0.5, ""Cash"": 0.4, ""Luck"": 0.4
+    ""WeaponDamageMod"": 1.0, ""AbilityDamage"": 1.0,
+    ""WeaponCritChance"": 0.85, ""AbilityCritChance"": 0.85, ""WeaponCritDamage"": 0.8, ""AbilityCritDamage"": 0.8,
+    ""AbilityCooldown"": 0.9, ""WeaponCooldownMod"": 0.85, ""WeaponFireRateMod"": 0.8,
+    ""AbilitySize"": 0.7, ""AbilityDuration"": 0.6,
+    ""XPModifierMod"": 0.8, ""Luck"": 0.7, ""MagnetRange"": 0.6,
+    ""MaxHealth"": 0.6, ""Armor"": 0.55, ""DodgeChance"": 0.5, ""HPRegen"": 0.45,
+    ""MovementSpeedMod"": 0.45
   }
 }";
     }

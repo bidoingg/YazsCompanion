@@ -1,12 +1,24 @@
 # YAZS Companion — in-game mod (BepInEx 6 IL2CPP)
 
+![YAZS Companion](art/banner.png)
+
 The mod version of the companion: it runs inside *Yet Another Zombie Survivors*, reads every
 selection screen, the squad and the run clock straight from the game's objects, ranks the offered
 cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and draws the verdict
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-18): **0.9.0 — the motion pass**, see "Motion" below: verified frame by frame on the Training Yard and for the
+Status (2026-09-19): **0.10.0 — the advice review, build guides and the mod menu.** An independent review of the
+ranking (a fresh-eyes audit of the code against a logged run, the game's own data dumped from the running game, and
+the published guides re-read and graded) rebuilt it around four things read live: the BUILD you follow per survivor,
+the SQUAD's synergy as the run stands, the run CLOCK, and the game MODE - see "How it ranks". A mod menu (a
+COMPANION entry in the main menu and the pause menu, or F10; mouse, keyboard and controller) picks a build per
+survivor, edits your own, and sets the standing orders of the advice and what the mod draws - see "The mod menu".
+The mod has its own artwork now (`art/make_art.py`). Verified in the game: the menu at 3440x1440 and in a real
+1280x800 window, real keyboard input, the entry in both menus, the mod menu over a paused run (the pause menu
+survives closing it), and the new ranking on a live level-up offer; chests, SOS, military and Research Pod offers
+ran through the offline bench and the live plan rows but not yet through a live offer of their own.
+**0.9.0 — the motion pass**, see "Motion" below: verified frame by frame on the Training Yard and for the
 PLAN readout's entrance and change cue; the card badges' entrance uses the same primitives but has not been seen on a
 real selection screen yet. **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
 buying with the points on hand (gold diamonds, in purchase order), rings the node to save for next, and prints a
@@ -45,6 +57,42 @@ screen WxH`. 0.5.2 also scales the sidebar and the card badges up on small scree
 3840x2400 canvas, so a canvas unit is a third of a pixel there). 0.5.0 added the auto-updater and the public
 repository; 0.5.1 ranked the Research Pod reward cards, scored chest items against what the squad actually
 deals, added a `TAGS` line to the plan and an offline bench.
+
+## The mod menu (0.10.0)
+
+Open it with the **Companion** entry the mod adds to the main menu and to the pause menu (a clone of one of the
+game's own buttons, wired into their up / down navigation), or with **F10** (`[Menu] MenuKey`). Mouse, keyboard
+(arrows or WASD, Enter, Esc, Q / E for the tabs) and controller (the game's own `UISubmit`, `Cancel`,
+`GoNextTab` / `GoPrevTab` actions and the move axes). While it is open the game's menu underneath holds still.
+
+- **BUILDS** - the nine survivors on the left, the builds of the one in focus on the right; select one and the
+  advice follows it: its tier-2 **weapon branch**, the **order of the abilities** (#1 is the one to focus), the
+  **evolution** to take when both are offered, its **level-up style**, and what it **wants from items**. `Auto`
+  (the default for everyone) fixes nothing and reads the squad instead. Presets are labelled honestly:
+  `GUIDE PICK` = a build human guide writers describe, `ALTERNATIVE` = an option read from the game's own data where
+  the guides are silent (Medic and Mechanic have ONE build in the guides; their alternatives say so). The footer
+  explains the build in focus.
+- **MAKE MY OWN BUILD** - copies the selected build and opens the editor: level-up style, weapon branch (or
+  "decided live"), a rank or SKIP per ability, an evolution per ability (or "live"), item leanings as toggles,
+  "start over from" any preset. Saved as you change it (`builds.json` next to the DLL; presets stay in the DLL, so
+  updates refresh them without touching your own).
+- **ADVICE** - the standing orders for every survivor: level-up style for survivors on Auto (weapon first /
+  balanced / abilities first), how strongly the run clock moves the advice, whether the game mode steers it, the
+  weight of squad synergy, the damage type tag plan (auto-stack / spread / a fixed type), what the run is for
+  (win it / balanced / farm progress), caution, and what to do with SOS signals late in a run. Stored in the
+  `[Advice]` section of the config file, so they can be hand-edited too.
+- **DISPLAY** - what the mod draws: card verdicts, the PLAN readout (detail, position, backing, idle opacity),
+  Training Yard advice, motion.
+
+The Training Yard advice follows the selected build as well (its branch, and its ability order in place of the
+guides' tiers).
+
+Artwork: the crest, a 5 x 5 atlas of glyphs, a chamfered 9-slice panel, the focus glow and the backdrop are
+generated by `art/make_art.py` (Pillow + numpy, supersampled) into `YazsCompanion.Mod/Art`, embedded in the DLL
+and decoded by `Art.cs`; portraits and weapon / ability icons are the game's own sprites. `[Debug] PreviewMenu`
+walks the menu on the main menu and photographs every screen (with `PreviewResolution = 1280x800` in a real
+Deck-sized window); `[Debug] PreviewPause` starts a Quick Run, pauses it, opens the menu over the pause menu and
+closes it again, in under fifteen seconds of play so no save is written.
 
 ## The PLAN readout (during play)
 
@@ -195,57 +243,86 @@ Turn the badges off with `ShowBadges = false` in `BepInEx\config\bidoi.yazs.comp
 automatic) enlarges the ribbon and the reason lines on small screens (up to 1.3, so they stay inside the band
 under the card; about 1.2 on the Deck, 1.0 on a desktop monitor); the frame is not scaled.
 
-## How it ranks (guides first, live state second)
+## How it ranks (0.10.0: the build, the squad, the clock, the mode)
 
-The rules follow published guides rather than the player's own history. The tiers they use live in
-`BepInEx\plugins\YazsCompanion\knowledge.json` (written on first launch, editable; delete it to reset).
-Sources, all read 2026-09-13/14: GoldMath's *Synergy Guide* on Steam (id 3352985777) for survivor pairings
-(the mod recomputes the pair synergy counts from the game's own synergy nodes at run time);
-yetanotherzombiesurvivors.wiki's tier lists for survivors, weapons, squads and items (1.0.0c2), and its rule
-"take each ability once, finish the weapon, then dump into the one ability that is already working";
-yetanotherzombiesurvivorswiki.wiki's *best upgrades* page for "max the starting weapon first, one
-weapon line, then crit / turret-shield / poison / dodge-regen by squad identity".
+What a card is worth is read live from four things. Every score is logged with its reasons (`[ctx]`, `[card]`), so
+a verdict you disagree with can be traced, and the menu or `knowledge.json` adjusted.
 
-- **Level-ups, weapons first**: every weapon level (6.0 and up, "finish the weapon: 2 to 3 of 4") beats
-  every ability level (capped at 5.5); a recruit's first weapon 6.6; the next step of the weapon line
-  6.4 (+0.2 in the first five minutes; the guides' branch per survivor wins the tier-2 fork among the
-  branches your Training Yard unlocked, a branch already taken wins outright); the final weapon 6.8;
-  the other branch 1.5.
-- **Evolutions**: always the pick (7.5 and up); they only appear when the ability is maxed and the tree
-  allows it.
-- **Abilities, one each then focus**: a new ability scores 2.8 while you hold fewer than two, 2.2 up
-  to four, 1.6 after; leveling scores 2.4 plus 1.2 when it is the open (unmaxed) ability furthest
-  along, plus 0.6 on the last level before an unlocked evolution. Guide tiers (S +1.2, A +0.6, C −0.8),
-  owned Training Yard synergies with a partner on the squad (+2.5), an unlocked evolution (+1.5) and
-  paid tree levels (+0.3 each) add on top, scaled; the total never exceeds 5.5.
-- **Chests**: guide tier first (S +3, A +2, B +1, C −1.5), then fit with the squad's damage types from
-  the item's description, +3 for the active quest's target item, −1 for a single-slot item already
-  held. The damage types come from the game itself: every weapon and ability lists the tags it deals
-  (`PowerupBase.hashtagTypes`), so "+4 to Fire damage type tag" scores by how much of the squad's damage
-  is Fire (each survivor's current weapon counts 1, each owned ability 0.5), named in the reason
-  (`Flamethrower, Molotov: fire`); a malus clause ("−10% Kinetic, Slashing, Explosive damage") counts
-  against the squad the same way. The class table (Pyro → fire, ...) is only the fallback when no
-  powerup is known yet. Silencer drops without a crit survivor; Glass Cannon is only rated behind an
-  Engineer.
-- **Research Pod rewards** (`UIGameplayHashtagEvent`, cards of "+N points of one damage type"):
-  1 + 0.15 per point, +2.5 scaled by the squad's share of that type, +1.0 for the type you already stack
-  most among the ones you deal, +1.5 when the card reaches the special-effect threshold
-  (`HashtagSystem.NumRequiredForSpecial`, read live), and the distance to it in the reason
-  (`3 more to the special after this`). Types nobody on the squad deals stay at the bottom.
-- **SOS**: guide rescue tier (S +2.5 down to C −0.5) plus synergy potential: 0.7 per synergy node
-  between the survivor and anyone on the squad, 0.6 more per node you already own, +0.5 per owned
-  "while X is on the team" passive, a small bonus for low Training Yard levels and a rank within five
-  levels. Liberate: 5 with a full squad, 1.2 otherwise.
-- **Military training and Endless stat cards**: rarity (Common 1, Rare 2, Legendary 3, Endless 2.5) plus
-  the stat weight from the knowledge file (damage, crit and cooldowns first), +0.3 team-wide.
+**Sources, graded** (2026-09 review). Most "1.0 wikis" for this game are auto-generated and contradict the game's
+own data (wrong weapon forks, abilities that do not exist), so they only count where a human source agrees.
+*Official*: the Steam patch notes 0.3 - 1.0.1a and developer forum replies (modes, tag rules, item changes).
+*Human*: Kudesnik's "0.7 General guide" (Steam id 3345006120), GoldMath's "Synergy Guide" (id 3352985777; the mod
+recomputes its counts from the game's own nodes), JHG's achievements guide, the Steam forum threads on builds,
+weapons and modes, Destructoid's 1.0 tier list. *Wiki*: yetanotherzombiesurvivors.wiki's tier lists, kept as a weak
+prior. The game's own data - damage types, powerup tags, tag points per level, weapon range modifiers, mode masks,
+dumped from the running game by `[Debug] Probe` - always wins over any of them. The human guides DISAGREE on
+"weapon first" (one goes ability-first for five survivors), which is why the level-up style is yours to set.
 
-Run history is deliberately not used. The log shows every score with its reasons, so a verdict you
-disagree with can be traced and the knowledge file adjusted.
+- **The build** (mod menu). A selected build ranks its abilities (#1 +1.6, #2 +1.0, #3 +0.5, skipped -2.0), picks
+  the tier-2 branch (the other branch drops to 2.0: the branches exclude each other), picks the evolution (+1.0 /
+  -0.5, so its pick is on top when both are offered) and sets the level-up style. On Auto: the guides' ability
+  tiers (S +1.2, A +0.6, C -0.8), and the branch that shares damage types with the REST of the squad, then your
+  Training Yard investment (+0.5 a paid level), then the guides' branch (+0.9).
+- **Level-up styles.** Evolutions (7.6 and up), a recruit's first weapon (7.2), the final weapon (6.9) and the next
+  weapon tier (6.6) are always on top. Below them a weapon level scores `floor + 0.1 x level`: floor 6.0 *weapon
+  first* (every weapon level before any ability level), 4.3 *balanced* (default), 3.3 *abilities first*. Abilities:
+  a new one 3.6 / 3.1 / 2.4 (fewer than two / up to four / after) - "take each ability once" early beats another
+  level of an old one - a level 2.6, +1.0 for the focus ability (the build's highest-ranked open one, else the one
+  furthest along), +0.5 for the level that completes it, up to +0.9 toward an unlocked evolution; all soft-capped
+  under the weapon-first band so strong abilities keep their order instead of tying.
+- **The squad, live.** Every level of a weapon or ability adds ONE tag point to each damage type it deals (an
+  evolution too, including the types it adds); a point is +2 % for everything dealing that type and the special
+  switches on at 10. So a level is worth more the larger the share of the squad's damage that carries its type
+  (weapons count 1, abilities 0.5, each scaled by its level; an evolved ability counts once), +0.9 when it carries
+  a type over the threshold, +0.3 within three of it. Team passives that are BOUGHT and whose owner is on the squad
+  (Grenade / Turret / Trap Expertise, Cold Chain) add +0.5 to every powerup carrying their tag - including the
+  evolutions that add one (Helicopter Strike: Chemtrails throws grenades, Automatic Turret: Provocation taunts).
+  Bought synergy nodes with the partner on the team +2.0. **Evolutions** are chosen by exactly this: Bombing Strike
+  goes Supercharge next to an Engineer and Bioweapon next to a Medic.
+- **The clock** (`Context.cs`). `Reach(n)` = can a plan that needs n more picks of one powerup still finish, from
+  the level-up pace of the last three minutes and the time left. It scales a new ability, the pull toward an
+  evolution, an unfinished weapon (late, a weapon that cannot be finished falls back to the balanced floor: a
+  level-1 bow with ninety seconds left is not a carry) and a recruit. Economy - XP, luck, pickup range, chest and
+  upgrade quality, items that grow over the run - is worth x1.5 at the start, x1 a third in, x0.3 near the end;
+  cash only ever buys Training Yard levels; survival weighs more as the clock runs, on higher difficulties and
+  while the squad is hurting.
+- **The mode.** The goal comes from the game (`TimeRequiredForSuccess`: Default 20:00, Hardcore and Boss Rush
+  10:00, One Hit 5:00), Extermination counts waves, Endurance and Infinite are open-ended (economy never fades).
+  Boss damage x2 in Boss Rush and x1.3 in Endurance; survival x1.25 in Hardcore and nothing in One Hit, where
+  crowd control counts x1.6 instead. The game already withholds what is pointless per mode (no health, armor or
+  dodge cards in One Hit; no XP, luck or pickup range in Extermination), so the mode only steers what is left.
+- **Chests** (`ItemRules.cs`, pure). Guide tier (S +3, A +2, B +1, C -1.5; 59 items tiered, human go-to picks
+  added), then the fit: damage types by the squad's share; turret / melee / taunt / deployable / grenade by
+  whether the squad OWNS such a powerup (the game's powerup tags, not a class table); Silencer and Dartboard by the
+  squad's weapons' own range modifiers; Magazine Clip and Last Round by clip sizes; Glass Cannon by an owned Energy
+  Shield. An item about a type the squad does not deal keeps 30 % of its tier; an item that is ONLY about the
+  economy follows the clock with its whole tier. Items that grant tag points are judged from the run's live
+  points (+1.2 when a +N reaches the special; Ultra Instinct needs a tag at 30; One For All is a malus on a
+  stacked type), pairs the items name are worth more once the other half is held (Accumulator and the magnet
+  items, Golden Key and Silver Padlock, the Parca set), and what your builds want adds +0.5. Malus clauses count
+  against the squad; an enemy's malus ("enemy projectiles deal -50 %") does not. +3 for the quest target, -1 for a
+  single-slot item already held. The GRAB row only lists what can still drop (`stillAvailableItems`).
+- **Research Pod rewards**: 1 + 0.15 per point, +2.5 scaled by the squad's share of that type, +1.0 for the type
+  you stack (or the type fixed on the ADVICE tab; nothing with "Spread"), +1.5 when the card reaches the special.
+- **SOS**: a recruit is a third gun and +20 % XP for the rest of the run (2.0), plus the guides' rescue tier, +1.1
+  per BOUGHT synergy node either way (an unbought node does nothing in a run), shared damage types, team passives
+  either way, how trained the recruit is - all scaled by the time a newcomer still has to grow. Liberate: 5 with a
+  full squad, else 1.0 rising to 4.2 as that time runs out.
+- **Military training**: `1 + rarity x weight x 2` (Common 1, Rare 1.6, Endless 2, Legendary 2.3: rarity
+  multiplies the stat instead of outvoting it), weights by the card's real asset name, weapon stats scaled by how
+  much of the squad's levels are weapons and ability stats likewise, XP / luck / pickup range by the clock, health
+  / armor / regeneration by how much survival matters right now, +20 % when a selected build wants it.
+
+Run history is deliberately not used.
 
 ### Offline bench
 
-`tools\bench.cmd [path\to\gamedata.json] [--all]` compiles the pure rule files (`ItemRules.cs`, `Tags.cs`,
-`Knowledge.cs`) into a console app (`tools\ItemBench`) and scores every item of the game for a few squads,
+`tools\bench.cmd [path\to\gamedata.json] [--probe path\to\probe.json] [--all]` compiles the pure rule files
+(`ItemRules.cs`, `Tags.cs`, `Knowledge.cs`, `Context.cs`, `Synergy.cs`, `Builds.cs`, `BuildPresets.cs`) into a
+console app (`tools\ItemBench`). With a `probe.json` (the `[Debug] Probe` dump; by default next to
+`gamedata.json`) it first VALIDATES every preset and kit name against the game's own names - a misspelt evolution
+would silently never match - then shows the run clock at work (the same items at 02:00 / 10:00 / 18:30), the
+modes side by side, which evolution fits which squad and which branch fits the rest of the squad. It also scores every item of the game for a few squads,
 listing the top picks, any item that reaches the `GRAB` threshold (3.0) on keywords alone, the bottom of
 the list, and how a Research Pod screen would rank. It reads the PC app's extracted `data\gamedata.json`
 (from `tools\extract_gamedata.py` in the project root, outside this repository); pass the path if it lives
@@ -385,16 +462,23 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
   build.cmd                       build + deploy
   package.cmd / package.ps1       Steam Deck / Windows zip with BepInEx bundled
   release.cmd / release.ps1       tag + GitHub release + latest.json for the auto-updater + Drive copy
-  tools/bench.cmd, tools/ItemBench/   offline bench of the item and tag rules over the extracted game data
+  tools/bench.cmd, tools/ItemBench/   offline bench: preset validation, clock / mode / evolution / branch scenarios, item scores
+  art/make_art.py, art/banner.png     the artwork generator (Pillow + numpy) and the repository banner
   YazsCompanion.Mod/
     YazsCompanion.Mod.csproj      references BepInEx\core + BepInEx\interop from the game folder
     Plugin.cs                     BepInEx entry point, config, Harmony bootstrap, per-mod log file
     Advisor.cs                    Harmony patches; collects the cards, ranks, draws, logs offers and picks
     GameState.cs                  live squad / clock / Training Yard / damage-tag readers over the IL2CPP objects
-    Ranker.cs                     the ranking rules (guide principles + live state)
-    Knowledge.cs                  guide-derived tiers; writes/reads plugins\YazsCompanion\knowledge.json
-    ItemRules.cs                  item keyword table and the pure item score (squad fit by damage type)
+    Ranker.cs                     the ranking rules: the build, the squad, the clock, the mode
+    Context.cs                    the run context (mode, clock, pace, health), the player's doctrine, the timing curves (pure)
+    Synergy.cs                    tag value of a level, team-passive boosts, evolution and branch fit (pure)
+    Builds.cs / BuildPresets.cs   the build model, the nine kits, builds.json; the presets and where each comes from (pure)
+    Knowledge.cs                  guide-derived tiers, item pairs, scaling items, stat weights; knowledge.json
+    ItemRules.cs                  the pure item score: exact squad fit, the clock, live tag points, pairs, build leanings
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
+    Menu.cs                       the mod menu: builds, editor, advice, display; its own focus and input; the COMPANION buttons
+    Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
+    Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
     Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
@@ -412,14 +496,11 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 
 ## Next steps
 
-1. The Deck has not shown the compact sidebar (0.5.4+) or the 0.6.0 panel yet: check it there with a full squad
-   (the nine-row block computes to 65 % of the canvas height at x1.45, so it should end above the minimap without
-   shrinking) and the highlight on a 1280x800 screen. The screenshot flag works there too (Desktop Mode to edit
-   the config and to fetch the PNGs). The card badges and the restart strip were moved onto the shared palette
-   without a visual check (same geometry as 0.5.5): glance at them on the next offer / update.
-2. Validate the Research Pod verdicts and the `[tags]` lines on a run that has the Research Pod event unlocked
-   (a General tree node); confirm the badge draws on those cards (`hashtagShortDescriptionText` is the template).
-3. Item ranking: the guide tiers now cover 44 items; the rest score on fit alone. Grow the tiers when a better
-   source appears, or add a per-survivor item table.
-4. Run history in-process (the game's run-history save) to restore the damage-share and partner weights.
-5. Optional, opt-in: drive the game's autoselection with this ranking.
+1. Play 0.10.0 and judge it: the new default level-up style (Balanced; ADVICE tab puts "weapon first" back), the
+   card headlines, a build selected for the leader. With `[Debug] Screenshots = true` a run leaves the offers on disk.
+2. Still unseen on a live offer of their own: chests, SOS (Liberate late), military training and Research Pod cards
+   under the new rules, and an evolution offer with both cards up (the `[card]` lines carry the reasons).
+3. Controller input in the menu was built against the game's own action names but only the keyboard was driven in
+   a test; check it on the Deck (the pad uses `GameMaster.GetButtonDown("UISubmit" / "Cancel" / "GoNextTab")`).
+4. Item tiers cover 59 of 136 items; the rest score on fit alone. Boss Rush's item pool mask is not understood yet.
+5. Later: a cycle key for the readout (hidden / compact / full), run history in-process, optional autoselect.
