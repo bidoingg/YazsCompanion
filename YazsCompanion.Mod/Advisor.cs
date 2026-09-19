@@ -117,6 +117,12 @@ namespace YazsCompanion
     static class P_MasterTick { static void Postfix() { Panel.Tick(null); Notice.Tick(); } }
 
     // ---- the restart notice after an auto-update: GameMaster lives in every scene, menu included ----
+    // the Training Yard: advice on the tab that is open, and the node under the cursor for its WHY row
+    [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.Update))]
+    static class P_YardTick { static void Postfix(UIViewSkillTree __instance) { TreeUi.Tick(__instance); } }
+    [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.OnHighlighted))]
+    static class P_YardHighlight { static void Postfix(UISkillTreeNode __0) { TreeUi.Highlighted(__0); } }
+
     [HarmonyPatch(typeof(GameMaster), nameof(GameMaster.Update))]
     static class P_Notice { static void Postfix() { Notice.Tick(); Preview.Tick(); Shots.Tick(); } }
 }

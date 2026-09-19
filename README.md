@@ -6,7 +6,11 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-18): **0.7.0 — the PLAN readout gets out of the way.** The user's verdict on 0.6.0: polished, but
+Status (2026-09-18): **0.8.0 — Training Yard advice.** On "Train your survivors" the mod numbers the nodes worth
+buying with the points on hand (gold diamonds, in purchase order), rings the node to save for next, and prints a
+SPEND / THEN / WHY strip under the tree; see "Training Yard advice" below. Checked on all nine tabs at 3440x1440
+and in a real 1280x800 window (the Steam Deck's layout and pixels) by a preview walk that opens the Training Yard
+from code. **0.7.0 — the PLAN readout gets out of the way.** The user's verdict on 0.6.0: polished, but
 "over-opaque/sized - it's blocking essential awareness of surroundings". So the framed, nearly opaque 800-unit
 panel at the right edge became a HUD readout in the style of the game's quest tracker: a small gold title over a
 fading rule, the rows on a soft dark wash (42 % at most) that dissolves towards the middle of the screen, no
@@ -106,6 +110,41 @@ dissolves to the left); `PanelDetail` = `Compact` / `Full`; `PanelOpacity` (0.42
 1.0 on a desktop monitor, about 1.45 on the Deck. Every change is logged as a `[plan] 03:31: ...` line; `[panel]
 created under UIGameplay using label 'GameTimer_Txt' at (44, 70) x1.45 canvas 3840x2400 screen 1280x800` shows
 which HUD text it cloned for the font, the scale and the geometry.
+
+## Training Yard advice (0.8.0)
+
+On the Training Yard (`UIViewSkillTree`, "Train your survivors") every tab gets, read-only:
+
+- a **gold diamond with a number** on the top-right corner of each node worth buying with the points on hand, in
+  purchase order (the game's own green "can buy" diamond sits on the top-left), and a **hollow gold diamond** on the
+  node to save for next;
+- a strip in the empty band under the tree, between the legend and the Reset points button:
+  `SPEND 9   1 Blowtorch 3>4 · 2 No pain no gain Evolutions 0>1` / `THEN   save 4 more for Rocket Launcher 3>4 ·
+  after that Tank <-> Pyro, Bombing Strike` / `WHY   Blowtorch — Tier-1 weapon levels are cheap and speed up the
+  start.` The WHY row follows the cursor when the node under it is part of the advice, and otherwise says where that
+  node stands ("later in the plan (step 14 of 41)", "its rank is still locked", "maxed").
+
+The plan is a port of the PC app's "Spend now" (`lib/engine.js`) without its run-history tailoring (`TreePlan.cs`,
+pure): the General tab follows a fixed order (economy, then the strongest multipliers, survivability in between);
+a survivor's tab follows a rule sequence - starting abilities to 2 then 3, the cheap tier-1 weapons, the evolutions
+of the starting abilities, the main tier-2 weapon (the guides' branch from `knowledge.json`, else the one levelled
+most), abilities maxed, the final weapon, rank III abilities, badges and synergies as their ranks open, rank V
+passives by impact, then everything that is left; abilities inside a group go by the guides' tier. The walk spends
+the points level by level (from level L to L + 1 costs `levelUpCosts[L]`, levels below `levelMin` are free), skips
+locked ranks (the node shows its lock) and unmet prerequisites, keeps the first step that does not fit as the thing
+to save for and lets leftover points go to cheaper steps further down, like the PC app. `TreeState.cs` reads the
+tab on screen (`currentContainer._columns[].nodes[].attachedSkillTreeUpgrade`; kind from the upgrade's class; the
+points from the number the view prints, so it is right for the General tab too); `TreeUi.cs` draws (post-fixes on
+`UIViewSkillTree.Update` and `OnHighlighted`; recomputed only when the tab, the points or a level changes; logged
+as `[yard] Pyro: 9 points; buy 1 Blowtorch 3>4 (4), ...`). The strip enlarges its text to 15 px on small screens
+and, where the band is short (the Deck letterboxes this 16:9 view), shrinks to 13 px at most and then says less
+(drops the "after that" tail, then the WHY row) rather than let the text get small. `ShowYard = false` turns it off.
+
+`[Debug] PreviewYard = true` opens the Training Yard from the main menu about 6 s after launch
+(`UIViewMainMenu.OnClickUpgrades()`), walks the nine tabs with the game's own tab change (`ChangeTabIdx(1)`),
+saves `yard1_general` .. `yard9_mechanic` and `yard10_highlight` (the cursor moved onto a node) into the shots
+folder and goes back. With `PreviewResolution = 1280x800` the walk runs in a window of that size - the real Deck
+layout and pixels - and restores the display mode afterwards (`[preview] yard: display back to ...`).
 
 ## What you see in the game
 
@@ -334,7 +373,10 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
     Plan.cs                       the run plan, Compact or Full (keyed rows with label / value / group; sample plans for the preview)
     Panel.cs                      the PLAN readout during play (soft backing, corner placement, text-hugging width, fade, idle dimming, highlight)
-    Preview.cs                    the design preview on the main menu (config [Debug] Preview / PreviewResolution)
+    TreePlan.cs                   Training Yard advice, pure: node model, the General order, the survivor rules, simulate / advise
+    TreeState.cs                  reads the Training Yard tab on screen into TNode values
+    TreeUi.cs                     the order diamonds on the nodes and the SPEND / THEN / WHY strip under the tree
+    Preview.cs                    the design previews (config [Debug] Preview / PreviewYard / PreviewResolution)
     Updater.cs                    release-feed check, hash-verified download next to the running DLL, old-build cleanup
     Notice.cs                     the "restart to apply" strip on its own overlay canvas
     Shots.cs                      debug screenshots of the game frame at UI moments (config [Debug] Screenshots)

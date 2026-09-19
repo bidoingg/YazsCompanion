@@ -37,8 +37,114 @@ namespace YazsCompanion
 
         public static bool Enabled { get { try { return Plugin.PreviewFlag != null && Plugin.PreviewFlag.Value; } catch { return false; } } }
 
+        // ---- the Training Yard walk ([Debug] PreviewYard): open it from the main menu, photograph each tab, go back ----
+        // With PreviewResolution set (1280x800 = the Steam Deck) the walk runs in a window of that size - the real layout
+        // and the real pixels of that screen, which the sidebar's scale emulation cannot give for a whole menu - and puts
+        // the display mode back afterwards.
+        static readonly string[] YardOrder = { "general", "swat", "tank", "engineer", "huntress", "ghost", "medic", "pyro", "mechanic" };   // the tab list, top to bottom
+        static bool _yardDone; static int _yardStage; static float _yardAt = -1f;
+        static int _backW, _backH; static FullScreenMode _backMode; static bool _resized;
+
+        static bool YardWindow()
+        {
+            string want = ""; try { want = (Plugin.PreviewResolution.Value ?? "").Trim().ToLowerInvariant(); } catch { }
+            if (want.Length == 0) return false;
+            try
+            {
+                var parts = want.Split('x'); int w = int.Parse(parts[0]), h = int.Parse(parts[1]);
+                if (w == UnityEngine.Screen.width && h == UnityEngine.Screen.height) return false;
+                _backW = UnityEngine.Screen.width; _backH = UnityEngine.Screen.height; _backMode = UnityEngine.Screen.fullScreenMode; _resized = true;
+                UnityEngine.Screen.SetResolution(w, h, FullScreenMode.Windowed);
+                Plugin.Logger.LogInfo("[preview] yard: window " + w + "x" + h + " (was " + _backW + "x" + _backH + " " + _backMode + ")");
+                return true;
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[preview] yard: PreviewResolution '" + want + "': " + e.Message); return false; }
+        }
+
+        static void YardRestore()
+        {
+            if (!_resized) return;
+            _resized = false;
+            try { UnityEngine.Screen.SetResolution(_backW, _backH, _backMode); Plugin.Logger.LogInfo("[preview] yard: display back to " + _backW + "x" + _backH + " " + _backMode); } catch { }
+        }
+
+        static T FindActive<T>() where T : UnityEngine.Object
+        {
+            try
+            {
+                var all = Resources.FindObjectsOfTypeAll(Il2CppType.Of<T>());
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var o = all[i].TryCast<T>(); if (o == null) continue;
+                    var c = o.TryCast<Component>();
+                    bool live = false; try { live = c != null && c.gameObject.activeInHierarchy; } catch { }
+                    if (live) return o;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        static void YardTick()
+        {
+            bool on = false; try { on = Plugin.PreviewYard.Value; } catch { }
+            if (_yardDone || !on) return;
+            if (Enabled && !_done) return;                       // after the sidebar preview when both are on
+            try
+            {
+                float now = Time.realtimeSinceStartup;
+                if (_yardAt < 0) { _yardAt = now + 6f; return; }
+                if (now < _yardAt) return;
+                if (_yardStage == 0)
+                {
+                    _yardStage = 1;
+                    if (YardWindow()) { _yardAt = now + 2.5f; return; }
+                }
+                if (_yardStage == 1)
+                {
+                    var menu = FindActive<UIViewMainMenu>();
+                    if (menu == null) { Plugin.Logger.LogInfo("[preview] yard: no main menu yet"); _yardAt = now + 2f; return; }
+                    menu.OnClickUpgrades();
+                    Plugin.Logger.LogInfo("[preview] yard: OnClickUpgrades");
+                    _yardAt = now + 3f; _yardStage = 2; return;
+                }
+                int tab = _yardStage - 2;
+                if (tab > YardOrder.Length + 1) { _yardDone = true; Plugin.Logger.LogInfo("[preview] yard done"); return; }
+                var view = FindActive<UIViewSkillTree>();
+                if (view == null) { Plugin.Logger.LogWarning("[preview] yard: the Training Yard did not open"); YardRestore(); _yardDone = true; return; }
+                if (tab < YardOrder.Length)
+                {
+                    // the game's own tab change (what LB / RB do, a step of +1): it refreshes the levels, locks and points
+                    if (tab > 0) view.ChangeTabIdx(1);
+                    Shots.Later(1.3f, "yard" + (tab + 1) + "_" + YardOrder[tab], true);
+                    _yardAt = now + 1.9f; _yardStage++; return;
+                }
+                if (tab == YardOrder.Length)
+                {   // the cursor on a node outside the advice: the WHY row must follow it (the game's own highlight call)
+                    try
+                    {
+                        var cols = view.currentContainer._columns;
+                        var node = cols[0].nodes[0];
+                        view.OnHighlighted(node);
+                        Plugin.Logger.LogInfo("[preview] yard: highlighted " + node.attachedSkillTreeUpgrade.GetName());
+                    }
+                    catch (Exception e) { Plugin.Logger.LogInfo("[preview] yard: highlight test skipped (" + e.Message + ")"); }
+                    Shots.Later(0.8f, "yard10_highlight", true);
+                    _yardAt = now + 1.4f; _yardStage++; return;
+                }
+                if (tab == YardOrder.Length + 1)
+                {
+                    view.OnClickButtonBack();
+                    YardRestore();
+                    _yardAt = now + 2f; _yardStage++; return;
+                }
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[preview] yard: " + e); YardRestore(); _yardDone = true; }
+        }
+
         public static void Tick()
         {
+            YardTick();
             if (_done || !Enabled) return;
             try
             {

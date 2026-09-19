@@ -17,12 +17,13 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.7.0";
+        public const string VERSION = "0.8.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> ShowBadges;
         internal static ConfigEntry<bool> ShowPanel;
+        internal static ConfigEntry<bool> ShowYard;
         internal static ConfigEntry<PanelPlace> PanelPosition;
         internal static ConfigEntry<PanelDetailLevel> PanelDetail;
         internal static ConfigEntry<float> PanelOpacity;
@@ -40,6 +41,7 @@ namespace YazsCompanion
         internal static ConfigEntry<string> UpdateUrl;
         internal static ConfigEntry<bool> Screenshots;
         internal static ConfigEntry<bool> PreviewFlag;
+        internal static ConfigEntry<bool> PreviewYard;
         internal static ConfigEntry<string> PreviewResolution;
 
         /// <summary>The folder the running DLL was loaded from (auto-updated builds live next to the original).</summary>
@@ -57,6 +59,7 @@ namespace YazsCompanion
             Logger = Log;
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
+            ShowYard = Config.Bind("General", "ShowYard", true, "Training Yard advice: number the nodes worth buying with the points on hand (gold diamonds, in purchase order), ring the node to save for next, and print a PLAN strip under the tree (SPEND / THEN / WHY). Read-only: it never buys anything.");
             PanelPosition = Config.Bind("General", "PanelPosition", PanelPlace.BottomLeft, "Where the PLAN readout sits during play. BottomLeft = the empty corner under the weapon and ability icons (PanelLeft / PanelBottom); Right = the right edge between the item icons and the minimap (PanelRight / PanelTop), where it was up to 0.6.0.");
             PanelDetail = Config.Bind("General", "PanelDetail", PanelDetailLevel.Compact, "Compact = one row per survivor with only what to pick next (the weapon level to finish or the next tier, the ability to evolve, feed or take), then TAGS / SOS / GRAB cut short. Full = two rows per survivor with the next steps and the evolution names.");
             PanelOpacity = Config.Bind("General", "PanelOpacity", 0.42f, "Darkness of the soft backing under the PLAN text, 0 (none) to 1 (black). The backing dissolves towards the middle of the screen and has no frame, so the surroundings stay visible.");
@@ -74,6 +77,7 @@ namespace YazsCompanion
             UpdateUrl = Config.Bind("Update", "UpdateUrl", DefaultUpdateUrl, "The latest.json of the release feed to check.");
             Screenshots = Config.Bind("Debug", "Screenshots", false, "Save PNGs of the game frame into BepInEx\\plugins\\YazsCompanion\\shots at the moments that matter for checking the UI: offers, picks, sidebar changes (0.3 / 1.5 / 3.5 s into the highlight), its show/hide, and one a minute during play. For validating a build; off by default, at most 90 per session.");
             PreviewFlag = Config.Bind("Debug", "Preview", false, "Show the PLAN sidebar with sample data on the main menu about 5 s after launch (two survivors, then the change highlight after a pick, then a full squad, then the fade-out) and save a screenshot of each stage into the shots folder whatever the Screenshots setting. For checking the design without playing a run; off by default.");
+            PreviewYard = Config.Bind("Debug", "PreviewYard", false, "About 6 s after launch, open the Training Yard from the main menu, walk its tabs and save a screenshot of each into the shots folder, then go back. For checking the Training Yard advice without touching the controls; off by default.");
             PreviewResolution = Config.Bind("Debug", "PreviewResolution", "", "Screen to emulate in the preview captures, WIDTHxHEIGHT (3440x1440 for the PC look, 1280x800 for the Steam Deck look): the frames are rendered so the sidebar has the pixels it would have on that screen, whatever desktop the game runs on. Empty = as the game is running.");
 
             // BepInEx overwrites LogOutput.log on every launch; keep our own append-only copy next to the DLL.
