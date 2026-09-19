@@ -37,7 +37,7 @@ namespace YazsCompanion
         public ItemRule(string tag, string pattern, string cls = null, bool exclusive = false, double generic = 0, double ability = 0, double weapon = 0, double survival = 0,
             string type = null, string powerTag = null, string stats = null, string axis = null)
         {
-            Tag = tag; Re = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled); Type = type; PowerTag = powerTag; Axis = axis;
+            Tag = tag; Re = new Regex(pattern, RegexOptions.IgnoreCase); Type = type; PowerTag = powerTag; Axis = axis;
             Exclusive = exclusive; Generic = generic; Ability = ability; Weapon = weapon; Survival = survival;
             if (stats != null) Stats = stats.Split(',');
             if (cls != null)
@@ -73,13 +73,13 @@ namespace YazsCompanion
     internal static class ItemRules
     {
         // a clause that takes something away: "-10% Kinetic damage", "Decreases your Max HP", "Halves your Max HP"
-        public static readonly Regex Negative = new Regex(@"(^|[^+\d])-\s?\d+(\.\d+)?\s?%|\bhalves\b|\bhalved\b|decreases your|reduces your|\bcannot\b|no longer|\blose\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        public static readonly Regex Negative = new Regex(@"(^|[^+\d])-\s?\d+(\.\d+)?\s?%|\bhalves\b|\bhalved\b|decreases your|reduces your|\bcannot\b|no longer|\blose\b", RegexOptions.IgnoreCase);
         // ... unless what it takes away is the enemy's: "Enemy projectiles deal -50% damage to Survivors"
-        static readonly Regex NegativeButGood = new Regex(@"enem\w+ .*-\s?\d+\s?% damage|damage (received|taken) .*-\s?\d+|-\s?\d+\s?% damage (received|taken)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        public static readonly Regex RichTag = new Regex(@"<[^>]+>", RegexOptions.Compiled);
+        static readonly Regex NegativeButGood = new Regex(@"enem\w+ .*-\s?\d+\s?% damage|damage (received|taken) .*-\s?\d+|-\s?\d+\s?% damage (received|taken)", RegexOptions.IgnoreCase);
+        public static readonly Regex RichTag = new Regex(@"<[^>]+>");
         // "+4 to Explosive damage type tag", "+2 Electric & Chemical damage type tags", "+2 Fire, Ice, Electric, Chemical damage type tags"
-        static readonly Regex TagGrant = new Regex(@"\+\s?(\d+)\s+(?:to\s+)?((?:(?:Fire|Ice|Electric|Chemical|Explosive|Kinetic|Slashing)(?:\s*(?:,|&|and)\s*)?)+)\s*damage type tags?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        static readonly Regex TypeName = new Regex(@"Fire|Ice|Electric|Chemical|Explosive|Kinetic|Slashing", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        static readonly Regex TagGrant = new Regex(@"\+\s?(\d+)\s+(?:to\s+)?((?:(?:Fire|Ice|Electric|Chemical|Explosive|Kinetic|Slashing)(?:\s*(?:,|&|and)\s*)?)+)\s*damage type tags?", RegexOptions.IgnoreCase);
+        static readonly Regex TypeName = new Regex(@"Fire|Ice|Electric|Chemical|Explosive|Kinetic|Slashing", RegexOptions.IgnoreCase);
 
         public static readonly ItemRule[] All =
         {

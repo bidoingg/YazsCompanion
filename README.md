@@ -467,6 +467,16 @@ ranked or logged:
 - **The item rules parse each description once**: the rich-text strip, the clause split and some sixty pattern
   matches per item are kept per description (`ItemRules.Parse`); only the part that depends on the squad and the
   clock runs per score. The offline bench prints the same 753 lines before and after.
+- **The first plan of a session is prepared on the main menu.** It cost 170 - 190 ms in the first second of the
+  first run of every game session (six sessions in the log; 7 - 9 ms for every later plan): patterns being set up,
+  every item text read for the first time, code compiled on first use. Two things: the item rules' 33 patterns are
+  no longer `RegexOptions.Compiled` - with each description parsed once, a pattern runs a few hundred times a
+  session and compiling cost more than it saved (offline, `tools\bench.cmd --time`: first pass over all items 89 ms
+  compiled, 28 ms interpreted; later passes 0.3 - 0.5 ms either way) - and `Warmup.cs` builds two throw-away plans
+  on the main menu four seconds after it is up, on separate frames (an empty squad: the GRAB row scores every item,
+  ~50 ms; then a stand-in survivor from the game's class data: weapon line, abilities, recruits, ~44 ms). Measured
+  with the first step alone: first plan 174 ms -> 70 ms (`plan.build` 133 -> 42 ms, `read` 30 -> 12 ms); the second
+  step ran cleanly on the menu but its effect on the first plan has not been measured yet.
 - **Small things**: one per-frame Harmony hook less (the fallback tick on `GameplayMaster.Update` now rides on the
   `GameMaster.Update` hook and only steps in when the HUD's own tick goes quiet), the gating flags are compared as a
   number and only put into words when they change, the gold highlight re-renders only the groups that hold a changed
@@ -477,10 +487,22 @@ ranked or logged:
 `[perf] 60 s, <frames> frames: tick.hud <calls>x <total> ms (max <worst>) | tick.master ... | refresh ... | read ...
 | plan.build ... | offer ... | plan.ahead ...` - calls, total and the worst single call per section (sections nest:
 a tick contains the refresh it triggered). `offer` and `plan.ahead` run while the game is paused; `tick.*`,
-`refresh`, `read` and `plan.build` are what play pays. Taken so far: the menu numbers above. NOT yet taken: a run
-(`tick.hud`, `refresh`, `plan.ahead`, `offer`) - Quick Run opened the full run-setup wizard on the day, which the
-scripted walk does not click through (its choices are saved to the profile); `[Debug] PreviewPause` now presses
-Start on the team leader screen, plays thirty seconds taking the recommended cards, then pauses.
+`refresh`, `read` and `plan.build` are what play pays. Taken on the PC (3440x1440, 60 fps) from two scripted
+thirty-second runs (`[Debug] PreviewPause`: it presses Start on the team leader screen, takes the recommended card
+of every offer, then pauses; one SWAT, so a late three-survivor squad will cost more per poll and per plan):
+
+| what | 0.10.0 | 0.10.1 |
+|---|---|---|
+| object searches during a run | 2 every 0.5 s, ~41 ms each | none |
+| per frame in play (`tick.hud`, without the one-off first tick) | not measured | ~0.011 ms |
+| the two-second change poll (`refresh`) | a full snapshot each time | 0.17 ms (14 polls = 2.4 ms) |
+| after a pick, back in play: `[panel] shown` -> `[plan]` | 4 - 5 ms (three survivors, from the log) | 2 ms: the plan was built while paused (`plan.ahead` 2.2 ms) |
+| first offer of a session, ranked while paused (`offer`) | not measured | 27 ms |
+| first plan of a session | 170 - 190 ms | 70 ms with the item warm-up; the squad warm-up not yet measured |
+
+Quick Run sometimes starts the run after the team leader screen and sometimes opens the whole run-setup wizard
+(arena, mode, setup); the walk does not click through those - their choices are saved to the profile - and gives
+up after 200 s.
 
 Outside the mod: BepInEx's console window (`[Logging.Console] Enabled = true` in `BepInEx.cfg`, as on the
 development PC) makes every log line of every plugin and of the game a synchronous console write; the packaged
@@ -532,6 +554,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
     Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
     Perf.cs                       [Debug] Perf: times the mod's own sections and logs the sums once a minute
+    Warmup.cs                     two throw-away plans on the main menu, so a session's first plan is not built cold in the run
     Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line

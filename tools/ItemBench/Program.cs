@@ -38,6 +38,18 @@ namespace YazsCompanion.Bench
                 foreach (var it in doc.RootElement.GetProperty("items").EnumerateArray())
                     items.Add(new KeyValuePair<string, string>(it.GetProperty("name").GetString(), it.GetProperty("desc").GetString()));
             var k = Knowledge.FromJson(Knowledge.DefaultJson);
+            if (args.Contains("--time"))
+            {   // what the item pass of a plan build costs: the first pass of a process (patterns set up, every description
+                // parsed) against a later one (everything kept) - the first one is what a session's first plan pays
+                var squad = new[] { "Tank", "SWAT", "Engineer" };
+                for (int pass = 1; pass <= 3; pass++)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    foreach (var it in items) ItemRules.Evaluate(it.Key, it.Value, squad, new TagProfile(), k, new List<string>());
+                    Console.WriteLine("pass " + pass + ": " + sw.Elapsed.TotalMilliseconds.ToString("0.0") + " ms for " + items.Count + " items");
+                }
+                return 0;
+            }
             Console.WriteLine(items.Count + " items, " + k.ItemTier.Count + " with a guide tier");
 
             var scenarios = new[]

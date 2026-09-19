@@ -177,7 +177,7 @@ namespace YazsCompanion
         static void Postfix()
         {
             long t = Perf.Begin();
-            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick();
+            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick();
             Perf.End("tick.master", t);
             Perf.Frame();
         }

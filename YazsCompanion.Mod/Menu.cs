@@ -97,6 +97,8 @@ namespace YazsCompanion
             return _viaSearch || PauseFlow() ? FindActive<UIPauseMenu>() : null;
         }
         static bool PauseFlow() { try { return GameplayMaster.IsPauseMenuFlowActive; } catch { return false; } }
+        /// <summary>The main menu is up right now, by its own Update (no search).</summary>
+        public static bool OnMainMenu { get { return _mainHooked && Live(_mainView, _mainFrame); } }
         /// <summary>A run is being played right now (not paused): neither menu can be up, so nothing is searched for. The
         /// main menu scene has a GameplayMaster of its own, without a game mode - hence the mode test.</summary>
         static bool InRun()
