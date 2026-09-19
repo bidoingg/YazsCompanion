@@ -136,26 +136,29 @@ namespace YazsCompanion
         /// <summary>using (G.Cache()) { read, rank, plan }: names and powerup facts are fetched once per object inside.</summary>
         public static Scope Cache() { return Scope.Enter(); }
 
+        // the object's address as the cache key; zero (= do not cache) when the wrapper has lost its object
+        static IntPtr Ptr(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase o) { try { return o.Pointer; } catch { return IntPtr.Zero; } }
+
         public static string Name(PowerupBase p)
         {
             if (p == null) return "?";
-            string n;
-            if (_scope > 0 && _names.TryGetValue(p.Pointer, out n)) return n;
+            string n; IntPtr key = _scope > 0 ? Ptr(p) : IntPtr.Zero;
+            if (key != IntPtr.Zero && _names.TryGetValue(key, out n)) return n;
             n = null;
             try { n = p.EnglishName; } catch { }
             if (string.IsNullOrEmpty(n)) { try { n = p.name; } catch { return "?"; } }
-            if (_scope > 0 && n != null) _names[p.Pointer] = n;
+            if (key != IntPtr.Zero && n != null) _names[key] = n;
             return n;
         }
         public static string Name(ItemBase it)
         {
             if (it == null) return "?";
-            string n;
-            if (_scope > 0 && _names.TryGetValue(it.Pointer, out n)) return n;
+            string n; IntPtr key = _scope > 0 ? Ptr(it) : IntPtr.Zero;
+            if (key != IntPtr.Zero && _names.TryGetValue(key, out n)) return n;
             n = null;
             try { n = it.EnglishName; } catch { }
             if (string.IsNullOrEmpty(n)) { try { n = it.name; } catch { return "?"; } }
-            if (_scope > 0 && n != null) _names[it.Pointer] = n;
+            if (key != IntPtr.Zero && n != null) _names[key] = n;
             return n;
         }
         public static string Asset(UnityEngine.Object o)
@@ -163,10 +166,10 @@ namespace YazsCompanion
             try
             {
                 if (o == null) return "";
-                string n;
-                if (_scope > 0 && _assets.TryGetValue(o.Pointer, out n)) return n;
-                n = o.name;
-                if (_scope > 0 && n != null) _assets[o.Pointer] = n;
+                string n; IntPtr key = _scope > 0 ? Ptr(o) : IntPtr.Zero;
+                if (key != IntPtr.Zero && _assets.TryGetValue(key, out n)) return n;
+                n = o.name ?? "";
+                if (key != IntPtr.Zero) _assets[key] = n;
                 return n;
             }
             catch { return ""; }
@@ -284,10 +287,10 @@ namespace YazsCompanion
         public static PowerFacts Facts(PowerupBase p)
         {
             if (p == null) return new PowerFacts();
-            PowerFacts f;
-            if (_scope > 0 && _facts.TryGetValue(p.Pointer, out f)) return f;      // nobody writes to the facts they are handed
+            PowerFacts f; IntPtr key = _scope > 0 ? Ptr(p) : IntPtr.Zero;
+            if (key != IntPtr.Zero && _facts.TryGetValue(key, out f)) return f;      // nobody writes to the facts they are handed
             f = ReadFacts(p);
-            if (_scope > 0) _facts[p.Pointer] = f;
+            if (key != IntPtr.Zero) _facts[key] = f;
             return f;
         }
 
