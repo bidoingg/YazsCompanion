@@ -72,6 +72,21 @@ namespace YazsCompanion
         public bool OnSquad(CT t) { return Find(t) != null; }
         public bool AnyoneHas(ItemBase it) { foreach (var s in Squad) if (s.Has(it)) return true; return false; }
 
+        // the quest manager while a quest is active, else null - asked once per snapshot, not once per scored item
+        GameQuestManager _quests; bool _questsRead;
+        public GameQuestManager ActiveQuests
+        {
+            get
+            {
+                if (!_questsRead)
+                {
+                    _questsRead = true;
+                    try { var qm = GameQuestManager.Get; if (qm != null && qm.ActiveQuest != null) _quests = qm; } catch { }
+                }
+                return _quests;
+            }
+        }
+
         public string SquadText()
         {
             var sb = new StringBuilder();
@@ -97,24 +112,71 @@ namespace YazsCompanion
     {
         public static string ClassName(CT t) { return t == CT.Ninja ? "Ghost" : t.ToString(); }
 
+        // ---- what one computation may remember ----
+        // Every name is a call into the game that allocates a string on ITS heap and copies it over, and one ranking or
+        // plan build asks for the same few dozen names thousands of times (Same() falls back to comparing names, LevelOf
+        // walks the powerups with it). Inside a Cache() scope - one offer, one snapshot + plan - names and powerup facts
+        // are remembered per object; the scope's end forgets them, so nothing outlives the objects it was read from.
+        static int _scope;
+        static readonly Dictionary<IntPtr, string> _names = new Dictionary<IntPtr, string>();
+        static readonly Dictionary<IntPtr, string> _assets = new Dictionary<IntPtr, string>();
+        static readonly Dictionary<IntPtr, PowerFacts> _facts = new Dictionary<IntPtr, PowerFacts>();
+
+        internal struct Scope : IDisposable
+        {
+            bool _live;
+            internal static Scope Enter() { _scope++; return new Scope { _live = true }; }
+            public void Dispose()
+            {
+                if (!_live) return;
+                _live = false;
+                if (--_scope <= 0) { _scope = 0; _names.Clear(); _assets.Clear(); _facts.Clear(); }
+            }
+        }
+        /// <summary>using (G.Cache()) { read, rank, plan }: names and powerup facts are fetched once per object inside.</summary>
+        public static Scope Cache() { return Scope.Enter(); }
+
         public static string Name(PowerupBase p)
         {
             if (p == null) return "?";
-            try { var n = p.EnglishName; if (!string.IsNullOrEmpty(n)) return n; } catch { }
-            try { return p.name; } catch { return "?"; }
+            string n;
+            if (_scope > 0 && _names.TryGetValue(p.Pointer, out n)) return n;
+            n = null;
+            try { n = p.EnglishName; } catch { }
+            if (string.IsNullOrEmpty(n)) { try { n = p.name; } catch { return "?"; } }
+            if (_scope > 0 && n != null) _names[p.Pointer] = n;
+            return n;
         }
         public static string Name(ItemBase it)
         {
             if (it == null) return "?";
-            try { var n = it.EnglishName; if (!string.IsNullOrEmpty(n)) return n; } catch { }
-            try { return it.name; } catch { return "?"; }
+            string n;
+            if (_scope > 0 && _names.TryGetValue(it.Pointer, out n)) return n;
+            n = null;
+            try { n = it.EnglishName; } catch { }
+            if (string.IsNullOrEmpty(n)) { try { n = it.name; } catch { return "?"; } }
+            if (_scope > 0 && n != null) _names[it.Pointer] = n;
+            return n;
         }
-        public static string Asset(UnityEngine.Object o) { try { return o == null ? "" : o.name; } catch { return ""; } }
+        public static string Asset(UnityEngine.Object o)
+        {
+            try
+            {
+                if (o == null) return "";
+                string n;
+                if (_scope > 0 && _assets.TryGetValue(o.Pointer, out n)) return n;
+                n = o.name;
+                if (_scope > 0 && n != null) _assets[o.Pointer] = n;
+                return n;
+            }
+            catch { return ""; }
+        }
 
         public static bool Same(UnityEngine.Object a, UnityEngine.Object b)
         {
             if (a == null || b == null) return false;
             try { if (a.Pointer == b.Pointer) return true; } catch { }
+            if (_scope > 0) { string na = Asset(a); return na.Length > 0 && na == Asset(b); }
             try { return a.name == b.name; } catch { return false; }
         }
 
@@ -146,20 +208,51 @@ namespace YazsCompanion
             try { var rt = node.GetRuntimeInstance(); if (rt != null) return rt.GetDescription() ?? ""; } catch { }
             try { return node.GetDescription() ?? ""; } catch { return ""; }
         }
-        public static IEnumerable<SkillTreeUpgradeBase> AllNodes()
+        // The Training Yard's node list (245 nodes) is asset data: which nodes exist, whose they are and which of them are
+        // team passives never changes, only their levels do (always read live). Walking the list costs three calls into
+        // the game per node, and one plan build used to walk it once per recruitable class plus once per snapshot - so
+        // the list and its per-class split are kept until the run ends (ForgetRun) or the game swaps the list.
+        static List<SkillTreeUpgradeBase> _allNodes;
+        static IntPtr _nodeList; static int _nodeCount;
+        static readonly Dictionary<CT, List<SkillTreeUpgradeBase>> _nodesOf = new Dictionary<CT, List<SkillTreeUpgradeBase>>();
+        static List<TaggedNode> _taggedNodes;
+
+        sealed class TaggedNode { public SkillTreeUpgradeBase Node; public CT Class; public string Tag, NotTag, Name; public bool AbilitiesOnly; }
+
+        /// <summary>The HUD is gone (a run ended) or the mod menu closed: drop what was kept for the run.</summary>
+        public static void ForgetRun() { _allNodes = null; _nodesOf.Clear(); _taggedNodes = null; _nodeList = IntPtr.Zero; _nodeCount = 0; _props.Clear(); }
+
+        static List<SkillTreeUpgradeBase> NodeList()
         {
             SkillTreeUpgrades tree = null;
             try { tree = SkillTreeUpgrades.Get; } catch { }
-            if (tree == null) yield break;
-            foreach (var n in Each(tree.skillTreeUpgrades)) if (n != null) yield return n;
+            if (tree == null) return null;
+            Il2CppSystem.Collections.Generic.List<SkillTreeUpgradeBase> list = null; int count = -1;
+            try { list = tree.skillTreeUpgrades; if (list != null) count = list.Count; } catch { }
+            if (list == null) return null;
+            if (_allNodes != null && list.Pointer == _nodeList && count == _nodeCount) return _allNodes;
+            var all = new List<SkillTreeUpgradeBase>(Math.Max(0, count));
+            foreach (var n in Each(list)) if (n != null) all.Add(n);
+            _allNodes = all; _nodeList = list.Pointer; _nodeCount = count; _nodesOf.Clear(); _taggedNodes = null;
+            return all;
         }
+
+        public static IEnumerable<SkillTreeUpgradeBase> AllNodes() { return (IEnumerable<SkillTreeUpgradeBase>)NodeList() ?? new SkillTreeUpgradeBase[0]; }
+
         public static IEnumerable<SkillTreeUpgradeBase> NodesOf(CT t)
         {
-            foreach (var n in AllNodes())
+            var all = NodeList();
+            if (all == null) return new SkillTreeUpgradeBase[0];
+            List<SkillTreeUpgradeBase> mine;
+            if (_nodesOf.TryGetValue(t, out mine)) return mine;
+            mine = new List<SkillTreeUpgradeBase>();
+            foreach (var n in all)
             {
                 ClassProperties cp = null; try { cp = n.targetClassProperties; } catch { }
-                if (cp != null && cp.characterType == t) yield return n;
+                try { if (cp != null && cp.characterType == t) mine.Add(n); } catch { }
             }
+            _nodesOf[t] = mine;
+            return mine;
         }
 
         static readonly Dictionary<CT, ClassProperties> _props = new Dictionary<CT, ClassProperties>();
@@ -190,14 +283,49 @@ namespace YazsCompanion
         /// <summary>The powerup in the game's own terms (damage types, powerup tags), for the pure synergy rules.</summary>
         public static PowerFacts Facts(PowerupBase p)
         {
+            if (p == null) return new PowerFacts();
+            PowerFacts f;
+            if (_scope > 0 && _facts.TryGetValue(p.Pointer, out f)) return f;      // nobody writes to the facts they are handed
+            f = ReadFacts(p);
+            if (_scope > 0) _facts[p.Pointer] = f;
+            return f;
+        }
+
+        static PowerFacts ReadFacts(PowerupBase p)
+        {
             var f = new PowerFacts();
-            if (p == null) return f;
             f.Name = Name(p);
             try { f.IsWeapon = p.TryCast<WeaponUpgradePowerup>() != null; } catch { }
             f.IsAbility = IsAbility(p);
             try { f.Healing = p.isHealingAbility; } catch { }
             try { foreach (var t in Each(p.hashtagTypes)) { string n = TagName(t); if (n != null && !f.Damage.Contains(n)) f.Damage.Add(n); } } catch { }
             try { foreach (var t in Each(p.powerupTags)) f.Tags.Add(t.ToString()); } catch { }
+            return f;
+        }
+
+        // ---- items ----
+        /// <summary>What the item rules read of an item: its English text, its highlighted statistics, whether it heals,
+        /// how many can be carried. Asset data, so it is read once per item for the session (keyed by the item's id and
+        /// checked against its name) - the GRAB row alone scores every item that can still drop, after every pick.</summary>
+        internal sealed class ItemFacts { public string Name, Desc; public List<string> Stats; public bool Healing; public int MaxCarry = 1; }
+        static readonly Dictionary<int, ItemFacts> _itemFacts = new Dictionary<int, ItemFacts>();
+
+        public static ItemFacts FactsOf(ItemBase it)
+        {
+            string name = Name(it);
+            int id = 0; bool keyed = false;
+            try { id = it.itemBaseId; keyed = true; } catch { }
+            ItemFacts f;
+            if (keyed && _itemFacts.TryGetValue(id, out f) && f.Name == name) return f;
+            f = new ItemFacts { Name = name, Stats = new List<string>() };
+            bool english = false;
+            try { f.Desc = it.EnglishDescription; english = !string.IsNullOrEmpty(f.Desc); } catch { }
+            if (!english) { try { f.Desc = it.GetDescriptionText(); } catch { } }
+            if (f.Desc == null) f.Desc = "";
+            try { foreach (var st in Each(it.highlightedStatistics)) if (st != null) f.Stats.Add(st.statisticType.ToString()); } catch { }
+            try { f.Healing = it.isHealingItem; } catch { }
+            try { f.MaxCarry = it.numMaxCanCarry; } catch { }
+            if (keyed && english) _itemFacts[id] = f;      // the localized fallback text follows the language: not kept
             return f;
         }
 
@@ -334,20 +462,91 @@ namespace YazsCompanion
         // the team passives (Grenade / Turret / Trap Expertise, Cold Chain) that are bought and whose owner is on the squad
         static void ReadBoosts(Snapshot s)
         {
-            foreach (var n in AllNodes())
+            var tagged = TaggedNodes();
+            if (tagged == null) return;
+            foreach (var tn in tagged)
             {
-                SkillTreeUpgradeTaggedPowerupBoost t = null; try { t = n.TryCast<SkillTreeUpgradeTaggedPowerupBoost>(); } catch { }
-                if (t == null || !NodeOwned(n)) continue;
-                ClassProperties cp = null; try { cp = n.targetClassProperties; } catch { }
-                if (cp == null || !s.OnSquad(cp.characterType)) continue;
-                var b = new TeamBoost { Owner = ClassName(cp.characterType) };
-                try { b.Tag = t.requiredTag.ToString(); } catch { continue; }
-                try { if (t.excludeTag) b.NotTag = t.excludedTag.ToString(); } catch { }
-                try { b.AbilitiesOnly = t.abilitiesOnly; } catch { }
-                try { b.Name = n.GetName(); } catch { }
+                if (!NodeOwned(tn.Node) || !s.OnSquad(tn.Class)) continue;      // bought or not is read live
+                var b = new TeamBoost { Owner = ClassName(tn.Class), Tag = tn.Tag, NotTag = tn.NotTag, AbilitiesOnly = tn.AbilitiesOnly };
+                try { b.Name = tn.Node.GetName(); } catch { }
                 if (string.IsNullOrEmpty(b.Name)) b.Name = b.Tag + " Expertise";
                 s.Boosts.Add(b);
             }
+        }
+
+        // which of the 245 nodes are team passives, and what they boost: asset data, found once per run
+        static List<TaggedNode> TaggedNodes()
+        {
+            var all = NodeList();
+            if (all == null) return null;
+            if (_taggedNodes != null) return _taggedNodes;
+            var list = new List<TaggedNode>();
+            foreach (var n in all)
+            {
+                SkillTreeUpgradeTaggedPowerupBoost t = null; try { t = n.TryCast<SkillTreeUpgradeTaggedPowerupBoost>(); } catch { }
+                if (t == null) continue;
+                ClassProperties cp = null; try { cp = n.targetClassProperties; } catch { }
+                if (cp == null) continue;
+                var tn = new TaggedNode { Node = n };
+                try { tn.Class = cp.characterType; } catch { continue; }
+                try { tn.Tag = t.requiredTag.ToString(); } catch { continue; }
+                try { if (t.excludeTag) tn.NotTag = t.excludedTag.ToString(); } catch { }
+                try { tn.AbilitiesOnly = t.abilitiesOnly; } catch { }
+                list.Add(tn);
+            }
+            _taggedNodes = list;
+            return list;
+        }
+
+        /// <summary>A cheap fingerprint of everything the plan reads from the run: who is on the squad, every powerup and
+        /// item with its level or count, the tag points, the active quest. The readout polls this every two seconds and
+        /// takes the full snapshot (names, the tree, the tags profile: some thousand calls into the game) only when it
+        /// moved. 0 = could not be read (the caller then takes the snapshot as before).</summary>
+        public static long QuickKey()
+        {
+            try
+            {
+                var master = GameplayMaster.s_instance;
+                if (master == null) return 0;
+                var players = master.gamePlayers;
+                if (players == null) return 0;
+                unchecked
+                {
+                    long h = 1469598103934665603L;
+                    int n = players.Count;
+                    h = h * 1099511628211L + n;
+                    for (int i = 0; i < n; i++)
+                    {
+                        var gp = players[i]; if (gp == null) continue;
+                        h = h * 1099511628211L + gp.Pointer.ToInt64();
+                        h = h * 1099511628211L + (int)gp.characterType;
+                        var w = gp.currentWeaponPowerup;
+                        h = h * 1099511628211L + (w == null ? 0L : w.Pointer.ToInt64());
+                        var ps = gp.activePowerups; int pn = ps == null ? 0 : ps.Count;
+                        h = h * 1099511628211L + pn;
+                        for (int j = 0; j < pn; j++)
+                        {
+                            var p = ps[j]; if (p == null) continue;
+                            h = h * 1099511628211L + p.Pointer.ToInt64();
+                            h = h * 1099511628211L + gp.GetPowerupLevel(p);
+                        }
+                        var its = gp.activeItems; int itn = its == null ? 0 : its.Count;
+                        h = h * 1099511628211L + itn;
+                        for (int j = 0; j < itn; j++)
+                        {
+                            var it = its[j]; if (it == null) continue;
+                            h = h * 1099511628211L + it.Pointer.ToInt64();
+                            h = h * 1099511628211L + gp.GetItemCount(it);
+                        }
+                    }
+                    var hs = master.hashtagSystem;
+                    if (hs != null) foreach (var t in TagTypes) h = h * 1099511628211L + hs.GetNumType(t);
+                    var qm = GameQuestManager.Get; var q = qm == null ? null : qm.ActiveQuest;
+                    h = h * 1099511628211L + (q == null ? 0L : q.Pointer.ToInt64());
+                    return h == 0 ? 1 : h;
+                }
+            }
+            catch { return 0; }
         }
 
         // ---- the run right now ----

@@ -65,8 +65,14 @@ namespace YazsCompanion
             public string Name;
             public RectTransform Block;
             public TextMeshProUGUI Text;
+            public string Shown;          // the rich text the label holds: a render that would not change it is skipped
+            public bool Hot;              // holds a row whose advice changed: the only groups the gold ramp re-renders
             public readonly List<PlanLine> Rows = new List<PlanLine>();
         }
+
+        /// <summary>A plan worked out ahead of time (while the game was still paused on the screen that closed), good for as
+        /// long as the run's fingerprint stays what it was then.</summary>
+        sealed class Ahead { public long Quick; public string Key, Clock; public Plan Plan; }
 
         static RectTransform _root, _content, _head, _rule, _tip;
         static bool _intro;                           // just became visible: play the entrance on the next frame (the groups exist by then)
@@ -85,34 +91,83 @@ namespace YazsCompanion
         static Dictionary<string, string> _prev;                  // key -> text of the previous plan (null = first build of a run)
         static readonly HashSet<string> _changed = new HashSet<string>();
         static float _hlStart = -100f, _nextFade;
+        static string _hlHex;                         // the highlight colour of the last render: the ramp re-renders only when it moves
         static bool _glyphsChecked;
-        static string _sig = "", _stateKey = "", _gates = "";
+        static string _sig = "", _stateKey = "";
+        static int _gateCode = -1;                    // the gating flags packed into a number: the log line is only written when it changes
+        static long _quick;                           // G.QuickKey() of the state the plan on screen was built from (0 = none)
+        static Ahead _ahead;
+        static int _lastHudFrame = -100;              // the frame of the HUD's last own tick; FallbackTick steps in when it goes quiet
+        static float _nextFallback;
         static UIGameplayUpgradeSelection _screen;
         static bool _visible, _warnedNoCanvas, _warnedNoLabel, _sourceLogged, _preview;
 
-        public static void ScreenOpened(UIGameplayUpgradeSelection sel) { _screen = sel; SetVisible(false); }
+        public static void ScreenOpened(UIGameplayUpgradeSelection sel) { _screen = sel; _ahead = null; SetVisible(false); }
         /// <summary>The base Hide(clicked) ran (validated: once per screen, every type); the game may keep the screen
         /// object active while it animates out, so do not wait for activeInHierarchy to drop.</summary>
-        public static void ScreenClosed() { _screen = null; _nextRebuild = 0f; }   // rebuild (and highlight) as soon as the sidebar is back
+        public static void ScreenClosed() { _screen = null; _nextRebuild = 0f; PlanAhead(); }   // shown (and highlighted) as soon as the sidebar is back
 
         /// <summary>The HUD is being destroyed (scene change): our objects die with it, forget them.</summary>
-        public static void Reset() { Forget(); _screen = null; _hud = null; _gates = ""; }
+        public static void Reset() { Forget(); _screen = null; _hud = null; _gateCode = -1; G.ForgetRun(); }
         static void Forget()
         {
             _root = null; _content = null; _head = null; _rule = null; _tip = null; _intro = false; Fx.Cancel("plan"); _fade = null; _template = null; _groups.Clear(); _rules.Clear();
             _sig = ""; _stateKey = ""; _visible = false; _alpha = 0f; _target = 0f; _level = 1f; _awakeUntil = 0f;
-            _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f;
+            _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f; _hlHex = null; _quick = 0; _ahead = null;
         }
 
-        /// <summary>Once per frame from UIGameplay.Update (hud set) and GameplayMaster.Update (hud null); throttled to 0.4 s here.</summary>
+        // The pick has been applied and the game is still paused while the screen animates out: the moment to take the
+        // snapshot and build the new plan (it re-scores every item that can still drop and every recruit - the mod's
+        // heaviest piece of work). Up to 0.10.0 that happened on the first tick back in play, a hitch right after every
+        // level-up. The tick only has to show it; should the run have moved on by then, it rebuilds as before.
+        static void PlanAhead()
+        {
+            _ahead = null;
+            if (_preview) return;
+            long perf = Perf.Begin();
+            try
+            {
+                if (!Plugin.ShowPanel.Value) return;
+                using (G.Cache())
+                {
+                    long quick = G.QuickKey();
+                    if (quick == 0) return;
+                    var snap = G.Read();
+                    if (snap.Squad.Count == 0) return;
+                    string key = StateKey(snap);
+                    if (key == _stateKey) { _quick = quick; return; }       // a skip, a reroll, a banish: the plan on screen still stands
+                    _ahead = new Ahead { Quick = quick, Key = key, Clock = snap.Clock, Plan = Plan.Build(snap, CompactDetail()) };
+                }
+            }
+            catch (Exception e) { _ahead = null; Plugin.Logger.LogWarning("[panel] plan ahead: " + e.Message); }
+            finally { Perf.End("plan.ahead", perf); }
+        }
+
+        static bool CompactDetail() { try { return Plugin.PanelDetail.Value == PanelDetailLevel.Compact; } catch { return true; } }
+
+        /// <summary>From GameMaster.Update (alive in every scene): ticks the readout whenever a run is on and the HUD's own
+        /// Update did not reach us in the last two frames (the HUD switched off under a screen, or its hook failing) - what
+        /// the second per-frame hook, on GameplayMaster.Update, was for. No gap: the fade must not stall when a screen opens.</summary>
+        public static void FallbackTick()
+        {
+            if (_preview) return;
+            if (Time.frameCount - _lastHudFrame <= 2) return;
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextFallback) return;
+            bool run = false; try { run = GameplayMaster.s_instance != null; } catch { }
+            if (!run) { _nextFallback = now + 0.5f; return; }      // a menu scene: look again in half a second
+            Tick(null);
+        }
+
+        /// <summary>Once per frame from UIGameplay.Update (hud set), else from FallbackTick (hud null); throttled to 0.4 s here.</summary>
         public static void Tick(UIGameplay hud)
         {
             try
             {
-                if (hud != null) _hud = hud; else hud = _hud;
-                if (!_sourceLogged) { _sourceLogged = true; Plugin.Logger.LogInfo("[panel] first tick from " + (hud != null ? "UIGameplay.Update" : "GameplayMaster.Update")); }
                 float now = Time.realtimeSinceStartup;
-                Animate();
+                if (hud != null) { _hud = hud; _lastHudFrame = Time.frameCount; } else hud = _hud;
+                if (!_sourceLogged) { _sourceLogged = true; Plugin.Logger.LogInfo("[panel] first tick from " + (hud != null ? "UIGameplay.Update" : "GameMaster.Update (no HUD tick)")); }
+                Animate(now);
                 Shots.Tick();
                 if (_visible) Shots.Baseline();
                 if (_preview) return;                     // the menu preview owns the widget
@@ -120,22 +175,27 @@ namespace YazsCompanion
                 _nextTick = now + 0.4f;
                 if (!Plugin.ShowPanel.Value) { SetVisible(false); return; }
 
+                // the gating flags as numbers (Yes / No / Unknown / Error ...): their log line is only put together when one of them changed
                 GameplayMaster master = null; try { master = GameplayMaster.s_instance; } catch { }
                 int players = 0; try { if (master != null && master.gamePlayers != null) players = master.gamePlayers.Count; } catch { }
-                string active = "?"; try { active = master == null ? "nomaster" : master.currentGameMode == null ? "nomode" : master.currentGameMode.IsGameplayActive.ToString(); } catch { active = "err"; }
-                string paused = "?"; try { paused = GameplayMaster.IsPaused.ToString(); } catch { paused = "err"; }
-                string hudVisible = "?"; try { if (master != null) hudVisible = master.IsGameplayUIVisible().ToString(); } catch { hudVisible = "err"; }
-                string selecting = "?"; try { if (hud != null) selecting = hud.IsDisplayingUpgradeSelection().ToString(); } catch { selecting = "err"; }
+                int active = Unknown; try { var mode = master == null ? null : master.currentGameMode; active = master == null ? NoMaster : mode == null ? NoMode : mode.IsGameplayActive ? Yes : No; } catch { active = Error; }
+                int paused = Unknown; try { paused = GameplayMaster.IsPaused ? Yes : No; } catch { paused = Error; }
+                int hudVisible = Unknown; try { if (master != null) hudVisible = master.IsGameplayUIVisible() ? Yes : No; } catch { hudVisible = Error; }
+                int selecting = Unknown; try { if (hud != null) selecting = hud.IsDisplayingUpgradeSelection() ? Yes : No; } catch { selecting = Error; }
                 bool screenUp = false; try { screenUp = _screen != null && _screen.gameObject.activeInHierarchy; } catch { _screen = null; }
-                string pauseMenu = "?"; try { pauseMenu = GameplayMaster.IsPauseMenuFlowActive.ToString(); } catch { pauseMenu = "err"; }
-                string defeat = "?"; try { defeat = GameplayMaster.IsDefeatResultsFlowActive.ToString(); } catch { defeat = "err"; }
+                int pauseMenu = Unknown; try { pauseMenu = GameplayMaster.IsPauseMenuFlowActive ? Yes : No; } catch { pauseMenu = Error; }
+                int defeat = Unknown; try { defeat = GameplayMaster.IsDefeatResultsFlowActive ? Yes : No; } catch { defeat = Error; }
 
-                string gates = "players=" + players + " active=" + active + " paused=" + paused + " pauseMenu=" + pauseMenu + " defeat=" + defeat
-                    + " hudVisible=" + hudVisible + " selecting=" + selecting + " screen=" + screenUp + " hud=" + (hud != null);
-                if (gates != _gates) { _gates = gates; Plugin.Logger.LogInfo("[panel] " + gates); }
+                int code = (Math.Min(players, 15) << 20) | (active << 17) | (paused << 14) | (pauseMenu << 11) | (defeat << 8) | (hudVisible << 5) | (selecting << 2) | (screenUp ? 2 : 0) | (hud != null ? 1 : 0);
+                if (code != _gateCode)
+                {
+                    _gateCode = code;
+                    Plugin.Logger.LogInfo("[panel] players=" + players + " active=" + Flag(active) + " paused=" + Flag(paused) + " pauseMenu=" + Flag(pauseMenu) + " defeat=" + Flag(defeat)
+                        + " hudVisible=" + Flag(hudVisible) + " selecting=" + Flag(selecting) + " screen=" + screenUp + " hud=" + (hud != null));
+                }
 
                 // see the header comment: every one of these reads false during play and true on some screen
-                bool viewUp = players == 0 || screenUp || selecting == "True" || paused == "True" || pauseMenu == "True" || defeat == "True" || hudVisible == "True";
+                bool viewUp = players == 0 || screenUp || selecting == Yes || paused == Yes || pauseMenu == Yes || defeat == Yes || hudVisible == Yes;
                 if (viewUp) { SetVisible(false); return; }
                 if (!Ensure(hud)) return;
                 SetVisible(true);   // before the rebuild: an inactive TMP object skips its mesh update, and Layout measures the text
@@ -143,34 +203,66 @@ namespace YazsCompanion
                 if (now >= _nextRebuild)
                 {
                     _nextRebuild = now + 2f;
-                    var snap = G.Read();
-                    string key = StateKey(snap);
-                    if (key == _stateKey) return;
-                    _stateKey = key;
-                    bool compact = true; try { compact = Plugin.PanelDetail.Value == PanelDetailLevel.Compact; } catch { }
-                    var plan = Plan.Build(snap, compact);
-                    if (plan.Signature != _sig)
-                    {
-                        _sig = plan.Signature;
-                        Apply(plan, now);
-                        Plugin.Logger.LogInfo("[plan] " + snap.Clock + ": " + plan.PlainText() + (_changed.Count > 0 ? "  [changed: " + string.Join(", ", _changed) + "]" : ""));
-                        if (_hlStart > 0) { Shots.Later(0.3f, "hl1"); Shots.Later(1.5f, "hl2"); Shots.Later(3.5f, "hl3"); }
-                        else Shots.Later(0.5f, "plan");
-                    }
+                    Refresh(now);
                 }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[panel] " + e); _nextTick = Time.realtimeSinceStartup + 5f; }
         }
 
-        /// <summary>The per-frame part: the fade and the highlight's colour ramp. Called from Tick and from the preview.</summary>
-        public static void Animate()
+        const int No = 0, Yes = 1, Unknown = 2, Error = 3, NoMaster = 4, NoMode = 5;
+        static string Flag(int v) { return v == Yes ? "True" : v == No ? "False" : v == Error ? "err" : v == NoMaster ? "nomaster" : v == NoMode ? "nomode" : "?"; }
+
+        // Every two seconds while the readout is up (at once after a screen closed): has anything the plan reads moved?
+        // The fingerprint answers that with a few dozen calls into the game; only when it moved is the snapshot taken and
+        // the plan rebuilt - or the plan that was worked out while the game was still paused is put up.
+        static void Refresh(float now)
         {
-            float now = Time.realtimeSinceStartup;
+            long perf = Perf.Begin();
+            try
+            {
+                long quick = G.QuickKey();
+                var ahead = _ahead; _ahead = null;
+                Plan plan; string key, clock;
+                if (ahead != null && quick != 0 && ahead.Quick == quick) { plan = ahead.Plan; key = ahead.Key; clock = ahead.Clock; }
+                else
+                {
+                    if (quick != 0 && quick == _quick && _stateKey.Length > 0) return;
+                    using (G.Cache())
+                    {
+                        long read = Perf.Begin();
+                        var snap = G.Read();
+                        key = StateKey(snap); clock = snap.Clock;
+                        Perf.End("read", read);
+                        if (key == _stateKey) { _quick = quick; return; }
+                        long build = Perf.Begin();
+                        plan = Plan.Build(snap, CompactDetail());
+                        Perf.End("plan.build", build);
+                    }
+                }
+                _quick = quick;
+                if (key == _stateKey) return;
+                _stateKey = key;
+                if (plan.Signature != _sig)
+                {
+                    _sig = plan.Signature;
+                    Apply(plan, now);
+                    Plugin.Logger.LogInfo("[plan] " + clock + ": " + plan.PlainText() + (_changed.Count > 0 ? "  [changed: " + string.Join(", ", _changed) + "]" : ""));
+                    if (_hlStart > 0) { Shots.Later(0.3f, "hl1"); Shots.Later(1.5f, "hl2"); Shots.Later(3.5f, "hl3"); }
+                    else Shots.Later(0.5f, "plan");
+                }
+            }
+            finally { Perf.End("refresh", perf); }
+        }
+
+        /// <summary>The per-frame part: the fade and the highlight's colour ramp. Called from Tick and from the preview.</summary>
+        public static void Animate() { Animate(Time.realtimeSinceStartup); }
+        static void Animate(float now)
+        {
             float dt = _lastFrame > 0 ? Mathf.Clamp(now - _lastFrame, 0f, 0.1f) : 0f;
             _lastFrame = now;
-            Fade(dt);
+            Fade(dt, now);
             if (_intro && _root != null) { _intro = false; Intro(); }
-            if (_hlStart > 0 && _target > 0 && now >= _nextFade) { _nextFade = now + 0.033f; Render(now); }   // the gold ramp, ~30 fps
+            if (_hlStart > 0 && _target > 0 && now >= _nextFade) { _nextFade = now + 0.033f; Render(now, false); }   // the gold ramp, ~30 fps
         }
 
         // everything the plan depends on: squad members with weapons, abilities, levels, items, tree levels, and the active quest
@@ -234,11 +326,11 @@ namespace YazsCompanion
         /// <summary>Full strength for the next <paramref name="seconds"/>; afterwards the readout settles at PanelIdle.</summary>
         static void Wake(float seconds) { _awakeUntil = Mathf.Max(_awakeUntil, Time.realtimeSinceStartup + seconds); }
 
-        static void Fade(float dt)
+        static void Fade(float dt, float now)
         {
             if (_root == null || _fade == null) return;
             float idle = 0.7f; try { idle = Mathf.Clamp(Plugin.PanelIdle.Value, 0.25f, 1f); } catch { }
-            float level = Time.realtimeSinceStartup < _awakeUntil ? 1f : idle;
+            float level = now < _awakeUntil ? 1f : idle;
             if (Mathf.Abs(_alpha - _target) < 0.0001f && Mathf.Abs(_level - level) < 0.0001f) return;
             _alpha = Mathf.MoveTowards(_alpha, _target, dt / (_target > _alpha ? FadeIn : FadeOut));
             _level = Mathf.MoveTowards(_level, level, dt / (level > _level ? WakeUp : Doze));
@@ -430,18 +522,22 @@ namespace YazsCompanion
                 g.Rows.Add(l);
             }
             for (int i = gi; i < _groups.Count; i++) { _groups[i].Rows.Clear(); try { _groups[i].Block.gameObject.SetActive(false); } catch { } }
+            foreach (var gr in _groups) { gr.Hot = false; foreach (var l in gr.Rows) if (_changed.Contains(l.Key)) { gr.Hot = true; break; } }
 
             float hlSeconds = 3f; try { hlSeconds = Plugin.PanelHighlight.Value; } catch { }
             _hlStart = _changed.Count > 0 && hlSeconds > 0 ? now : -100f;
             Wake(_changed.Count > 0 ? Mathf.Max(6f, hlSeconds + 3f) : 5f);   // new advice is shown at full strength, then settles
             if (_changed.Count > 0 && !_intro) Pulse();
-            Render(now);
+            Render(now, true);
             Layout();
         }
 
         // the text of every group: "LABEL<indent>value</indent>" rows, the changed values in the highlight colour
-        // (gold held for 0.8 s, then easing to white)
-        static void Render(float now)
+        // (gold held for 0.8 s, then easing to white). A new plan renders every group; the ramp (30 times a second for
+        // the length of the highlight) only the groups holding a changed row, only when the colour has moved on since the
+        // last render (it stands still for the first 0.8 s), and a label is only written to when its text differs:
+        // every write is a string copied into the game and a full re-parse and re-mesh of that label.
+        static void Render(float now, bool all)
         {
             if (_plan == null) return;
             float dur = 3f; try { dur = Plugin.PanelHighlight.Value; } catch { }
@@ -454,10 +550,13 @@ namespace YazsCompanion
                 k = k * k * (3f - 2f * k);
                 hex = Theme.Hex(Color.Lerp(Theme.HlGold, Theme.White, k));
             }
+            if (!all && hl && hex == _hlHex) return;
+            _hlHex = hex;
             var sb = new StringBuilder();
             foreach (var g in _groups)
             {
                 if (g.Rows.Count == 0 || g.Text == null) continue;
+                if (!all && !g.Hot) continue;
                 sb.Length = 0;
                 foreach (var l in g.Rows)
                 {
@@ -474,7 +573,8 @@ namespace YazsCompanion
                     else sb.Append(l.Text);
                     sb.Append("</indent>");
                 }
-                g.Text.text = sb.ToString();
+                string text = sb.ToString();
+                if (text != g.Shown) { g.Text.text = text; g.Shown = text; }
             }
             if (!hl) _hlStart = -100f;
         }

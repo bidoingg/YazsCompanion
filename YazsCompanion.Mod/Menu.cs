@@ -50,11 +50,54 @@ namespace YazsCompanion
         public static bool IsOpen { get { return _open; } }
         /// <summary>The game's menus underneath hold still: while open, and one frame longer so the key that closed the mod
         /// menu does not also close the pause menu.</summary>
-        public static bool Blocking { get { return _open || Time.frameCount <= _blockFrame; } }
+        public static bool Blocking
+        {
+            get
+            {
+                if (_open) return true;
+                if (_blockFrame < 0) return false;
+                if (Time.frameCount <= _blockFrame) return true;
+                _blockFrame = -1; return false;
+            }
+        }
 
         // ================================================================ open / close
-        static UIViewMainMenu MainMenu() { return FindActive<UIViewMainMenu>(); }
-        static UIPauseMenu PauseMenu() { return FindActive<UIPauseMenu>(); }
+        // Which of the game's menus is up. Their own Update tells us: the hold-still prefixes at the end of this file run
+        // every frame a menu is live (also while they skip the original), so the view they saw within the last few
+        // frames IS the live one - no search. Resources.FindObjectsOfTypeAll walks every loaded object (thousands in a
+        // run) and used to run twice every half second during play for the button upkeep, and every frame while the mod
+        // menu was open. The search remains as the fallback: until a view's Update has been seen once this session
+        // (never while a run is being played: no menu can be up then), and for an explicit Open() that the hooks cannot
+        // place - the search then stands in for the hooks until the mod menu closes again.
+        const int SeenFrames = 3;
+        static UIViewMainMenu _mainView; static UIPauseMenu _pauseView;
+        static int _mainFrame = -100, _pauseFrame = -100;
+        static bool _mainHooked, _pauseHooked, _viaSearch;
+
+        internal static void Saw(UIViewMainMenu v) { _mainView = v; _mainFrame = Time.frameCount; _mainHooked = true; }
+        internal static void Saw(UIPauseMenu v) { _pauseView = v; _pauseFrame = Time.frameCount; _pauseHooked = true; }
+
+        static bool Live(Component view, int frame)
+        {
+            if (view == null || Time.frameCount - frame > SeenFrames) return false;
+            try { return view.gameObject.activeInHierarchy; } catch { return false; }
+        }
+
+        static UIViewMainMenu MainMenu()
+        {
+            if (_mainHooked && !_viaSearch) return Live(_mainView, _mainFrame) ? _mainView : null;
+            return InRun() && !_viaSearch ? null : FindActive<UIViewMainMenu>();
+        }
+        static UIPauseMenu PauseMenu()
+        {
+            if (_pauseHooked && !_viaSearch) return Live(_pauseView, _pauseFrame) ? _pauseView : null;
+            return InRun() && !_viaSearch ? null : FindActive<UIPauseMenu>();
+        }
+        /// <summary>A run is being played right now (not paused): neither menu can be up, so nothing is searched for.</summary>
+        static bool InRun()
+        {
+            try { var gm = GameplayMaster.s_instance; return gm != null && !GameplayMaster.IsPaused; } catch { return false; }
+        }
 
         static T FindActive<T>() where T : Component
         {
@@ -73,6 +116,11 @@ namespace YazsCompanion
             try
             {
                 Transform host = null; var mm = MainMenu(); var pm = mm == null ? PauseMenu() : null;
+                if (mm == null && pm == null && !_viaSearch && !InRun())
+                {   // asked for and the hooks cannot place it: look the old way, once, and trust the search while the menu is open
+                    mm = FindActive<UIViewMainMenu>(); pm = mm == null ? FindActive<UIPauseMenu>() : null;
+                    if (mm != null || pm != null) { _viaSearch = true; Plugin.Logger.LogInfo("[menu] the game's menu was found by search, its Update hook had not reported it"); }
+                }
                 if (mm != null) host = mm.transform; else if (pm != null) host = pm.transform;
                 if (host == null) { Plugin.Logger.LogInfo("[menu] not on the main menu or the pause menu"); return; }
                 _template = Ui.FindLabel(host, new[] { "Name" });
@@ -92,7 +140,7 @@ namespace YazsCompanion
         public static void Close()
         {
             bool was = _open;
-            _open = false; _blockFrame = Time.frameCount + 1;
+            _open = false; _viaSearch = false; _blockFrame = Time.frameCount + 1;
             Fx.Cancel("menu");
             try { if (_go != null) UnityEngine.Object.Destroy(_go); } catch { }
             _go = null; _stage = null; _body = null; _ctls.Clear(); _focus = null;
@@ -130,13 +178,20 @@ namespace YazsCompanion
             catch (Exception e) { Plugin.Logger.LogError("[menu] " + e); Close(); }
         }
 
+        // the key is asked for every frame of the session: parse its name only when the setting changes
+        static string _toggleName; static KeyCode _toggleKey; static bool _toggleValid;
         static bool ToggleKeyDown()
         {
             try
             {
-                string name = (Plugin.MenuKey.Value ?? "").Trim(); if (name.Length == 0) return false;
-                KeyCode key; if (!Enum.TryParse(name, true, out key)) return false;
-                return Key(key);
+                string name = Plugin.MenuKey.Value;
+                if (!ReferenceEquals(name, _toggleName))
+                {
+                    _toggleName = name;
+                    string trimmed = (name ?? "").Trim();
+                    _toggleValid = trimmed.Length > 0 && Enum.TryParse(trimmed, true, out _toggleKey);
+                }
+                return _toggleValid && Key(_toggleKey);
             }
             catch { return false; }
         }
@@ -933,10 +988,11 @@ namespace YazsCompanion
     }
 
     // ---- while the mod menu is open, the game's menus underneath hold still ----
+    // (the two menu views also report themselves here: that is how the mod knows which menu is up without searching)
     [HarmonyPatch(typeof(UIViewMainMenu), nameof(UIViewMainMenu.Update))]
-    static class P_MenuHoldMain { static bool Prefix() { return !Menu.Blocking; } }
+    static class P_MenuHoldMain { static bool Prefix(UIViewMainMenu __instance) { Menu.Saw(__instance); return !Menu.Blocking; } }
     [HarmonyPatch(typeof(UIPauseMenu), nameof(UIPauseMenu.Update))]
-    static class P_MenuHoldPause { static bool Prefix() { return !Menu.Blocking; } }
+    static class P_MenuHoldPause { static bool Prefix(UIPauseMenu __instance) { Menu.Saw(__instance); return !Menu.Blocking; } }
     [HarmonyPatch(typeof(SelectFirstButtonIfNeeded), nameof(SelectFirstButtonIfNeeded.Update))]
     static class P_MenuHoldSelect { static bool Prefix() { return !Menu.Blocking; } }
     [HarmonyPatch(typeof(GameplayMaster), nameof(GameplayMaster.GetPauseClickInput))]

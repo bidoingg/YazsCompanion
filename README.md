@@ -8,7 +8,8 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-19): **0.10.0 — the advice review, build guides and the mod menu.** An independent review of the
+Status (2026-09-19): **0.10.1 — the performance pass** (nothing you see or read changes; see "What the mod costs").
+**0.10.0 — the advice review, build guides and the mod menu.** An independent review of the
 ranking (a fresh-eyes audit of the code against a logged run, the game's own data dumped from the running game, and
 the published guides re-read and graded) rebuilt it around four things read live: the BUILD you follow per survivor,
 the SQUAD's synergy as the run stands, the run CLOCK, and the game MODE - see "How it ranks". A mod menu (a
@@ -434,6 +435,51 @@ build that fails to load leaves every auto-updated install without the mod until
 To disable the mod without uninstalling BepInEx, delete or rename `BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll`.
 To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in the game folder.
 
+## What the mod costs (0.10.1: the performance pass)
+
+The rule: during play the mod does nothing per frame beyond a fade and a few time checks, polls cheaply, and does
+its heavy work while the game is paused anyway. What 0.10.1 changed to get there - none of it changes what is drawn,
+ranked or logged:
+
+- **No object searches during play.** Up to 0.10.0 the upkeep of the COMPANION buttons looked for the main menu and
+  the pause menu with `Resources.FindObjectsOfTypeAll` twice every half second - also in the middle of a run, where
+  that walks every loaded object - and every frame while the mod menu was open. The menus now report themselves: the
+  hold-still prefixes on `UIViewMainMenu.Update` / `UIPauseMenu.Update` run every frame a menu is live, so the view
+  they saw within the last three frames is the live one. The search remains as a fallback (before a view's Update has
+  ever been seen, never while a run is being played; and for an explicit open the hooks cannot place).
+- **The plan is rebuilt while the game is still paused.** A new plan re-scores every item that can still drop and
+  every recruit: 4-5 ms on the PC (measured from the log: `[panel] shown` to `[plan]`), more on the Deck - and it
+  ran on the first tick back in play after every pick. It now runs in the `Hide` post-fix, in the second the screen
+  takes to animate out, and the tick only puts it up (`Panel.PlanAhead`). If the run moved on in between, the tick
+  rebuilds as before.
+- **A fingerprint instead of a snapshot every two seconds.** `G.QuickKey()` hashes who is on the squad, every powerup
+  and item with its level or count, the tag points and the active quest in a few dozen calls; the full snapshot
+  (names, the tree, the tag profile - over a thousand calls into the game) is only taken when it moved.
+- **Asset data is read once.** The Training Yard's node list and its split per class (it was walked once per
+  recruitable class per plan, 245 nodes a time) and the team passives among them are kept for the run, levels are
+  still read live; an item's English text, statistics and carry limit are kept for the session (by item id, checked
+  against the name); inside one offer or one plan build (`using (G.Cache())`) names and powerup facts are fetched
+  once per object instead of thousands of times (`G.Same` falls back to comparing names).
+- **The item rules parse each description once**: the rich-text strip, the clause split and some sixty pattern
+  matches per item are kept per description (`ItemRules.Parse`); only the part that depends on the squad and the
+  clock runs per score. The offline bench prints the same 753 lines before and after.
+- **Small things**: one per-frame Harmony hook less (the fallback tick on `GameplayMaster.Update` now rides on the
+  `GameMaster.Update` hook and only steps in when the HUD's own tick goes quiet), the gating flags are compared as a
+  number and only put into words when they change, the gold highlight re-renders only the groups that hold a changed
+  row and only when the colour moved, a label is only written to when its text differs, the menu key's name is parsed
+  when the setting changes rather than every frame.
+
+`[Debug] Perf = true` measures it on a real run: once a minute a line of the shape
+`[perf] 60 s, <frames> frames: tick.hud <calls>x <total> ms (max <worst>) | tick.master ... | refresh ... | read ...
+| plan.build ... | offer ... | plan.ahead ...` - calls, total and the worst single call per section (sections nest:
+a tick contains the refresh it triggered). `offer` and `plan.ahead` run while the game is paused; `tick.*`,
+`refresh`, `read` and `plan.build` are what play pays. No such numbers have been taken yet (0.10.1 was written while
+a run was being played on the PC, so the game could not be restarted).
+
+Outside the mod: BepInEx's console window (`[Logging.Console] Enabled = true` in `BepInEx.cfg`, as on the
+development PC) makes every log line of every plugin and of the game a synchronous console write; the packaged
+zip ships with it off.
+
 ## How it hooks the game
 
 The game code is not obfuscated. The selection screens are `UIGameplayLevelUp`, `UIGameplayChestOpened`,
@@ -479,6 +525,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Menu.cs                       the mod menu: builds, editor, advice, display; its own focus and input; the COMPANION buttons
     Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
     Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
+    Perf.cs                       [Debug] Perf: times the mod's own sections and logs the sums once a minute
     Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line

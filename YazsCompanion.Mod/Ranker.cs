@@ -453,23 +453,19 @@ namespace YazsCompanion
         /// Shared by the chest cards and the plan panel; pass the context when scoring many items against one snapshot.</summary>
         internal static double ItemScore(ItemBase it, Snapshot s, List<string> why, ItemContext shared = null)
         {
-            string name = G.Name(it);
-            string desc = ""; try { desc = it.EnglishDescription; } catch { }
-            if (string.IsNullOrEmpty(desc)) { try { desc = it.GetDescriptionText(); } catch { } }
+            var facts = G.FactsOf(it);      // name, text, statistics: asset data, read once per item
             var ic = shared ?? ItemContextOf(s);
-            var stats = new List<string>();
-            try { foreach (var st in G.Each(it.highlightedStatistics)) if (st != null) stats.Add(st.statisticType.ToString()); } catch { }
-            ic.Stats = stats; ic.Healing = false; try { ic.Healing = it.isHealingItem; } catch { }
-            double score = ItemRules.Evaluate(name, desc, ic, why);
+            ic.Stats = facts.Stats; ic.Healing = facts.Healing;
+            double score = ItemRules.Evaluate(facts.Name, facts.Desc, ic, why);
             try
             {
-                var qm = GameQuestManager.Get;
-                if (qm != null && qm.ActiveQuest != null && qm.IsActiveQuestTargetItem(it)) { score += 3; why.Insert(0, "quest target"); }
+                var qm = s.ActiveQuests;
+                if (qm != null && qm.IsActiveQuestTargetItem(it)) { score += 3; why.Insert(0, "quest target"); }
             }
             catch { }
             if (s.AnyoneHas(it))
             {
-                int max = 1; try { max = it.numMaxCanCarry; } catch { }
+                int max = facts.MaxCarry;
                 if (max <= 1) { score -= 1.0; why.Insert(0, "already held"); }
                 else why.Add("stacks, already held");
             }

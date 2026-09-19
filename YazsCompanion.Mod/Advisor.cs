@@ -14,6 +14,13 @@ namespace YazsCompanion
 
         public static void OnOffer(UIGameplayUpgradeSelection sel, Screen screen)
         {
+            long perf = Perf.Begin();
+            try { using (G.Cache()) Offer(sel, screen); }
+            finally { Perf.End("offer", perf); }
+        }
+
+        static void Offer(UIGameplayUpgradeSelection sel, Screen screen)
+        {
             try
             {
                 Panel.ScreenOpened(sel);
@@ -124,20 +131,34 @@ namespace YazsCompanion
     // ---- heartbeat for the sidebar: the HUD's own Update (UIGameplay owns the gameplay canvas), throttled inside
     //      Panel.Tick; when the HUD is destroyed with the scene, so is the sidebar, so forget it ----
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.Update))]
-    static class P_HudTick { static void Postfix(UIGameplay __instance) { Fx.Tick(); Panel.Tick(__instance); } }
+    static class P_HudTick
+    {
+        static void Postfix(UIGameplay __instance) { long t = Perf.Begin(); Fx.Tick(); Panel.Tick(__instance); Perf.End("tick.hud", t); }
+    }
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.OnDestroy))]
     static class P_HudGone { static void Postfix() { Panel.Reset(); } }
-    // fallback tick source in case the HUD's Update never reaches us (the sidebar has not been seen in a run yet)
-    [HarmonyPatch(typeof(GameplayMaster), nameof(GameplayMaster.Update))]
-    static class P_MasterTick { static void Postfix() { Panel.Tick(null); Notice.Tick(); } }
 
-    // ---- the restart notice after an auto-update: GameMaster lives in every scene, menu included ----
     // the Training Yard: advice on the tab that is open, and the node under the cursor for its WHY row
     [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.Update))]
-    static class P_YardTick { static void Postfix(UIViewSkillTree __instance) { Fx.Tick(); TreeUi.Tick(__instance); } }
+    static class P_YardTick
+    {
+        static void Postfix(UIViewSkillTree __instance) { long t = Perf.Begin(); Fx.Tick(); TreeUi.Tick(__instance); Perf.End("tick.yard", t); }
+    }
     [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.OnHighlighted))]
     static class P_YardHighlight { static void Postfix(UISkillTreeNode __0) { TreeUi.Highlighted(__0); } }
 
+    // ---- GameMaster lives in every scene, menu included: the restart notice after an auto-update, the mod menu, the
+    //      debug walks - and the readout's fallback tick should the HUD's own Update ever stop reaching us during a run
+    //      (up to 0.10.0 a second per-frame hook on GameplayMaster.Update did that; the HUD tick has never failed) ----
     [HarmonyPatch(typeof(GameMaster), nameof(GameMaster.Update))]
-    static class P_Notice { static void Postfix() { Fx.Tick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); } }
+    static class P_Notice
+    {
+        static void Postfix()
+        {
+            long t = Perf.Begin();
+            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick();
+            Perf.End("tick.master", t);
+            Perf.Frame();
+        }
+    }
 }

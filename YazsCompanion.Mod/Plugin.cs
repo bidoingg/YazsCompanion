@@ -23,7 +23,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.10.0";
+        public const string VERSION = "0.10.1";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -51,6 +51,7 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> PreviewYard;
         internal static ConfigEntry<string> PreviewResolution;
         internal static ConfigEntry<bool> ProbeFlag;
+        internal static ConfigEntry<bool> PerfFlag;
         internal static ConfigEntry<bool> PreviewMenu;
         internal static ConfigEntry<bool> PreviewPause;
         internal static ConfigEntry<LevelUpStyle> AdviceStyle;
@@ -127,8 +128,10 @@ namespace YazsCompanion
             MenuKey = Config.Bind("Menu", "MenuKey", "F10", "Keyboard key that opens and closes the mod menu on the main menu and while paused (a UnityEngine.KeyCode name; empty = none).");
             PreviewMenu = Config.Bind("Debug", "PreviewMenu", false, "About 6 s after launch, open the mod menu on the main menu, walk its tabs and save a screenshot of each into the shots folder. For checking the menu without touching the controls; off by default.");
             PreviewPause = Config.Bind("Debug", "PreviewPause", false, "About 7 s after launch, start a Quick Run, pause it a few seconds in, open the mod menu over the pause menu, close it again and log what happened (with screenshots). For checking the pause-menu button without touching the controls. It plays under fifteen seconds, so the game writes no save; stop the game afterwards. Off by default.");
+            PerfFlag = Config.Bind("Debug", "Perf", false, "Time the mod's own work (the per-frame ticks, the squad snapshot, a plan build, an offer) and log the sums once a minute as [perf] lines: calls, total milliseconds and the worst single call per section. For judging what the mod costs on a real run; off by default.");
             ApplyDoctrine();
-            Config.SettingChanged += (sender, args) => { try { if (args.ChangedSetting.Definition.Section == "Advice") ApplyDoctrine(); } catch { } };
+            Perf.On = PerfFlag.Value;
+            Config.SettingChanged += (sender, args) => { try { if (args.ChangedSetting.Definition.Section == "Advice") ApplyDoctrine(); Perf.On = PerfFlag.Value; } catch { } };
 
             ProbeFlag = Config.Bind("Debug", "Probe", false, "About 6 s after launch, on the main menu, write probe.json next to the DLL: every item and powerup with the exact fields the game uses (tags, damage types per level, statistics, mode availability), the input actions and the main menu's button layout. For development; off by default.");
 

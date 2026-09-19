@@ -172,29 +172,62 @@ namespace YazsCompanion
             note = share <= 0 ? "no " + what + "-range weapon on the squad" : (int)Math.Round(share * 100) + "% of the squad's weapons are " + what + "-range";
         }
 
+        // What a description says never changes, only what it is worth to this squad at this minute: so the text work -
+        // stripping the rich text, splitting it into bonus and malus clauses, some sixty pattern matches over them, the
+        // tag grants - is done once per description and kept. The plan's GRAB row scores every item that can still drop
+        // after every pick; without this that was several thousand pattern matches a time.
+        sealed class TextFacts
+        {
+            public string Text, Neg;
+            public bool[] InPos, InNeg;                              // per rule of All: its pattern is in the bonus / the malus clauses
+            public List<KeyValuePair<int, string>> Grants;           // "+4 to Fire damage type tag": (4, Fire), in text order
+        }
+        static readonly Dictionary<string, TextFacts> _parsed = new Dictionary<string, TextFacts>();
+
+        static TextFacts Parse(string description)
+        {
+            string key = description ?? "";
+            TextFacts f;
+            if (_parsed.TryGetValue(key, out f)) return f;
+            f = new TextFacts { Text = RichTag.Replace(key, "") };
+            var clauses = new List<string>();
+            foreach (var cl in Regex.Split(f.Text, @"(?<=[.!])\s+|\s(?=-\s?\d+\s?%)")) if (!string.IsNullOrWhiteSpace(cl)) clauses.Add(cl);
+            var posParts = new List<string>(); var negParts = new List<string>();
+            foreach (var cl in clauses) ((Negative.IsMatch(cl) && !NegativeButGood.IsMatch(cl)) ? negParts : posParts).Add(cl);
+            string pos = string.Join(" ", posParts);       // every clause a malus: nothing positive to find (not "the whole text")
+            f.Neg = string.Join(" ", negParts);
+            f.InPos = new bool[All.Length]; f.InNeg = new bool[All.Length];
+            for (int i = 0; i < All.Length; i++) { f.InPos[i] = All[i].Re.IsMatch(pos); f.InNeg[i] = All[i].Re.IsMatch(f.Neg); }
+            f.Grants = new List<KeyValuePair<int, string>>();
+            foreach (Match m in TagGrant.Matches(f.Text))
+            {
+                int n; if (!int.TryParse(m.Groups[1].Value, out n)) continue;
+                foreach (Match tm in TypeName.Matches(m.Groups[2].Value)) f.Grants.Add(new KeyValuePair<int, string>(n, Canon(tm.Value)));
+            }
+            if (_parsed.Count > 2048) _parsed.Clear();      // 136 items in the game; a bound all the same
+            _parsed[key] = f;
+            return f;
+        }
+
         /// <summary>Score an item description against the squad and the run. <paramref name="typed"/>: the item is about a
         /// damage type; <paramref name="fits"/>: the squad deals one of them.</summary>
         public static double Score(string description, ItemContext c, List<string> why, out bool typed, out bool fits, out bool economic)
         {
             typed = false; fits = false; economic = false;
             int economyRules = 0, otherRules = 0;
-            string text = RichTag.Replace(description ?? "", "");
             double score = 0;
-            var clauses = new List<string>();
-            foreach (var cl in Regex.Split(text, @"(?<=[.!])\s+|\s(?=-\s?\d+\s?%)")) if (!string.IsNullOrWhiteSpace(cl)) clauses.Add(cl);
-            var posParts = new List<string>(); var negParts = new List<string>();
-            foreach (var cl in clauses) ((Negative.IsMatch(cl) && !NegativeButGood.IsMatch(cl)) ? negParts : posParts).Add(cl);
-            string pos = string.Join(" ", posParts);       // every clause a malus: nothing positive to find (not "the whole text")
-            string neg = string.Join(" ", negParts);
+            var parsed = Parse(description);
+            string neg = parsed.Neg;
             var squad = c.Squad ?? new List<string>();
             bool hasElemental = false; foreach (var s in squad) if (Array.IndexOf(Elemental, s) >= 0) hasElemental = true;
             bool exact = c.Tags != null && c.Tags.Known;
             var ctx = c.Ctx;
             bool wanted = false;
 
-            foreach (var kw in All)
+            for (int ki = 0; ki < All.Length; ki++)
             {
-                bool inPos = kw.Re.IsMatch(pos) || StatHit(kw, c.Stats, neg.Length == 0), inNeg = !inPos && kw.Re.IsMatch(neg);
+                var kw = All[ki];
+                bool inPos = parsed.InPos[ki] || StatHit(kw, c.Stats, neg.Length == 0), inNeg = !inPos && parsed.InNeg[ki];
                 if (!inPos && !inNeg) continue;
                 double axis = AxisOf(kw.Axis, ctx);
                 if (inPos) { if (kw.Axis == "economy" || kw.Axis == "cash") economyRules++; else if (kw.Tag != "damage") otherRules++; }
@@ -287,7 +320,6 @@ namespace YazsCompanion
         {
             var tags = c.Tags;
             if (tags == null) return 0;
-            string text = RichTag.Replace(description ?? "", "");
             int top = 0; string topType = null; int withPoints = 0;
             foreach (var t in TagProfile.Names) { int n = tags.PointsOf(t); if (n > 0) withPoints++; if (n > top) { top = n; topType = t; } }
 
@@ -305,19 +337,15 @@ namespace YazsCompanion
             }
 
             double v = 0;
-            foreach (Match m in TagGrant.Matches(text))
+            foreach (var grant in Parse(description).Grants)
             {
-                int n; if (!int.TryParse(m.Groups[1].Value, out n)) continue;
-                foreach (Match tm in TypeName.Matches(m.Groups[2].Value))
+                int n = grant.Key; string type = grant.Value;
+                double fit = tags.Known ? tags.Fit(type) : 0.4;
+                int cur = tags.PointsOf(type);
+                v += 0.25 * n * fit;
+                if (tags.SpecialAt > 0 && cur < tags.SpecialAt && cur + n >= tags.SpecialAt && fit > 0)
                 {
-                    string type = Canon(tm.Value);
-                    double fit = tags.Known ? tags.Fit(type) : 0.4;
-                    int cur = tags.PointsOf(type);
-                    v += 0.25 * n * fit;
-                    if (tags.SpecialAt > 0 && cur < tags.SpecialAt && cur + n >= tags.SpecialAt && fit > 0)
-                    {
-                        v += 1.2; why.Insert(0, "+" + n + " " + type + " reaches the special (" + tags.SpecialAt + ")");
-                    }
+                    v += 1.2; why.Insert(0, "+" + n + " " + type + " reaches the special (" + tags.SpecialAt + ")");
                 }
             }
             return Math.Min(2.5, v);
