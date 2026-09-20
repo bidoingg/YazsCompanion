@@ -26,7 +26,7 @@ namespace YazsCompanion
     internal static class Preview
     {
         const float Ref = 2160f, RefW = 3840f;        // the game's canvas reference (Expand: the smaller ratio wins)
-        const float Font = 31f, MinTextPx = 15f;      // the sidebar's font and its readability floor (Panel.Scale)
+        const float Font = 31f;                       // the readout's font, in canvas units
 
         static bool _done;
         static int _stage;
@@ -231,7 +231,8 @@ namespace YazsCompanion
                 float sw = UnityEngine.Screen.width, sh = UnityEngine.Screen.height;
                 float unitHere = sh / canvas.rect.height;                              // pixels per canvas unit on this desktop
                 float unitThere = Mathf.Min(tw / RefW, th / Ref);                      // ... and on the target screen (Expand)
-                float autoThere = Mathf.Clamp(MinTextPx / (Font * unitThere), 1f, 2f);  // the sidebar's automatic scale there
+                float canvasHThere = th / unitThere;                                   // the target's canvas height in units
+                float autoThere = Panel.AutoScale(unitThere, canvasHThere) * Panel.UserSize;   // the readout's scale there
                 float want_px = unitThere * autoThere;                                 // pixels per sidebar unit wanted
                 int size = Mathf.Max(1, Mathf.FloorToInt(want_px / unitHere));
                 float scale = want_px / (unitHere * size);

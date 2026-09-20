@@ -42,6 +42,11 @@ namespace YazsCompanion
         static readonly List<Ctl> _ctls = new List<Ctl>(); static Ctl _focus; static string _focusKey = "";
         static bool _open, _dirty, _editing; static int _tab, _survivor, _blockFrame = -1;
         static GameObject _restoreSelected;
+        static float _openedAt; static int _openFrame; static bool _armed;        // the press that opened the menu is not input for the menu
+        static bool _submitIsMouse;                                                // seen once: the game's UISubmit action also fires on the left mouse button
+        static TextMeshProUGUI _saved;                                             // "SAVED" in the header, lit for a moment after every change
+        static RectTransform _pvWindow; static TextMeshProUGUI _pvCaption;         // DISPLAY tab: the readout itself, as configured
+        static bool _pvDirty; static int _pvSample; static float _pvNextSample;
         static readonly Dictionary<string, Sprite> _icons = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, Sprite> _portraits = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
         static readonly Dictionary<string, bool> _unlocked = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -141,7 +146,9 @@ namespace YazsCompanion
                 if (_template == null) { Plugin.Logger.LogWarning("[menu] no label to clone"); return; }
                 ReadGameArt();
                 BuildShell();
+                Panel.Suspend();            // the DISPLAY tab borrows the readout's widget for its preview; Close brings the live one back
                 _open = true; _editing = false; _dirty = true;
+                _openedAt = Time.realtimeSinceStartup; _openFrame = Time.frameCount; _armed = false;
                 try { _lastMouse = UnityEngine.Input.mousePosition; } catch { }
                 Shots.Later(1.0f, "menu_open");
                 try { var es = UnityEngine.EventSystems.EventSystem.current; if (es != null) { _restoreSelected = es.currentSelectedGameObject; es.SetSelectedGameObject(null); } } catch { }
@@ -157,7 +164,7 @@ namespace YazsCompanion
             _open = false; _viaSearch = false; _blockFrame = Time.frameCount + 1;
             Fx.Cancel("menu");
             try { if (_go != null) UnityEngine.Object.Destroy(_go); } catch { }
-            _go = null; _stage = null; _body = null; _ctls.Clear(); _focus = null;
+            _go = null; _stage = null; _body = null; _ctls.Clear(); _focus = null; _saved = null; _pvWindow = null; _pvCaption = null;
             try
             {
                 var es = UnityEngine.EventSystems.EventSystem.current;
@@ -188,8 +195,74 @@ namespace YazsCompanion
                 if (_dirty) { _dirty = false; BuildBody(); }
                 ReadInput();
                 if (_dirty && _open) { _dirty = false; BuildBody(); }
+                if (_open) PreviewUpkeep();
             }
             catch (Exception e) { Plugin.Logger.LogError("[menu] " + e); Close(); }
+        }
+
+        /// <summary>A setting was written (BepInEx saves the file inside the setter; builds.json is written by Builds): say so
+        /// in the header for a moment. Called from the config's SettingChanged and after every change to the builds.</summary>
+        internal static void SettingSaved(bool written)
+        {
+            if (!_open || _saved == null) return;
+            try
+            {
+                _saved.text = written ? "SAVED  <color=" + Theme.DimHex + ">-  applies at once</color>" : "NOT SAVED  <color=" + Theme.DimHex + ">-  the file could not be written</color>";
+                _saved.color = written ? Theme.GoldText : Theme.Rust;
+                var label = _saved;
+                Fx.Cancel("menu.saved");
+                label.alpha = 1f;
+                Fx.Run("menu.saved", written ? 1.6f : 6f, 0.7f, k => { label.alpha = 1f - k; });
+            }
+            catch { }
+        }
+
+        // DISPLAY tab: keep the readout in the preview window in step with the settings, and alive (its fade, its gold
+        // highlight, its idle dimming all run from Panel.Animate); the sample plan moves on every few seconds so the
+        // change highlight and the settling to the idle opacity can be seen too
+        static void PreviewUpkeep()
+        {
+            if (_pvWindow == null) return;
+            if (Time.frameCount <= _openFrame + 1) return;         // the menu canvas takes its scale a frame after it was made
+            float now = Time.realtimeSinceStartup;
+            try
+            {
+                if (_pvDirty || !Panel.Previewing)
+                {
+                    bool show = true; try { show = Plugin.ShowPanel.Value; } catch { }
+                    if (!_pvDirty && !show) { Panel.Animate(); return; }        // switched off: nothing to keep up
+                    _pvDirty = false; _pvSample = 0; _pvNextSample = now + 5f;
+                    var canvas = _go.transform.TryCast<RectTransform>();
+                    bool compact = true; try { compact = Plugin.PanelDetail.Value == PanelDetailLevel.Compact; } catch { }
+                    Panel.CheckGlyphs(_template);
+                    if (show && Panel.MenuPreview(_pvWindow, canvas, _template, Plan.Sample(0, compact))) PreviewCaption(canvas);
+                    else
+                    {
+                        if (Panel.Previewing) Panel.PreviewEnd();
+                        if (_pvCaption != null) _pvCaption.text = show ? "" : "The PLAN readout is off.";
+                        if (show) { Plugin.Logger.LogInfo("[menu] the readout preview could not be built"); _pvWindow = null; }     // once, not every frame
+                    }
+                }
+                else if (now >= _pvNextSample)
+                {
+                    _pvNextSample = now + 5f; _pvSample = (_pvSample + 1) % 3;
+                    bool compact = true; try { compact = Plugin.PanelDetail.Value == PanelDetailLevel.Compact; } catch { }
+                    if (_pvSample != 1) Panel.PreviewFresh();      // 0 -> 1 is "after a pick": two lines change and glow; the others are new squads
+                    Panel.PreviewApply(Plan.Sample(_pvSample, compact));
+                    PreviewCaption(_go.transform.TryCast<RectTransform>());
+                }
+                Panel.Animate();
+            }
+            catch (Exception e) { Plugin.Logger.LogInfo("[menu] preview: " + e.Message); _pvWindow = null; }
+        }
+
+        static void PreviewCaption(RectTransform canvas)
+        {
+            if (_pvCaption == null) return;
+            float shown = Panel.ShownScale, wanted = Panel.ScaleFor(canvas);
+            string px = Mathf.RoundToInt(Panel.TextPx(canvas, shown)) + " px text on this " + UnityEngine.Screen.width + " x " + UnityEngine.Screen.height + " screen";
+            _pvCaption.text = "<color=" + Theme.GoldHex + ">ACTUAL SIZE</color>   " + px
+                + (shown > 0 && shown < wanted - 0.01f ? "   <color=" + Theme.DimHex + ">(a long plan shrinks to stay clear of the HUD)</color>" : "");
         }
 
         // the key is asked for every frame of the session: parse its name only when the setting changes
@@ -218,8 +291,21 @@ namespace YazsCompanion
         static bool Pad(string action) { try { return GameMaster.GetButtonDown(action, true); } catch (Exception e) { InputError("GameMaster.GetButtonDown(" + action + ")", e); return false; } }
         static float Axis(string action) { try { return GameMaster.GetAxisOverridePause(action); } catch (Exception e) { InputError("GameMaster.GetAxisOverridePause(" + action + ")", e); return 0f; } }
 
+        static bool MouseHeld() { try { return UnityEngine.Input.GetMouseButton(0); } catch { return false; } }
+        static bool PadHeld(string action) { try { return GameMaster.GetButton(action); } catch (Exception e) { InputError("GameMaster.GetButton(" + action + ")", e); return false; } }
+
         static void ReadInput()
         {
+            // the click or key press that opened the menu has to be over before anything counts as input for the menu: a
+            // double click on the COMPANION button used to land on whatever control lay under the cursor (a logged run
+            // has "SWAT follows Auto" 75 ms after the menu opened - a build chosen by accident)
+            if (!_armed)
+            {
+                bool held = MouseHeld() || Held(KeyCode.Return) || Held(KeyCode.KeypadEnter) || Held(KeyCode.Space) || PadHeld("UISubmit");
+                if (held || Time.realtimeSinceStartup - _openedAt < 0.3f) { try { _lastMouse = UnityEngine.Input.mousePosition; } catch { } return; }
+                _armed = true;
+            }
+
             // ---- direction: the stick / d-pad and the arrow keys as ONE source (the game maps the arrows onto the same axes)
             float ax = Axis("Move Horizontal"), ay = Axis("Move Vertical");
             int x = ax > 0.55f ? 1 : ax < -0.55f ? -1 : 0, y = ay > 0.55f ? 1 : ay < -0.55f ? -1 : 0;
@@ -235,7 +321,7 @@ namespace YazsCompanion
             if (Pad("GoPrevTab") || Pad("GoPrevTab2") || Key(KeyCode.Q) || Key(KeyCode.PageUp)) { SetTab((_tab + Tabs.Length - 1) % Tabs.Length); return; }
             if (Pad("Cancel") || Key(KeyCode.Escape) || Key(KeyCode.Backspace)) { Back(); return; }
 
-            Mouse();
+            bool mouseDown = Mouse();
             if (!_open) return;
             if (fire)
             {
@@ -243,27 +329,37 @@ namespace YazsCompanion
                 else if (_focus != null && _focus.Change != null) { _focus.Change(x); Click(); }
                 else Move(x, 0);
             }
-            if (Pad("UISubmit") || Key(KeyCode.Return) || Key(KeyCode.KeypadEnter) || Key(KeyCode.Space)) Activate(_focus);
+            // a frame with a mouse click is the mouse's: should the game's UISubmit action fire on the left button too, the
+            // control would be worked twice (a toggle flipped and flipped back, a left arrow undone by the +1 of Submit)
+            bool submit = Pad("UISubmit");
+            if (mouseDown)
+            {
+                if (submit && !_submitIsMouse) { _submitIsMouse = true; Plugin.Logger.LogInfo("[menu] UISubmit fires on the left mouse button too: ignored on click frames"); }
+                return;
+            }
+            if (submit || Key(KeyCode.Return) || Key(KeyCode.KeypadEnter) || Key(KeyCode.Space)) Activate(_focus);
         }
 
         static Vector3 _lastMouse;
-        static void Mouse()
+        /// <summary>Hover and click; true when the left button went down this frame (whatever it hit).</summary>
+        static bool Mouse()
         {
-            Vector3 mp; try { mp = UnityEngine.Input.mousePosition; } catch { return; }
+            Vector3 mp; try { mp = UnityEngine.Input.mousePosition; } catch { return false; }
             bool moved = (mp - _lastMouse).sqrMagnitude > 4f; _lastMouse = mp;
             bool down = false; try { down = UnityEngine.Input.GetMouseButtonDown(0); } catch { }
-            if (!moved && !down) return;
+            if (!moved && !down) return false;
             var p = new Vector2(mp.x, mp.y);
             for (int i = 0; i < 3; i++)
-                if (down && _tabLabels[i] != null && Hit(_tabLabels[i].rectTransform, p)) { SetTab(i); return; }
+                if (down && _tabLabels[i] != null && Hit(_tabLabels[i].rectTransform, p)) { SetTab(i); return true; }
             Ctl over = null;
             foreach (var c in _ctls) if (c.Rt != null && Hit(c.Rt, p)) { over = c; break; }
-            if (over == null) return;
+            if (over == null) return down;
             if (over != _focus) Focus(over, true);
-            if (!down) return;
+            if (!down) return false;
             if (over.Change != null && over.Left != null && Hit(over.Left, p)) { over.Change(-1); Click(); }
             else if (over.Change != null && over.Right != null && Hit(over.Right, p)) { over.Change(1); Click(); }
             else Activate(over);
+            return true;
         }
 
         static bool Hit(RectTransform rt, Vector2 screen) { try { return RectTransformUtility.RectangleContainsScreenPoint(rt, screen, null); } catch { return false; } }
@@ -479,6 +575,8 @@ namespace YazsCompanion
                 _tabLabels[i] = Text(_stage, "Tab" + i, tx + i * 560f + 84f, 96f, 440f, 96f, 60f, Theme.Grey, Tabs[i], TextAlignmentOptions.Left, true);
             }
             _tabRule = Box(_stage, "TabRule", tx, 204f, 420f, 8f, Theme.Gold);
+            _saved = Text(_stage, "Saved", 2520f, 238f, 1200f, 60f, 38f, Theme.GoldText, "", TextAlignmentOptions.Right, true);
+            if (_saved != null) _saved.alpha = 0f;
             var rule = Ui.FadeRule(_stage, "HeaderRule", Theme.GoldLine); Place(rule, 120, 312, W - 240, 4);
             rule.pivot = new Vector2(0f, 1f);
             Ui.Diamond(rule, "Tip", 0f, 0.5f, 26f, Theme.Gold);
@@ -513,6 +611,8 @@ namespace YazsCompanion
         static void BuildBody()
         {
             Fx.Cancel("menu.glow"); Fx.Cancel("menu.body");
+            if (Panel.Previewing) Panel.PreviewEnd();           // the readout in the DISPLAY tab's window goes with the body
+            _pvWindow = null; _pvCaption = null;
             for (int i = _body.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(_body.GetChild(i).gameObject);
             _ctls.Clear(); _focus = null;
             for (int i = 0; i < Tabs.Length; i++) if (_tabLabels[i] != null) _tabLabels[i].color = i == _tab ? Theme.GoldText : Theme.Grey;
@@ -566,20 +666,20 @@ namespace YazsCompanion
                 bool active = string.Equals(id, selected, StringComparison.OrdinalIgnoreCase);
                 var c = Plate(_body, "build:" + id, x0 + i * (cw + gap), y0, cw, ch, active ? new Color(1f, 0.93f, 0.74f, 1f) : new Color(1f, 1f, 1f, 0.82f));
                 BuildCard(c, who, b, cw, active);
-                c.Press = () => { Builds.Select(who, id); _focusKey = "build:" + id; _dirty = true; Plugin.Logger.LogInfo("[menu] " + who + " follows " + (b == null ? "Auto" : b.Name)); };
+                c.Press = () => { Builds.Select(who, id); SettingSaved(Builds.LastSaveOk); _focusKey = "build:" + id; _dirty = true; Plugin.Logger.LogInfo("[menu] " + who + " follows " + (b == null ? "Auto" : b.Name) + (Builds.LastSaveOk ? " (saved)" : " (builds.json was NOT written)")); };
             }
 
             // ---- your own build
             var custom = Builds.CustomOf(who); float by = y0 + ch + 30f;
             Btn(_body, "customize", x0, by, 760, 116, custom == null ? "MAKE MY OWN BUILD" : "EDIT MY BUILD", "gear", () =>
             {
-                var mine = Builds.EnsureCustom(who); Builds.Select(who, mine.Id); Builds.Save();
+                var mine = Builds.EnsureCustom(who); Builds.Select(who, mine.Id); SettingSaved(Builds.LastSaveOk);
                 _editing = true; _focusKey = "ed:style"; _dirty = true;
             }, () => custom == null
                 ? "Start your own " + who + " build from the one selected: change the level-up style, the weapon branch, the order of the abilities, the evolution of each, and what the build wants from items."
                 : "Edit your own " + who + " build: style, weapon branch, ability order, evolutions, item leanings.");
             if (custom != null)
-                Btn(_body, "delete", x0 + 790, by, 620, 116, "DELETE MY BUILD", null, () => { Builds.DropCustom(who); _focusKey = "customize"; _dirty = true; },
+                Btn(_body, "delete", x0 + 790, by, 620, 116, "DELETE MY BUILD", null, () => { Builds.DropCustom(who); SettingSaved(Builds.LastSaveOk); _focusKey = "customize"; _dirty = true; },
                     () => "Remove your own " + who + " build. The presets stay; the survivor goes back to Auto if it was following it.");
         }
 
@@ -663,7 +763,7 @@ namespace YazsCompanion
             float x = 520f, w = 2800f, y = 352f, rh = 118f, step = 132f;
             Text(_body, "Who", x, y - 2f, w, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + who.ToUpperInvariant() + "</color>   your own build", TextAlignmentOptions.Left, true);
             y += 84f;
-            Action changed = () => { Builds.Save(); };
+            Action changed = () => { Builds.Save(); SettingSaved(Builds.LastSaveOk); };
 
             var styles = new[] { BuildStyle.Weapon, BuildStyle.Balanced, BuildStyle.Ability };
             Cycler(_body, "ed:style", x, y, w, rh, "Level-up style", "chevrons", () => StyleText(b.Style),
@@ -724,7 +824,7 @@ namespace YazsCompanion
                     var from = presets[_copyFrom].Clone(); from.Id = b.Id; from.Custom = true; from.Source = ""; from.Name = b.Name; from.Survivor = who;
                     from.Summary = "Your own build, started from " + presets[_copyFrom].Name + ".";
                     foreach (var ab in kit.Abilities) if (from.PriorityOf(ab[0]) < 0 && !from.Skips(ab[0])) from.Abilities.Add(ab[0]);
-                    Builds.ReplaceCustom(who, from); _focusKey = "ed:copy"; _dirty = true;
+                    Builds.ReplaceCustom(who, from); SettingSaved(Builds.LastSaveOk); _focusKey = "ed:copy"; _dirty = true;
                 };
             }
             Btn(_body, "ed:done", x + 1990, y, 810, rh, "DONE", null, () => { _editing = false; _focusKey = "customize"; _dirty = true; }, () => "Back to the builds. Your build is saved as you change it.");
@@ -757,7 +857,7 @@ namespace YazsCompanion
         static void BuildAdvice()
         {
             float x = 320f, w = 3200f, y = 360f, rh = 128f, step = 148f;
-            Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "The standing orders of the advice. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
+            Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "The standing orders of the advice, saved as you change them and followed from the next offer on. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
             y += 96f;
             Cycler(_body, "ad:style", x, y, w, rh, "Level-up style (survivors on Auto)", "chevrons", () => Words(Plugin.AdviceStyle.Value.ToString()), d => Plugin.AdviceStyle.Value = Next(Plugin.AdviceStyle.Value, d),
                 () => Plugin.AdviceStyle.Value == LevelUpStyle.WeaponFirst ? "WEAPON FIRST: every weapon level before any ability level - the rule of the mod up to 0.9. Some guides swear by it; others, and the ability-centred survivors, do not."
@@ -779,28 +879,50 @@ namespace YazsCompanion
                 () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark.");
         }
 
+        // the steps of "Readout size": 70 % .. 200 % of the automatic size
+        static float SizeStep(float value, int d) { return Mathf.Clamp(Mathf.Round((value + 0.1f * d) * 10f) / 10f, 0.7f, 2f); }
+
         static void BuildDisplay()
         {
-            float x = 320f, w = 3200f, y = 360f, rh = 128f, step = 148f;
-            Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "What the mod draws. Changes apply at once; the PLAN readout rebuilds when you close this menu.", TextAlignmentOptions.Left);
-            y += 96f;
+            // the settings on the left; on the right the PLAN readout itself, as it will look in play with the settings as
+            // they stand - same canvas geometry as the HUD, so the same pixels
+            float x = 120f, w = 2060f, y = 352f, rh = 124f, step = 142f, vw = 800f;
+            Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws. Every change is saved as you make it and applies at once; the preview is the PLAN readout at its real size.", TextAlignmentOptions.Left);
+            y += 92f;
+            float top = y;
             Func<bool, string> onOff = v => v ? "On" : "Off";
+            Action redraw = () => { _pvDirty = true; };
             Cycler(_body, "di:badges", x, y, w, rh, "Card verdicts", "diamond", () => onOff(Plugin.ShowBadges.Value), d => Plugin.ShowBadges.Value = !Plugin.ShowBadges.Value,
-                () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason under every offered card."); y += step;
-            Cycler(_body, "di:panel", x, y, w, rh, "PLAN readout during play", "eye", () => onOff(Plugin.ShowPanel.Value), d => Plugin.ShowPanel.Value = !Plugin.ShowPanel.Value,
-                () => "The see-through readout of what to pick next: a row per survivor, then TAGS / SOS / GRAB."); y += step;
-            Cycler(_body, "di:detail", x, y, w, rh, "Readout detail", null, () => Plugin.PanelDetail.Value.ToString(), d => Plugin.PanelDetail.Value = Next(Plugin.PanelDetail.Value, d),
-                () => "COMPACT: one row per survivor with only what to pick next. FULL: two rows per survivor with the next steps and the evolution names."); y += step;
-            Cycler(_body, "di:place", x, y, w, rh, "Readout position", null, () => Words(Plugin.PanelPosition.Value.ToString()), d => Plugin.PanelPosition.Value = Next(Plugin.PanelPosition.Value, d),
-                () => "BOTTOM LEFT: the empty corner under the weapon and ability icons. RIGHT: the right edge between the item icons and the minimap."); y += step;
-            Cycler(_body, "di:opacity", x, y, w, rh, "Readout backing", null, () => Mathf.RoundToInt(Plugin.PanelOpacity.Value * 100f) + "%", d => Plugin.PanelOpacity.Value = Mathf.Round(Mathf.Clamp01(Plugin.PanelOpacity.Value + 0.1f * d) * 10f) / 10f,
-                () => "Darkness of the soft backing under the readout text. Lower shows more of the field; higher reads better over bright effects."); y += step;
-            Cycler(_body, "di:idle", x, y, w, rh, "Readout when nothing changed", null, () => Mathf.RoundToInt(Plugin.PanelIdle.Value * 100f) + "%", d => Plugin.PanelIdle.Value = Mathf.Round(Mathf.Clamp(Plugin.PanelIdle.Value + 0.1f * d, 0.2f, 1f) * 10f) / 10f,
-                () => "The readout is at full strength right after a pick, then settles to this opacity. 100% = it never dims."); y += step;
+                () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason under every offered card.", vw); y += step;
+            Cycler(_body, "di:panel", x, y, w, rh, "PLAN readout during play", "eye", () => onOff(Plugin.ShowPanel.Value), d => { Plugin.ShowPanel.Value = !Plugin.ShowPanel.Value; redraw(); },
+                () => "The see-through readout of what to pick next: a row per survivor, then TAGS / SOS / GRAB.", vw); y += step;
+            Cycler(_body, "di:size", x, y, w, rh, "Readout size", null, () => Mathf.RoundToInt(Plugin.PanelSize.Value * 100f) + "%" + (Mathf.Abs(Plugin.PanelSize.Value - 1f) < 0.01f ? "  (automatic)" : ""),
+                d => { Plugin.PanelSize.Value = SizeStep(Plugin.PanelSize.Value, d); redraw(); },
+                () => "How large the readout is drawn. 100% is the automatic size, which follows the screen: its text is 1.9% of the screen's height and never under 15 pixels, whatever the resolution or aspect. Raise it if the advice is hard to read from where you sit, lower it to see more of the field. The preview shows the real size.", vw); y += step;
+            Cycler(_body, "di:detail", x, y, w, rh, "Readout detail", null, () => Plugin.PanelDetail.Value.ToString(), d => { Plugin.PanelDetail.Value = Next(Plugin.PanelDetail.Value, d); redraw(); },
+                () => "COMPACT: one row per survivor with only what to pick next. FULL: two rows per survivor with the next steps and the evolution names.", vw); y += step;
+            Cycler(_body, "di:place", x, y, w, rh, "Readout position", null, () => Words(Plugin.PanelPosition.Value.ToString()), d => { Plugin.PanelPosition.Value = Next(Plugin.PanelPosition.Value, d); redraw(); },
+                () => "BOTTOM LEFT: the empty corner under the weapon and ability icons. RIGHT: the right edge between the item icons and the minimap.", vw); y += step;
+            Cycler(_body, "di:opacity", x, y, w, rh, "Readout backing", null, () => Mathf.RoundToInt(Plugin.PanelOpacity.Value * 100f) + "%", d => { Plugin.PanelOpacity.Value = Mathf.Round(Mathf.Clamp01(Plugin.PanelOpacity.Value + 0.1f * d) * 10f) / 10f; redraw(); },
+                () => "Darkness of the soft backing under the readout text. Lower shows more of the field; higher reads better over bright effects.", vw); y += step;
+            Cycler(_body, "di:idle", x, y, w, rh, "Readout when nothing changed", null, () => Mathf.RoundToInt(Plugin.PanelIdle.Value * 100f) + "%", d => { Plugin.PanelIdle.Value = Mathf.Round(Mathf.Clamp(Plugin.PanelIdle.Value + 0.1f * d, 0.2f, 1f) * 10f) / 10f; Panel.PreviewDoze(); },
+                () => "The readout is at full strength right after a pick, then settles to this opacity. 100% = it never dims. The preview settles to it now.", vw); y += step;
             Cycler(_body, "di:yard", x, y, w, rh, "Training Yard advice", "up", () => onOff(Plugin.ShowYard.Value), d => Plugin.ShowYard.Value = !Plugin.ShowYard.Value,
-                () => "Number the nodes worth buying with the points on hand and print the SPEND / THEN / WHY strip. It follows the build you selected for that survivor."); y += step;
-            Cycler(_body, "di:motion", x, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => Plugin.Motion.Value = !Plugin.Motion.Value,
-                () => "Animate what the mod draws. During play nothing loops; the flair is kept for menus like this one.");
+                () => "Number the nodes worth buying with the points on hand and print the SPEND / THEN / WHY strip. It follows the build you selected for that survivor.", vw); y += step;
+            Cycler(_body, "di:motion", x, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => { Plugin.Motion.Value = !Plugin.Motion.Value; redraw(); },
+                () => "Animate what the mod draws. During play nothing loops; the flair is kept for menus like this one.", vw); y += step;
+
+            // ---- the preview window: a stand-in for the field (dark ground, a few bright effects to judge the backing
+            //      against), the readout in its corner, a caption with the size in pixels
+            float wx = x + w + 60f, ww = W - 120f - wx, wh = y - step + rh - top - 96f;
+            var window = Box(_body, "PreviewWindow", wx, top, ww, wh, new Color(0.10f, 0.11f, 0.10f, 1f));
+            window.gameObject.AddComponent(Il2CppType.Of<RectMask2D>());
+            var field = Art.Field;
+            if (field != null) { var fi = Box(window, "Field", 0, 0, ww, wh, Color.white).GetComponent<Image>(); fi.sprite = field; fi.type = Image.Type.Simple; fi.preserveAspect = false; }
+            var host = Place(Ui.NewRect("Readout", window), 0, 0, ww, wh);       // the readout anchors to this rect's corners as it does to the screen's
+            Ui.Frame(Place(Ui.NewRect("Edge", _body), wx, top, ww, wh), "Line", 0, 3, Theme.GoldRule, 18f);
+            _pvCaption = Text(_body, "PreviewCaption", wx, top + wh + 18f, ww, 96f, 42f, Theme.Grey, "", TextAlignmentOptions.TopLeft, false, true);
+            _pvWindow = host; _pvDirty = true;
         }
 
         // ================================================================ the game's own art: portraits, weapon and ability icons
@@ -905,10 +1027,82 @@ namespace YazsCompanion
         // ================================================================ the pause walk ([Debug] PreviewPause)
         // Start a Quick Run with the game's own button, let the game open its own pause menu a few seconds in (the
         // pause-key prefix below answers "pressed" once), check the COMPANION button arrived there, open the mod menu over
-        // the paused run, close it, check the pause menu is still up, then resume for five seconds so the readout the mod
-        // menu took down comes back. Well under fifty seconds of play: no save is written.
-        static bool _ppDone, _ppHero, _ppResumed; static int _ppStage; static float _ppAt = -1f;
+        // the paused run, change two display settings through the menu's own controls (and put them back), close it, check
+        // the pause menu is still up, then resume for five seconds so the readout the mod menu took down comes back - with
+        // the changed settings. Well under fifty seconds of play: no save is written.
+        static bool _ppDone, _ppResumed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
+        static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
         internal static bool FakePauseOnce;
+
+        // Quick Run does not always start the run: it can stop at SELECT TEAM LEADER, and it can open the whole run
+        // wizard - arena, game mode, run setup (difficulty, badges) and the START bar. The walk clicks through whichever
+        // of them is up with the game's own handlers, taking what each screen proposes (the profile's last choice), else
+        // the game's default, else the first that is unlocked. Those screens store the choice in the profile; scripted
+        // anyway at the user's request (2026-09-20), so that a test run needs no hands. Later screens are asked first: an
+        // earlier one may stay loaded underneath.
+        static int _wzHero, _wzArena, _wzMode, _wzSetup, _wzStart;
+
+        static bool WizardStep()
+        {
+            var setup = FindActive<UIViewRunSetup>();
+            if (setup != null)
+            {
+                if (_wzSetup < 1)       // one press selects the difficulty (seen in the game); START is the bar's
+                {
+                    _wzSetup++;
+                    UIViewRunSetupDifficultyButton pick = null;
+                    try { var sel = setup.selectedDifficultyButton; if (sel != null && !sel.IsLocked()) pick = sel; } catch { }
+                    if (pick == null)
+                        try { var list = setup.difficultyButtons; for (int i = 0; list != null && i < list.Count; i++) { var b = list[i]; if (b != null && b.gameObject.activeInHierarchy && !b.IsLocked()) { pick = b; break; } } } catch { }
+                    if (pick != null)
+                    {
+                        string name = "?"; try { name = pick.difficultyText != null ? pick.difficultyText.text : pick.name; } catch { }
+                        Plugin.Logger.LogInfo("[menu] pause walk: run setup, difficulty '" + name + "'"); setup.OnClickDifficulty(pick); return true;
+                    }
+                    Plugin.Logger.LogInfo("[menu] pause walk: run setup, no difficulty button to press");
+                }
+                var bar = FindActive<UIStartGameBar>();
+                if (bar != null && _wzStart < 3)
+                {
+                    _wzStart++;
+                    bool ok = true; try { ok = bar.IsSelectedRunAvailable(); } catch { }
+                    Plugin.Logger.LogInfo("[menu] pause walk: START" + (ok ? "" : " (the game says the selected run is not available)")); bar.OnClickStartGame(); return true;
+                }
+                return false;
+            }
+            var arena = FindActive<UIViewChooseArena>();
+            if (arena != null)
+            {
+                bool modes = false; try { modes = arena.modeButtonsContainer != null && arena.modeButtonsContainer.activeInHierarchy; } catch { }
+                if (!modes)
+                {
+                    if (_wzArena >= 3) return false;
+                    _wzArena++;
+                    try { if (arena._currentArenaSelected == null && arena.defaultArena != null) arena.ArenaButtonClicked(arena.defaultArena); } catch { }
+                    string name = "?"; try { if (arena._currentArenaSelected != null) name = arena._currentArenaSelected.name; } catch { }
+                    Plugin.Logger.LogInfo("[menu] pause walk: arena screen, '" + name + "'"); arena.OnClickStartArena(); return true;
+                }
+                if (_wzMode >= 4) return false;
+                _wzMode++;
+                if (_wzMode % 2 == 1)
+                {   // the mode the screen proposes; should that only select it, the next step presses Continue
+                    UIGameplayModeButton b = null; try { b = arena._selectedGameplayModeButton ?? arena.defaultMode; } catch { }
+                    if (b != null) { string mode = "?"; try { mode = b.gameplayMode.ToString(); } catch { } Plugin.Logger.LogInfo("[menu] pause walk: game mode '" + mode + "'"); arena.OnClickStartGameMode(b); return true; }
+                }
+                Plugin.Logger.LogInfo("[menu] pause walk: game mode, Continue"); arena.OnClickContinueFromGameMode(); return true;
+            }
+            var hero = FindActive<UIViewChooseHero>();
+            if (hero != null && _wzHero < 3) { _wzHero++; Plugin.Logger.LogInfo("[menu] pause walk: team leader screen, Start"); hero.OnClickStart(); return true; }
+            return false;
+        }
+
+        // work a control of the open mod menu the way a key press does (its own Change handler), for the walk
+        static bool Work(string key, int d)
+        {
+            var c = _ctls.FirstOrDefault(k => k.Key == key);
+            if (c == null || c.Change == null) { Plugin.Logger.LogWarning("[menu] pause walk: no control '" + key + "'"); return false; }
+            c.Change(d); return true;
+        }
 
         static void PausePreviewTick()
         {
@@ -925,7 +1119,7 @@ namespace YazsCompanion
                         {
                             var mm = MainMenu(); if (mm == null) { _ppAt = now + 2f; return; }
                             Plugin.Logger.LogInfo("[menu] pause walk: Quick Run"); mm.quickRunButton.onClick.Invoke();
-                            _ppAt = now + 4f; _ppStage = 1; return;
+                            _ppAt = now + 4f; _ppStage = 1; _ppStarted = now; return;
                         }
                     case 1:
                         {
@@ -943,10 +1137,9 @@ namespace YazsCompanion
                             }
                             if (!playing || t < 30f)
                             {
-                                _ppAt = now + (playing ? 0.5f : 1f);
-                                // Quick Run can stop at SELECT TEAM LEADER first: press its Start once, with the leader it proposes
-                                if (!playing && !_ppHero) { var hero = FindActive<UIViewChooseHero>(); if (hero != null) { _ppHero = true; Plugin.Logger.LogInfo("[menu] pause walk: team leader screen, Start"); hero.OnClickStart(); _ppAt = now + 3f; } }
-                                if (now > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; }
+                                _ppAt = now + (playing ? 0.5f : 1.5f);
+                                if (!playing && WizardStep()) _ppAt = now + 2.5f;       // one screen of the run wizard per step
+                                if (now - _ppStarted > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; }
                                 return;
                             }
                             Plugin.Logger.LogInfo("[menu] pause walk: pausing at " + t.ToString("0.0") + " s of play"); FakePauseOnce = true;
@@ -959,8 +1152,22 @@ namespace YazsCompanion
                     case 3:
                         Open(); Shots.Later(1.0f, "pause1_modmenu", true); _ppAt = now + 1.8f; _ppStage = 4; return;
                     case 4:
-                        Plugin.Logger.LogInfo("[menu] pause walk: mod menu " + (_open ? "open over the paused run" : "did NOT open")); Back();
-                        _ppAt = now + 1.0f; _ppStage = 5; return;
+                        Plugin.Logger.LogInfo("[menu] pause walk: mod menu " + (_open ? "open over the paused run" : "did NOT open"));
+                        if (!_open) { _ppStage = 5; _ppAt = now + 0.5f; return; }
+                        SetTab(2); _ppAt = now + 1.2f; _ppStage = 41; return;
+                    case 41:
+                        {   // DISPLAY: the settings a player would try first, through the controls themselves; the preview follows
+                            _ppDetail = Plugin.PanelDetail.Value; _ppSize = Plugin.PanelSize.Value;
+                            Shots.Later(0.05f, "pause2_display", true);
+                            _ppAt = now + 0.6f; _ppStage = 42; return;
+                        }
+                    case 42:
+                        _ppChanged = true; Work("di:detail", 1); Work("di:size", 1); Work("di:size", 1);
+                        Plugin.Logger.LogInfo("[menu] pause walk: detail " + _ppDetail + " -> " + Plugin.PanelDetail.Value + ", size " + _ppSize.ToString("0.0") + " -> " + Plugin.PanelSize.Value.ToString("0.0"));
+                        Shots.Later(0.9f, "pause3_display_changed", true);
+                        _ppAt = now + 1.6f; _ppStage = 43; return;
+                    case 43:
+                        Back(); _ppAt = now + 1.0f; _ppStage = 5; return;
                     case 5:
                         {
                             bool paused = false; try { paused = GameplayMaster.IsPaused; } catch { }
@@ -972,13 +1179,23 @@ namespace YazsCompanion
                             var pm = PauseMenu();
                             Plugin.Logger.LogInfo("[menu] pause walk: " + (pm != null ? "resuming the run" : "no pause menu to resume from"));
                             if (pm != null) pm.OnClickClose();
+                            Shots.Later(2.5f, "pause4_resumed", true);
                             _ppStage = 7; _ppAt = now + 5f; return;
                         }
+                    case 7:
+                        // the walk's two changes are the walk's: the player's settings go back as they were
+                        Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; _ppChanged = false;
+                        Plugin.Logger.LogInfo("[menu] pause walk: settings put back (detail " + Plugin.PanelDetail.Value + ", size " + Plugin.PanelSize.Value.ToString("0.0") + ")");
+                        _ppStage = 8; return;
                     default:
                         _ppDone = true; Plugin.Logger.LogInfo("[menu] pause walk done"); return;
                 }
             }
-            catch (Exception e) { Plugin.Logger.LogWarning("[menu] pause walk: " + e); _ppDone = true; }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogWarning("[menu] pause walk: " + e); _ppDone = true;
+                if (_ppChanged) { _ppChanged = false; try { Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; } catch { } }
+            }
         }
 
         // ================================================================ the preview walk ([Debug] PreviewMenu)

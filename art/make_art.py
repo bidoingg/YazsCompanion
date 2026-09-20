@@ -4,6 +4,7 @@
 #   YazsCompanion.Mod/Art/panel.png     128x128  9-slice panel: chamfered corners, gold hairline, dark gradient body
 #   YazsCompanion.Mod/Art/glow.png      128x128  9-slice soft gold glow for the focused / selected element
 #   YazsCompanion.Mod/Art/backdrop.jpg  1280x720 the menu's backdrop: warm black, diamond lattice, hatch, vignette
+#   YazsCompanion.Mod/Art/field.jpg     740x582  a stand-in for the field behind the DISPLAY tab's readout preview
 #   art/banner.png                      1280x640 README / social preview
 # The PNGs under YazsCompanion.Mod/Art are embedded into the DLL (see the csproj) and loaded by Art.cs.
 # Everything is drawn supersampled and scaled down, so the edges are clean at any size the menu uses.
@@ -380,6 +381,87 @@ def make_backdrop(w=1280, h=720):
     return out
 
 
+# ---------------------------------------------------------------- field (the readout preview's stand-in for the game)
+def make_field(w=740, h=582):
+    """Not a screenshot: a top-down dusk field in the game's register - dark ground with worn patches and a dirt track,
+    a crowd of small dark figures, pickups, and bright effects where the readout can sit (fire in the bottom-left corner,
+    an electric burst at the right edge), because what the preview has to show is how the text and its backing read over
+    dark ground and over bright effects."""
+    rng = np.random.default_rng(21)
+    S = 2
+    W, H = w * S, h * S
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
+
+    def blur(a, r):
+        lo, hi = float(a.min()), float(a.max())
+        im = Image.fromarray(((a - lo) / max(1e-6, hi - lo) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(r))
+        return np.asarray(im, np.float32) / 255 * (hi - lo) + lo
+
+    big = blur(rng.normal(0, 1, (H, W)).astype(np.float32), 60 * S)
+    big = (big - big.min()) / (big.max() - big.min())
+    fine = blur(rng.normal(0, 1, (H, W)).astype(np.float32), 1.2 * S)
+    fine = (fine - fine.mean()) / (fine.std() + 1e-6)
+    ground = np.zeros((H, W, 3), np.float32)
+    dark, lit = np.array([30, 36, 30], np.float32), np.array([58, 64, 48], np.float32)
+    for c in range(3): ground[..., c] = dark[c] + (lit[c] - dark[c]) * big + fine * 3.0
+    # a dirt track from the lower left to the upper right
+    t = (ys - (H * 0.80 - xs * 0.52)) / (34 * S)
+    track = np.exp(-t * t) * (0.55 + 0.45 * big)
+    dirt = np.array([86, 72, 52], np.float32)
+    for c in range(3): ground[..., c] = ground[..., c] * (1 - 0.55 * track) + dirt[c] * 0.55 * track
+    # paving seams, faint
+    seams = ((xs % (96 * S)) < 1.5 * S) | ((ys % (96 * S)) < 1.5 * S)
+    ground[seams] *= 0.86
+
+    img = Image.fromarray(ground.clip(0, 255).astype(np.uint8), "RGB").convert("RGBA")
+    d = ImageDraw.Draw(img, "RGBA")
+    # the horde: small dark figures with a soft shadow, thicker towards the top right
+    for _ in range(150):
+        x = rng.uniform(0, W); y = rng.uniform(0, H)
+        if rng.uniform() > 0.35 + 0.65 * (x / W) * (1 - y / H) * 1.6: continue
+        r = rng.uniform(5, 8) * S
+        d.ellipse([x - r * 1.2, y - r * 0.2, x + r * 1.2, y + r * 1.3], fill=(0, 0, 0, 70))
+        tone = int(rng.uniform(52, 78))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(tone, tone + int(rng.uniform(4, 16)), tone - 8, 255))
+        d.ellipse([x - r * 0.45, y - r * 0.55, x + r * 0.45, y + r * 0.2], fill=(118, 40, 34, 255))
+    # pickups: XP gems and coins
+    for _ in range(46):
+        x = rng.uniform(0, W); y = rng.uniform(0, H); r = rng.uniform(2.2, 3.4) * S
+        col = (92, 214, 255, 255) if rng.uniform() < 0.7 else (250, 205, 90, 255)
+        d.polygon([(x, y - r * 1.4), (x + r, y), (x, y + r * 1.4), (x - r, y)], fill=col)
+    base = np.asarray(img.convert("RGB"), np.float32)
+
+    # bright effects, added as light
+    glow = np.zeros((H, W, 3), np.float32)
+    def burst(cx, cy, radius, color, power):
+        rr = np.sqrt((xs - cx * W) ** 2 + (ys - cy * H) ** 2) / (radius * S)
+        a = np.clip(1 - rr, 0, 1) ** 2 * power
+        for c in range(3): glow[..., c] += a * color[c]
+    burst(0.16, 0.80, 150, (255, 140, 40), 1.0); burst(0.13, 0.84, 60, (255, 236, 170), 1.0)      # fire, bottom left
+    burst(0.30, 0.92, 90, (255, 120, 30), 0.8)
+    burst(0.84, 0.30, 130, (90, 190, 255), 0.9); burst(0.86, 0.28, 44, (230, 250, 255), 1.0)      # electric, right edge
+    burst(0.52, 0.50, 34, (255, 250, 220), 0.9)                                                    # a muzzle flash by the squad
+    burst(0.62, 0.72, 80, (140, 230, 90), 0.5)                                                     # a chemical cloud
+    out = base + glow * 0.9
+    # the squad in the middle: three lighter figures
+    sq = Image.fromarray(out.clip(0, 255).astype(np.uint8), "RGB").convert("RGBA")
+    d = ImageDraw.Draw(sq, "RGBA")
+    for dx, dy, col in ((-16, 6, (70, 110, 170)), (12, -8, (170, 120, 60)), (20, 16, (90, 150, 90))):
+        x = W * 0.5 + dx * S; y = H * 0.52 + dy * S; r = 8 * S
+        d.ellipse([x - r * 1.2, y - r * 0.2, x + r * 1.2, y + r * 1.3], fill=(0, 0, 0, 90))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=col + (255,))
+        d.ellipse([x - r * 0.5, y - r * 0.6, x + r * 0.5, y + r * 0.1], fill=(225, 190, 150, 255))
+    res = sq.convert("RGB").resize((w, h), Image.LANCZOS).filter(ImageFilter.GaussianBlur(0.6))
+    # a vignette, so the window sits in the menu
+    vy, vx = np.mgrid[0:h, 0:w].astype(np.float32)
+    vr = np.sqrt(((vx - w / 2) / (w * 0.72)) ** 2 + ((vy - h / 2) / (h * 0.72)) ** 2)
+    vig = np.clip(1.08 - vr ** 2.4 * 0.55, 0.55, 1.0)
+    arr = np.asarray(res, np.float32) * vig[..., None]
+    res = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
+    res.save(os.path.join(OUT, "field.jpg"), quality=84, optimize=True)
+    return res
+
+
 # ---------------------------------------------------------------- banner
 def font(size, weight="Bold", width="Condensed"):
     for path in (r"C:\Windows\Fonts\bahnschrift.ttf",):
@@ -418,7 +500,7 @@ def make_banner(emblem, w=1280, h=640):
 if __name__ == "__main__":
     make_glyphs()
     e = make_emblem()
-    make_panel(); make_glow(); make_backdrop()
+    make_panel(); make_glow(); make_backdrop(); make_field()
     make_banner(e)
     for f in sorted(os.listdir(OUT)): print(f, os.path.getsize(os.path.join(OUT, f)))
     print("banner.png", os.path.getsize(os.path.join(HERE, "banner.png")))

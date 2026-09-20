@@ -72,6 +72,8 @@ namespace YazsCompanion
 
         public static Sprite Emblem { get { return Whole("emblem.png"); } }
         public static Sprite Backdrop { get { return Whole("backdrop.jpg"); } }
+        /// <summary>A stand-in for the field behind the DISPLAY tab's readout preview: dark ground, a few bright effects.</summary>
+        public static Sprite Field { get { return Whole("field.jpg"); } }
         /// <summary>9-slice: chamfered corners and a gold hairline around a dark body (border 48 of 128 px).</summary>
         public static Sprite Panel { get { return Sliced("panel.png", 48f); } }
         /// <summary>9-slice: a soft gold glow ring for the focused element; lay it 30 units outside the element.</summary>

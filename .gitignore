@@ -6,3 +6,4 @@ tools/ItemBench/obj/
 dist/
 *.user
 .vs/
+__pycache__/

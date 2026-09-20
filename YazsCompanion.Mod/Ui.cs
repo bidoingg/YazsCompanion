@@ -238,6 +238,7 @@ namespace YazsCompanion
             text.enableAutoSizing = false; text.richText = true; text.raycastTarget = false;
             try { text.enableWordWrapping = false; } catch { }
             try { text.overflowMode = TextOverflowModes.Overflow; } catch { }
+            try { text.margin = Vector4.zero; } catch { }      // a menu button's caption carries side margins: the clone's rect is the caller's to set
             text.text = "";
             go.SetActive(true);
             return text;

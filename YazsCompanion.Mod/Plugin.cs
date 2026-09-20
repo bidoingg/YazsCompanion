@@ -23,7 +23,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.10.2";
+        public const string VERSION = "0.11.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -39,6 +39,7 @@ namespace YazsCompanion
         internal static ConfigEntry<float> PanelBottom;
         internal static ConfigEntry<float> PanelTop;
         internal static ConfigEntry<float> PanelRight;
+        internal static ConfigEntry<float> PanelSize;
         internal static ConfigEntry<float> PanelScale;
         internal static ConfigEntry<float> BadgeScale;
         internal static ConfigEntry<float> PanelHighlight;
@@ -104,7 +105,8 @@ namespace YazsCompanion
             PanelBottom = Config.Bind("General", "PanelBottom", 70f, "BottomLeft position: distance from the bottom of the screen, in canvas units.");
             PanelTop = Config.Bind("General", "PanelTop", 780f, "Right position: distance from the top of the screen, in canvas units.");
             PanelRight = Config.Bind("General", "PanelRight", 44f, "Right position: distance from the right edge of the screen, in canvas units.");
-            PanelScale = Config.Bind("General", "PanelScale", 0f, "Size multiplier of the sidebar. 0 = automatic: enlarged on small screens (Steam Deck) so its text stays about 15 px tall, 1 on a desktop monitor.");
+            PanelSize = Config.Bind("General", "PanelSize", 1f, "Size of the PLAN readout relative to its automatic size (the mod menu's \"Readout size\"): 1 = automatic, 1.2 = a fifth larger, 0.8 = a fifth smaller. The automatic size follows the screen: the text is 1.9 % of the screen's height and never under 15 px (15 px on the Steam Deck, 20 px at 1080p, 27 px at 1440p, 40 px at 4K).");
+            PanelScale = Config.Bind("General", "PanelScale", 0f, "For hand-tuning: a fixed scale of the PLAN readout in place of the automatic one (1 = a 31-unit font on the 2160-unit canvas: 10 px on the Steam Deck, 21 px at 1440p). 0 = automatic, which follows the screen. PanelSize still multiplies it.");
             BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
             PanelHighlight = Config.Bind("General", "PanelHighlight", 3f, "Seconds the sidebar lines whose advice changed (after a pick, a recruit or a Research Pod) glow gold before fading back to white. 0 = off.");
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
@@ -131,7 +133,23 @@ namespace YazsCompanion
             PerfFlag = Config.Bind("Debug", "Perf", false, "Time the mod's own work (the per-frame ticks, the squad snapshot, a plan build, an offer) and log the sums once a minute as [perf] lines: calls, total milliseconds and the worst single call per section. For judging what the mod costs on a real run; off by default.");
             ApplyDoctrine();
             Perf.On = PerfFlag.Value;
-            Config.SettingChanged += (sender, args) => { try { if (args.ChangedSetting.Definition.Section == "Advice") ApplyDoctrine(); Perf.On = PerfFlag.Value; } catch { } };
+            // a setting changed (the mod menu, or a config manager): BepInEx has written the file by now (SaveOnConfigSet);
+            // put it to work, leave a trace in the log, and let the menu say so
+            Config.SettingChanged += (sender, args) =>
+            {
+                try
+                {
+                    var def = args.ChangedSetting.Definition;
+                    if (def.Section == "Advice") ApplyDoctrine();
+                    Perf.On = PerfFlag.Value;
+                    bool written = false;
+                    try { written = (DateTime.UtcNow - File.GetLastWriteTimeUtc(Config.ConfigFilePath)).TotalSeconds < 3; } catch { }
+                    Logger.LogInfo("[config] " + def.Section + "." + def.Key + " = " + args.ChangedSetting.BoxedValue + (written ? " (saved)" : " (the config file was NOT written)"));
+                    Menu.SettingSaved(written);
+                }
+                catch { }
+            };
+            Config.SaveOnConfigSet = true;
 
             ProbeFlag = Config.Bind("Debug", "Probe", false, "About 6 s after launch, on the main menu, write probe.json next to the DLL: every item and powerup with the exact fields the game uses (tags, damage types per level, statistics, mode availability), the input actions and the main menu's button layout. For development; off by default.");
 

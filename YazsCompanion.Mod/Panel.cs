@@ -102,6 +102,7 @@ namespace YazsCompanion
         static float _nextFallback;
         static UIGameplayUpgradeSelection _screen;
         static bool _visible, _warnedNoCanvas, _warnedNoLabel, _sourceLogged, _preview;
+        static bool _quiet;                           // the mod menu's preview rebuilds on every setting change: no log lines, no screenshots for those
 
         public static void ScreenOpened(UIGameplayUpgradeSelection sel) { _screen = sel; _ahead = null; SetVisible(false); }
         /// <summary>The base Hide(clicked) ran (validated: once per screen, every type); the game may keep the screen
@@ -109,7 +110,11 @@ namespace YazsCompanion
         public static void ScreenClosed() { _screen = null; _nextRebuild = 0f; PlanAhead(); }   // shown (and highlighted) as soon as the sidebar is back
 
         /// <summary>The HUD is being destroyed (scene change): our objects die with it, forget them.</summary>
-        public static void Reset() { Discard(); _screen = null; _hud = null; _gateCode = -1; G.ForgetRun(); }
+        public static void Reset()
+        {
+            if (_preview) _kept = null; else Discard();     // the widget in the mod menu's preview is not the HUD's: leave it to the menu
+            _screen = null; _hud = null; _gateCode = -1; G.ForgetRun();
+        }
 
         /// <summary>The mod menu closed over the paused run: the display settings or the builds may have changed, so the
         /// readout is taken down and the plan worked out again - now, while the game is still paused, not on the first
@@ -117,7 +122,8 @@ namespace YazsCompanion
         /// one again made 27 - 28 ms frames in a logged run (and could come back with another label than before).</summary>
         public static void Rebuild()
         {
-            var hud = _hud; var template = _template;
+            var hud = _hud; var template = _preview ? _kept : _template ?? _kept;   // Suspend put the HUD's label in _kept when the menu opened
+            if (_preview) PreviewEnd();                                             // the menu's preview had the widget
             Discard(); _gateCode = -1; G.ForgetRun();
             _hud = hud; _kept = template;
             if (hud != null) PlanAhead();       // no HUD known: the menu was used on the main menu, there is no run to plan for
@@ -339,6 +345,7 @@ namespace YazsCompanion
                     _root.gameObject.SetActive(true);
                     Wake(4f);
                 }
+                if (_quiet) return;
                 Plugin.Logger.LogInfo("[panel] " + (v ? "shown" : "hidden"));
                 Shots.Later(v ? 0.5f : 0.3f, v ? "shown" : "hidden");
             }
@@ -410,7 +417,7 @@ namespace YazsCompanion
                 }
                 _warnedNoLabel = false;
 
-                float scale = Scale(canvas);
+                float scale = ScaleFor(canvas);
                 _autoScale = scale; try { _canvasH = canvas.rect.height; } catch { _canvasH = 0; }
                 if (!Build(canvas, template, scale)) return false;
                 string geo = "";
@@ -666,7 +673,7 @@ namespace YazsCompanion
             try
             {
                 float band = _flip ? _canvasH * BandBottom - Plugin.PanelTop.Value * _margin : _canvasH * (1f - LeftBandTop) - Plugin.PanelBottom.Value * _margin;
-                if (band > 0 && total * scale > band) scale = Mathf.Max(MinScale, band / total);
+                if (band > 0 && total * scale > band) scale = Mathf.Min(scale, Mathf.Max(MinScale, band / total));
             }
             catch { }
             if (Mathf.Abs(_root.localScale.x - scale) > 0.005f)
@@ -676,34 +683,59 @@ namespace YazsCompanion
             }
         }
 
-        // one canvas unit is Screen.height / canvas height pixels (1/3 on the Deck, 2/3 on a 1440p monitor): enlarge the
-        // block until its 31-unit font is at least MinTextPx tall; PanelScale in the config overrides the automatic value
-        const float MinTextPx = 15f;
-        static float Scale(RectTransform canvas)
+        // The size follows the screen. One canvas unit is Screen.height / canvas height pixels (1/3 on the Deck, 2/3 on a
+        // 1440p monitor), so at scale 1 the 31-unit font is 10 px on the Deck and 21 px at 1440p. Up to 0.10.2 the block
+        // was only enlarged until its text reached MinTextPx, which left a desktop at scale 1: 21 px on a 3440x1440
+        // screen, smaller than the HUD's own quest text and hard to read from a desk. Now the text is TextShare of the
+        // screen's height on every screen and never under MinTextPx: 15 px on the Deck as before (x1.45), 20 px at
+        // 1080p, 27 px at 1440p, 40 px at 4K (x1.31 each). PanelSize multiplies that (the mod menu's "Readout size");
+        // PanelScale, when set, replaces the automatic part.
+        const float MinTextPx = 15f, TextShare = 0.01875f;
+
+        /// <summary>The automatic scale on a screen where one canvas unit is <paramref name="unitPx"/> pixels and the canvas
+        /// is <paramref name="canvasH"/> units tall.</summary>
+        public static float AutoScale(float unitPx, float canvasH)
         {
+            if (unitPx <= 0 || canvasH <= 0) return 1f;
+            float px = Mathf.Max(MinTextPx, TextShare * unitPx * canvasH);
+            return Mathf.Clamp(px / (Font * unitPx), 1f, 2f);
+        }
+
+        /// <summary>The player's size setting, 1 = the automatic size.</summary>
+        public static float UserSize { get { try { return Mathf.Clamp(Plugin.PanelSize.Value, 0.5f, 2.5f); } catch { return 1f; } } }
+
+        /// <summary>The height in pixels of the readout's body text at <paramref name="scale"/> under <paramref name="canvas"/>.</summary>
+        public static float TextPx(RectTransform canvas, float scale)
+        {
+            try { float h = canvas.rect.height; return h <= 0 ? 0f : Font * scale * UnityEngine.Screen.height / h; } catch { return 0f; }
+        }
+
+        /// <summary>The readout's scale under a canvas with the HUD's geometry (the HUD canvas itself, or an overlay canvas
+        /// with the same reference and match mode): the automatic or the fixed part, times the player's size.</summary>
+        public static float ScaleFor(RectTransform canvas)
+        {
+            float basis = 1f;
             float fixedScale = 0; try { fixedScale = Plugin.PanelScale.Value; } catch { }
-            if (fixedScale > 0) return Mathf.Clamp(fixedScale, 0.5f, 3f);
-            try
+            if (fixedScale > 0) basis = fixedScale;
+            else
             {
-                float h = canvas.rect.height; if (h <= 0) return 1f;
-                float px = Font * UnityEngine.Screen.height / h;
-                return Mathf.Clamp(MinTextPx / px, 1f, 2f);
+                try { float h = canvas.rect.height; if (h > 0) basis = AutoScale(UnityEngine.Screen.height / h, h); } catch { }
             }
-            catch { return 1f; }
+            return Mathf.Clamp(basis * UserSize, 0.5f, 4f);
         }
 
         // ---- the design preview on the main menu (Preview.cs): the same widget on an overlay canvas with sample plans ----
         public static bool PreviewBuild(RectTransform canvas, TextMeshProUGUI template, Plan plan, float scaleOverride, float posScale, float canvasH)
         {
             Forget(); _preview = true;
-            float scale = scaleOverride > 0 ? scaleOverride : Scale(canvas);
+            float scale = scaleOverride > 0 ? scaleOverride : ScaleFor(canvas);
             _autoScale = scale; try { _canvasH = canvasH > 0 ? canvasH : canvas.rect.height; } catch { _canvasH = 0; }
             _margin = posScale;
             if (!Build(canvas, template, scale)) { _preview = false; return false; }
             _root.anchoredPosition = _root.anchoredPosition * posScale;     // an emulated screen: its margins in this canvas's units
             SetVisible(true);
             Apply(plan, Time.realtimeSinceStartup);
-            Plugin.Logger.LogInfo("[panel] preview built x" + scale.ToString("0.00") + ", " + _root.sizeDelta.y.ToString("0") + " units tall");
+            if (!_quiet) Plugin.Logger.LogInfo("[panel] preview built x" + scale.ToString("0.00") + ", " + _root.sizeDelta.y.ToString("0") + " units tall");
             return true;
         }
         public static void PreviewApply(Plan plan) { if (_root != null) Apply(plan, Time.realtimeSinceStartup); }
@@ -715,7 +747,45 @@ namespace YazsCompanion
         public static void PreviewEnd()
         {
             try { if (_root != null) UnityEngine.Object.Destroy(_root.gameObject); } catch { }
-            Forget(); _preview = false; _margin = 1f;
+            Forget(); _preview = false; _quiet = false; _margin = 1f;
         }
+
+        // ---- the mod menu's DISPLAY tab shows the readout itself, with the settings as they stand, in a window of the
+        //      menu: the menu's canvas has the HUD canvas's geometry (same reference, same match mode), so at the same
+        //      scale the text has exactly the pixels it will have in play. The widget is this class's one and only, so
+        //      the live readout is taken down while the menu is open (Suspend) and comes back through Rebuild. ----
+
+        /// <summary>The mod menu opened: take the live readout down (it is hidden under the pause menu anyway) and keep what
+        /// Rebuild needs to bring it back cheaply - the HUD and the label it was cloned from.</summary>
+        public static void Suspend()
+        {
+            if (_preview) return;
+            var hud = _hud; var template = _template ?? _kept;
+            Discard();
+            _hud = hud; _kept = template;
+        }
+
+        /// <summary>Build (or build again, after a setting changed) the readout inside <paramref name="window"/> of the mod
+        /// menu: scale, backing, detail and corner as configured right now. <paramref name="canvas"/> is the menu's root
+        /// canvas rect, which the scale and the fit-to-band rule are worked out against as they are on the HUD.</summary>
+        public static bool MenuPreview(RectTransform window, RectTransform canvas, TextMeshProUGUI template, Plan plan)
+        {
+            try
+            {
+                var hud = _hud; var kept = _kept;               // PreviewEnd forgets nothing of these, but keep them out of harm's way
+                if (_preview) PreviewEnd();
+                _hud = hud; _kept = kept; _quiet = true;
+                float canvasH = 0f; try { canvasH = canvas.rect.height; } catch { }
+                if (!PreviewBuild(window, template, plan, ScaleFor(canvas), 1f, canvasH)) return false;
+                // the right-edge position hangs 780 units under the top of the screen: in the window, under its top edge
+                if (_flip) _root.anchoredPosition = new Vector2(_root.anchoredPosition.x, -40f);
+                return true;
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[panel] menu preview: " + e.Message); _preview = false; _quiet = false; return false; }
+        }
+
+        /// <summary>The scale the readout on screen ended up with (after the fit-to-band rule), 0 when there is none.</summary>
+        public static float ShownScale { get { try { return _root != null ? _root.localScale.x : 0f; } catch { return 0f; } } }
+        public static bool Previewing { get { return _preview; } }
     }
 }

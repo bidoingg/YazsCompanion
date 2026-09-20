@@ -244,11 +244,14 @@ namespace YazsCompanion
             }
         }
 
+        /// <summary>Whether the last Save reached the file (the mod menu says so after every change).</summary>
+        public static bool LastSaveOk = true;
+
         public static void Save()
         {
             if (_path == null) return;
-            try { File.WriteAllText(_path, ToJson()); }
-            catch (Exception e) { Log("builds.json not saved: " + e.Message); }
+            try { File.WriteAllText(_path, ToJson()); LastSaveOk = true; }
+            catch (Exception e) { LastSaveOk = false; Log("builds.json not saved: " + e.Message); }
         }
 
         /// <summary>Set by the plugin; the bench leaves it null.</summary>
