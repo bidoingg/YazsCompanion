@@ -107,6 +107,7 @@ namespace YazsCompanion
 
         // ---- for the scripted pause walk ([Debug] PreviewPause) only: click the recommended card of the offer on screen ----
         static UIGameplayUpgradeSelection _debugScreen; static float _debugOfferAt;
+        internal static int DebugPicks;       // cards the pause walk has taken this session
         internal static bool DebugPickDue(float now)
         {
             try
@@ -117,7 +118,7 @@ namespace YazsCompanion
                     if (c.Rank != 1 || c.Button == null) continue;
                     Plugin.Logger.LogInfo("[menu] pause walk: taking " + c.Name);
                     var screen = _debugScreen; _debugScreen = null;
-                    screen.OnPowerupButtonClicked(c.Button);
+                    screen.OnPowerupButtonClicked(c.Button); DebugPicks++;
                     return true;
                 }
             }

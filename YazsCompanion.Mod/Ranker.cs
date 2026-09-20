@@ -400,7 +400,7 @@ namespace YazsCompanion
                 // is 4.4 to 5.0 as a rule; squeezed in under 6.1 below, the lift never passes a weapon tier-up (6.2 and more),
                 // a recruit's first weapon or an evolution. The other styles, and an ability the build skips, are left alone.
                 if (StyleOf(owner) == BuildStyle.Balanced && owned.Count < 4 && !a.Skipped) once = 1.5 * Math.Max(0, Math.Min(1, (ctx.Reach(10) - 0.4) / 0.6));
-                if (once >= 0.3) c.Why.Add("style: balanced - before another weapon level");
+                if (once >= 0.3 && !c.Why.Any(w => w.Contains("once early"))) c.Why.Add("style: balanced - before another weapon level");     // "take each once early" already says it
             }
             else
             {

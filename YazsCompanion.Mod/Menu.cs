@@ -1032,6 +1032,7 @@ namespace YazsCompanion
         // the changed settings. Well under fifty seconds of play: no save is written.
         static bool _ppDone, _ppResumed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
         static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
+        static float _ppLastPick = -10f; static int _ppPauseTries;
         internal static bool FakePauseOnce;
 
         // Quick Run does not always start the run: it can stop at SELECT TEAM LEADER, and it can open the whole run
@@ -1126,26 +1127,41 @@ namespace YazsCompanion
                             bool playing = false; float t = 0f;
                             try { var gm = GameplayMaster.s_instance; if (gm != null && gm.currentGameMode != null) { playing = gm.currentGameMode.IsGameplayActive; t = gm.currentGameMode.CurrentModePlayTime; } } catch { }
                             // thirty seconds of play first, taking the recommended card of every offer on the way: that is what
-                            // exercises the readout, the plan worked out while a screen closes, and the [Debug] Perf sections
-                            if (playing && t < 30f && Advisor.DebugPickDue(now)) { _ppAt = now + 0.5f; return; }
+                            // exercises the readout, the plan worked out while a screen closes, and the [Debug] Perf sections -
+                            // or up to forty when no offer has come by then: a walk without one offer ranked and taken
+                            // checks little (still under the fifty seconds after which a killed run leaves a save)
+                            bool more = t < 30f || (Advisor.DebugPicks == 0 && t < 40f);
+                            if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 0.5f; return; }      // an offer that is up is always answered
                             // the game opens its pause menu by itself when its window is not the focused one as the run comes
                             // up (a launch from a script): the clock then stands at 0 until somebody resumes - do that, once
-                            if (playing && t < 30f && !_ppResumed && PauseFlow())
+                            if (playing && more && !_ppResumed && PauseFlow())
                             {
                                 var own = PauseMenu();
                                 if (own != null) { _ppResumed = true; Plugin.Logger.LogInfo("[menu] pause walk: the game paused itself at " + t.ToString("0.0") + " s, resuming"); own.OnClickClose(); _ppAt = now + 1f; return; }
                             }
-                            if (!playing || t < 30f)
+                            if (!playing || more)
                             {
                                 _ppAt = now + (playing ? 0.5f : 1.5f);
                                 if (!playing && WizardStep()) _ppAt = now + 2.5f;       // one screen of the run wizard per step
                                 if (now - _ppStarted > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; }
                                 return;
                             }
+                            // the game takes no pause key while a selection screen is up or still animating out (seen: asked
+                            // half a second after a pick, the pause menu never came): wait for plain play
+                            bool busy = now - _ppLastPick < 2.5f; try { busy |= GameplayMaster.IsPaused; } catch { }
+                            if (busy) { _ppAt = now + 0.5f; return; }
                             Plugin.Logger.LogInfo("[menu] pause walk: pausing at " + t.ToString("0.0") + " s of play"); FakePauseOnce = true;
                             _ppAt = now + 2.5f; _ppStage = 2; return;
                         }
                     case 2:
+                        if (PauseMenu() == null && _ppPauseTries < 3)
+                        {   // not up: an offer got in first - answer it, then ask again
+                            _ppPauseTries++;
+                            if (Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 3f; return; }
+                            bool paused = false; try { paused = GameplayMaster.IsPaused; } catch { }
+                            if (!paused) { Plugin.Logger.LogInfo("[menu] pause walk: the pause menu did not come, asking again"); FakePauseOnce = true; }
+                            _ppAt = now + 2.5f; return;
+                        }
                         EnsureButtons();
                         Plugin.Logger.LogInfo("[menu] pause walk: pause menu " + (PauseMenu() != null ? "open" : "NOT open") + ", COMPANION button " + (_pauseButton != null && Alive(_pauseButton) ? "added" : "MISSING"));
                         Shots.Later(0.2f, "pause0_menu", true); _ppAt = now + 1.0f; _ppStage = 3; return;
@@ -1183,9 +1199,13 @@ namespace YazsCompanion
                             _ppStage = 7; _ppAt = now + 5f; return;
                         }
                     case 7:
-                        // the walk's two changes are the walk's: the player's settings go back as they were
-                        Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; _ppChanged = false;
-                        Plugin.Logger.LogInfo("[menu] pause walk: settings put back (detail " + Plugin.PanelDetail.Value + ", size " + Plugin.PanelSize.Value.ToString("0.0") + ")");
+                        // the walk's two changes are the walk's: the player's settings go back as they were - when it made
+                        // them (a walk whose mod menu never opened once wrote its unset 0 into PanelSize here)
+                        if (_ppChanged)
+                        {
+                            Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; _ppChanged = false;
+                            Plugin.Logger.LogInfo("[menu] pause walk: settings put back (detail " + Plugin.PanelDetail.Value + ", size " + Plugin.PanelSize.Value.ToString("0.0") + ")");
+                        }
                         _ppStage = 8; return;
                     default:
                         _ppDone = true; Plugin.Logger.LogInfo("[menu] pause walk done"); return;
