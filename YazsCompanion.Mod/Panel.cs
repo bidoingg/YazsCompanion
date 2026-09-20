@@ -81,6 +81,7 @@ namespace YazsCompanion
         static float _margin = 1f;                    // 1 live; the preview's screen emulation scales the margins
         static float _level = 1f, _awakeUntil;        // idle dimming: current strength, and until when the readout is at full strength
         static TextMeshProUGUI _template;
+        static TextMeshProUGUI _kept;                 // the template of the readout the mod menu took down, for the one that replaces it
         static readonly List<Group> _groups = new List<Group>();
         static readonly List<RectTransform> _rules = new List<RectTransform>();
         static UIGameplay _hud;                       // remembered from UIGameplay.Update ticks for the fallback ticks
@@ -108,7 +109,28 @@ namespace YazsCompanion
         public static void ScreenClosed() { _screen = null; _nextRebuild = 0f; PlanAhead(); }   // shown (and highlighted) as soon as the sidebar is back
 
         /// <summary>The HUD is being destroyed (scene change): our objects die with it, forget them.</summary>
-        public static void Reset() { Forget(); _screen = null; _hud = null; _gateCode = -1; G.ForgetRun(); }
+        public static void Reset() { Discard(); _screen = null; _hud = null; _gateCode = -1; G.ForgetRun(); }
+
+        /// <summary>The mod menu closed over the paused run: the display settings or the builds may have changed, so the
+        /// readout is taken down and the plan worked out again - now, while the game is still paused, not on the first
+        /// frame back in play. The HUD is the same object, so the label the readout was cloned from is kept: looking for
+        /// one again made 27 - 28 ms frames in a logged run (and could come back with another label than before).</summary>
+        public static void Rebuild()
+        {
+            var hud = _hud; var template = _template;
+            Discard(); _gateCode = -1; G.ForgetRun();
+            _hud = hud; _kept = template;
+            if (hud != null) PlanAhead();       // no HUD known: the menu was used on the main menu, there is no run to plan for
+        }
+
+        // up to 0.10.1 the old readout was only forgotten: every use of the mod menu left an inactive YazsPlan under the
+        // HUD until the run ended. When the HUD itself is going the object is already dying - destroying it twice is harmless.
+        static void Discard()
+        {
+            try { if (_root != null && _root.gameObject != null) UnityEngine.Object.Destroy(_root.gameObject); } catch { }
+            Forget(); _kept = null;
+        }
+
         static void Forget()
         {
             _root = null; _content = null; _head = null; _rule = null; _tip = null; _intro = false; Fx.Cancel("plan"); _fade = null; _template = null; _groups.Clear(); _rules.Clear();
@@ -369,29 +391,41 @@ namespace YazsCompanion
         static bool Ensure(UIGameplay hud)
         {
             if (Alive()) return true;
-            Forget();
-            var canvas = FindCanvas(hud);
-            if (canvas == null)
+            long perf = Perf.Begin();
+            try
             {
-                if (!_warnedNoCanvas) { _warnedNoCanvas = true; Plugin.Logger.LogWarning("[panel] no HUD canvas (UIGameplay) to attach to"); }
-                return false;
-            }
-            var template = Ui.FindLabel(canvas, PreferredLabels);
-            if (template == null)
-            {
-                if (!_warnedNoLabel) { _warnedNoLabel = true; Plugin.Logger.LogWarning("[panel] no HUD text to clone yet"); }
-                return false;
-            }
-            _warnedNoLabel = false;
+                var kept = _kept; var ahead = _ahead;       // what Rebuild left for this moment: the old template, the plan made while paused
+                Discard(); _ahead = ahead;
+                var canvas = FindCanvas(hud);
+                if (canvas == null)
+                {
+                    if (!_warnedNoCanvas) { _warnedNoCanvas = true; Plugin.Logger.LogWarning("[panel] no HUD canvas (UIGameplay) to attach to"); }
+                    return false;
+                }
+                var template = StillUnder(kept, canvas) ? kept : Ui.FindLabel(canvas, PreferredLabels);
+                if (template == null)
+                {
+                    if (!_warnedNoLabel) { _warnedNoLabel = true; Plugin.Logger.LogWarning("[panel] no HUD text to clone yet"); }
+                    return false;
+                }
+                _warnedNoLabel = false;
 
-            float scale = Scale(canvas);
-            _autoScale = scale; try { _canvasH = canvas.rect.height; } catch { _canvasH = 0; }
-            if (!Build(canvas, template, scale)) return false;
-            string geo = "";
-            try { geo = " canvas " + canvas.rect.width.ToString("0") + "x" + canvas.rect.height.ToString("0") + " screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + " scale " + canvas.lossyScale.x.ToString("0.000"); } catch { }
-            Plugin.Logger.LogInfo("[panel] created under " + canvas.name + " using label '" + template.name + "' at (" + _root.anchoredPosition.x + ", " + _root.anchoredPosition.y + ") x" + scale.ToString("0.00") + geo);
-            Shots.Later(0.5f, "created");
-            return true;
+                float scale = Scale(canvas);
+                _autoScale = scale; try { _canvasH = canvas.rect.height; } catch { _canvasH = 0; }
+                if (!Build(canvas, template, scale)) return false;
+                string geo = "";
+                try { geo = " canvas " + canvas.rect.width.ToString("0") + "x" + canvas.rect.height.ToString("0") + " screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + " scale " + canvas.lossyScale.x.ToString("0.000"); } catch { }
+                Plugin.Logger.LogInfo("[panel] created under " + canvas.name + " using label '" + template.name + "'" + (template == kept ? " (kept)" : "") + " at (" + _root.anchoredPosition.x + ", " + _root.anchoredPosition.y + ") x" + scale.ToString("0.00") + geo);
+                Shots.Later(0.5f, "created");
+                return true;
+            }
+            finally { Perf.End("panel.create", perf); }
+        }
+
+        // the label the readout was cloned from before the mod menu took it down: good while it lives under this canvas
+        static bool StillUnder(TextMeshProUGUI label, RectTransform canvas)
+        {
+            try { return label != null && label.gameObject != null && label.font != null && label.transform.IsChildOf(canvas); } catch { return false; }
         }
 
         static float MaxWidth { get { return _compact ? WidthCompact : WidthFull; } }

@@ -67,8 +67,10 @@ namespace YazsCompanion
                 if (tabChanged) { _containerPtr = container.Pointer; _fresh = true; _sig = ""; }
                 bool isTeam = false; try { var g = view.containerTabGeneral; isTeam = g != null && g.Pointer == container.Pointer; } catch { }
                 string tree;
+                long perf = Perf.Begin();
                 var nodes = TreeState.Read(container, isTeam, out tree);
                 int points = TreeState.Points(view, container);
+                Perf.End("yard.read", perf);
                 var sig = new StringBuilder().Append(container.Pointer).Append('|').Append(points);
                 foreach (var n in nodes) sig.Append('|').Append(n.Level).Append(n.RankOpen ? "" : "L");
                 string s = sig.ToString();
@@ -76,14 +78,20 @@ namespace YazsCompanion
                 _sig = s;
 
                 _nodes = nodes; _tree = tree; _highlighted = null;
+                perf = Perf.Begin();
                 _steps = isTeam ? TreePlan.TeamSteps(nodes) : TreePlan.ClassSteps(nodes);
                 _advice = TreePlan.Advise(nodes, _steps, points);
+                Perf.End("yard.advise", perf);
                 Plugin.Logger.LogInfo("[yard] " + tree + ": " + points + " points; buy " + (_advice.Now.Count == 0 ? "nothing" : string.Join(", ", _advice.Now.Select(b => b.Order + " " + b.Label + " (" + b.Cost + ")")))
                     + (_advice.SaveFor != null ? "; save for " + _advice.SaveFor.Label + " (" + _advice.SaveFor.Cost + ")" : "") + (_advice.Later.Count > 0 ? "; later " + string.Join(", ", _advice.Later.Select(b => b.Label)) : ""));
                 if (Plugin.Verbose.Value || !_logged) { _logged = true; Plugin.Logger.LogInfo("[yard] nodes of " + tree + ":" + TreeState.Describe(nodes)); }
 
+                perf = Perf.Begin();
                 DrawMarks();
+                Perf.End("yard.marks", perf);
+                perf = Perf.Begin();
                 if (EnsureStrip(view)) { Place(view); Fit(); Entrance(); }
+                Perf.End("yard.strip", perf);
                 _fresh = false;
                 Shots.Later(0.4f, "yard");
             }

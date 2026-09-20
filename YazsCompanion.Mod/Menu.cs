@@ -165,7 +165,7 @@ namespace YazsCompanion
             }
             catch { }
             _restoreSelected = null;
-            if (was) { Panel.Reset(); Plugin.Logger.LogInfo("[menu] closed"); }      // the readout rebuilds with the new display settings
+            if (was) { Panel.Rebuild(); Plugin.Logger.LogInfo("[menu] closed"); }    // the readout rebuilds with the new display settings
         }
 
         // ================================================================ the tick (GameMaster.Update postfix: alive in every scene)
@@ -905,8 +905,9 @@ namespace YazsCompanion
         // ================================================================ the pause walk ([Debug] PreviewPause)
         // Start a Quick Run with the game's own button, let the game open its own pause menu a few seconds in (the
         // pause-key prefix below answers "pressed" once), check the COMPANION button arrived there, open the mod menu over
-        // the paused run, close it, and check the pause menu is still up. Under fifteen seconds of play: no save is written.
-        static bool _ppDone, _ppHero; static int _ppStage; static float _ppAt = -1f;
+        // the paused run, close it, check the pause menu is still up, then resume for five seconds so the readout the mod
+        // menu took down comes back. Well under fifty seconds of play: no save is written.
+        static bool _ppDone, _ppHero, _ppResumed; static int _ppStage; static float _ppAt = -1f;
         internal static bool FakePauseOnce;
 
         static void PausePreviewTick()
@@ -933,6 +934,13 @@ namespace YazsCompanion
                             // thirty seconds of play first, taking the recommended card of every offer on the way: that is what
                             // exercises the readout, the plan worked out while a screen closes, and the [Debug] Perf sections
                             if (playing && t < 30f && Advisor.DebugPickDue(now)) { _ppAt = now + 0.5f; return; }
+                            // the game opens its pause menu by itself when its window is not the focused one as the run comes
+                            // up (a launch from a script): the clock then stands at 0 until somebody resumes - do that, once
+                            if (playing && t < 30f && !_ppResumed && PauseFlow())
+                            {
+                                var own = PauseMenu();
+                                if (own != null) { _ppResumed = true; Plugin.Logger.LogInfo("[menu] pause walk: the game paused itself at " + t.ToString("0.0") + " s, resuming"); own.OnClickClose(); _ppAt = now + 1f; return; }
+                            }
                             if (!playing || t < 30f)
                             {
                                 _ppAt = now + (playing ? 0.5f : 1f);
@@ -957,7 +965,14 @@ namespace YazsCompanion
                         {
                             bool paused = false; try { paused = GameplayMaster.IsPaused; } catch { }
                             Plugin.Logger.LogInfo("[menu] pause walk: after closing - pause menu " + (PauseMenu() != null ? "still up" : "GONE") + ", game " + (paused ? "paused" : "RUNNING"));
-                            _ppStage = 6; _ppAt = now + 0.3f; return;
+                            _ppStage = 6; _ppAt = now + 1.0f; return;
+                        }
+                    case 6:
+                        {   // back into play: the readout the mod menu took down has to come back ([panel] created / shown, [plan])
+                            var pm = PauseMenu();
+                            Plugin.Logger.LogInfo("[menu] pause walk: " + (pm != null ? "resuming the run" : "no pause menu to resume from"));
+                            if (pm != null) pm.OnClickClose();
+                            _ppStage = 7; _ppAt = now + 5f; return;
                         }
                     default:
                         _ppDone = true; Plugin.Logger.LogInfo("[menu] pause walk done"); return;

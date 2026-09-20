@@ -8,7 +8,11 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-19): **0.10.1 — the performance pass** (nothing you see or read changes; see "What the mod costs").
+Status (2026-09-20): **0.10.2 — the readout after the mod menu** (a follow-up to the performance pass, found in the
+log of a full run: using the mod menu from the pause menu left the old readout behind under the HUD and brought the
+new one up with a search through every label in the scene, a 27 - 28 ms frame; now 4 ms, and nothing is left behind;
+nothing you see changes; see "What the mod costs").
+**0.10.1 — the performance pass** (nothing you see or read changes; see "What the mod costs").
 **0.10.0 — the advice review, build guides and the mod menu.** An independent review of the
 ranking (a fresh-eyes audit of the code against a logged run, the game's own data dumped from the running game, and
 the published guides re-read and graded) rebuilt it around four things read live: the BUILD you follow per survivor,
@@ -487,7 +491,9 @@ ranked or logged:
 `[perf] 60 s, <frames> frames: tick.hud <calls>x <total> ms (max <worst>) | tick.master ... | refresh ... | read ...
 | plan.build ... | offer ... | plan.ahead ...` - calls, total and the worst single call per section (sections nest:
 a tick contains the refresh it triggered). `offer` and `plan.ahead` run while the game is paused; `tick.*`,
-`refresh`, `read` and `plan.build` are what play pays. Taken on the PC (3440x1440, 60 fps) from two scripted
+`refresh`, `read`, `plan.build` and `panel.create` (the readout's widget being made: once a run, and once after
+each use of the mod menu) are what play pays; `yard.read` / `yard.advise` / `yard.marks` / `yard.strip` split the
+Training Yard's tick (a menu). Taken on the PC (3440x1440, 60 fps) from two scripted
 thirty-second runs (`[Debug] PreviewPause`: it presses Start on the team leader screen, takes the recommended card
 of every offer, then pauses; one SWAT, so a late three-survivor squad will cost more per poll and per plan):
 
@@ -505,12 +511,64 @@ all five kinds, 110 minutes of session, 394,589 frames, no warnings): `tick.hud`
 (3.1 s in all), `tick.master` 0.0087 ms; 622 change polls at 0.21 ms; 70 of the 74 plans came from `plan.ahead`
 while the game was paused (2.2 ms on average, worst 52 ms), only 4 were built in play (`plan.build` 4.9 ms on
 average); `[panel] shown` -> `[plan]` after a pick: 1 ms median over 53 picks (worst 8 ms); an offer ranked in
-5.2 ms on average (worst 25 ms, paused). The worst single frame in play was 57 ms: the readout being created anew
-after the mod menu had been used from the pause menu (it searches every label in the scene for one to clone).
+5.2 ms on average (worst 25 ms, paused). The three worst frames in play all belonged to the readout being created:
+57 ms as the run began, 27 and 28 ms when it came back after the mod menu had been used from the pause menu - each
+time with a search through every label in the scene for one to clone. That is what 0.10.2 is about.
+
+### 0.10.2: the readout after the mod menu
+
+Closing the mod menu takes the readout down so it comes back with the display settings and builds as they are now.
+Up to 0.10.1 that only *forgot* the old one: every use of the mod menu during a run left an inactive `YazsPlan`
+object under the HUD until the run ended, and the new readout was made on the first tick back in play - a label
+search over everything loaded, the widget, a full snapshot and a plan, all in one frame of play. Now:
+
+- **The old readout is destroyed** (`Panel.Rebuild` from `Menu.Close`; `Panel.Reset`, from the HUD's `OnDestroy`,
+  does the same - the object is dying there anyway, destroying it twice is harmless).
+- **The label it was cloned from is kept** across the menu while it still lives under the same HUD, so the new
+  readout needs no search at all (`[panel] created ... using label 'GameTimer_Txt' (kept)`) and looks exactly like the
+  one before - the search used to come back with 'Quest_Obj1' instead of 'GameTimer_Txt' once a quest was up.
+- **The plan is worked out when the menu closes**, while the game is still paused (`plan.ahead`), and only put up on
+  the first tick back in play - the same route a pick takes since 0.10.1.
+- **`Ui.FindLabel` asks the canvas before it asks the world**: the active labels under the HUD canvas (or the menu
+  view) come from `GetComponentsInChildren` on that object; `Resources.FindObjectsOfTypeAll` remains as the fallback
+  when it has none, and for the callers without a canvas (the restart notice, the design preview - menus only). Same
+  order of preference: the named HUD labels first, then any active label under it.
+
+Measured on the PC with both searches run side by side in the game (a temporary diagnostic, removed again):
+
+| where | the walk under the canvas | the search through everything | label found |
+|---|---|---|---|
+| HUD, as the run begins | 2.0 - 3.0 ms (first call) | 19.8 ms | the same object, `HUD/CanvasTop/GameTimer_Txt` |
+| pause menu (mod menu opening) | 0.15 - 0.48 ms | 19.0 - 20.6 ms | a button caption `Name` each: same font, material, size, spacing (the search picked the caption of the mod's own COMPANION button, the walk picks the first button's) |
+| main menu (mod menu opening) | 2.4 ms | 55.3 ms | as above |
+
+And the frame it was about (one survivor; `[Debug] Perf`), from the scripted pause walk and from the same steps done
+by hand on the released build (resume, a level-up, pause, COMPANION, close, resume):
+
+| the readout coming back after the mod menu | 0.10.1 (the real run, one survivor) | 0.10.2 |
+|---|---|---|
+| worst `tick.hud` frame | 26.7 and 28.3 ms | 4.3 ms scripted, 5.3 ms by hand |
+| making the widget (`panel.create`) | with the search, ~20 ms | 1.4 - 2.0 ms, no search |
+| snapshot + plan in that frame | `read` + `plan.build` 4.9 ms | none: `plan.ahead` 2.4 - 3.8 ms when the menu closed, paused |
+| `[panel] created` -> `[plan]` | 7 ms | 1 - 2 ms |
+| objects left under the HUD per use of the mod menu | one inactive `YazsPlan` | none |
+
+Still the most expensive frame of a session, and not changed here: the very first readout of the first run, at 00:00
+on the clock - `panel.create` 27 ms (code compiled on first use, the backing's textures, the glyph check; less when
+the mod menu or the Training Yard was used before, which warms the same code) plus the first plan, 30 ms.
+
+The Training Yard's one slow tick per visit (49 - 58 ms, in a menu) was looked at as well: it is not a search - the
+strip clones the view's own description label - but first-use cost spread over everything (`yard.read` 7 ms,
+`yard.advise` 8 ms, `yard.marks` 15 ms, `yard.strip` 19 ms on the first tab; 0.5 ms a poll afterwards). Left alone.
+The mod menu's own opening (`ReadGameArt`, ~30 ms once a session, and building its shell, ~50 ms) happens over a
+paused game or the main menu and was left alone too.
 
 Quick Run sometimes starts the run after the team leader screen and sometimes opens the whole run-setup wizard
 (arena, mode, setup); the walk does not click through those - their choices are saved to the profile - and gives
-up after 200 s.
+up after 200 s (clicking through by hand within that time lets it carry on). The game also opens its pause menu by
+itself when its window is not the focused one as the run comes up, as happens after a launch from a script: the
+walk resumes once when it sees the pause menu before it asked for it. After closing the mod menu it resumes the
+run for five seconds so the log shows the readout coming back (`[panel] created` / `shown`, `[plan]`).
 
 Outside the mod: BepInEx's console window (`[Logging.Console] Enabled = true` in `BepInEx.cfg`, as on the
 development PC) makes every log line of every plugin and of the game a synchronous console write; the packaged

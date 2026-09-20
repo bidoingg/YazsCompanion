@@ -244,8 +244,21 @@ namespace YazsCompanion
         }
 
         /// <summary>A live label to clone: by preference one of the named objects under <paramref name="under"/>, else any
-        /// active label under it, else any active label at all, else an inactive one with a font (menus between scenes).</summary>
+        /// active label under it, else any active label at all, else an inactive one with a font (menus between scenes).
+        /// The labels under <paramref name="under"/> are asked of that object itself (a walk of one canvas or one view:
+        /// 2 - 3 ms the first time, 0.5 ms after); only when it has none does the search go through every label that is
+        /// loaded - measured side by side on the PC at 20 ms in a run and 55 ms on the main menu, and part of the three
+        /// worst frames of a whole logged run: the readout's creation as the run began and after each use of the mod menu.
+        /// Both ways were compared in the game on the HUD, the pause menu and the main menu: the same HUD label, and on
+        /// the menus a button caption of the same font, material, size and spacing (the scan used to pick the caption of
+        /// the mod's own COMPANION button, the walk picks the first button's).</summary>
         public static TextMeshProUGUI FindLabel(Transform under, string[] preferred)
+        {
+            return FindLabelUnder(under, preferred) ?? FindLabelByScan(under, preferred);
+        }
+
+        // every label that is loaded, in the order Unity hands them out
+        static TextMeshProUGUI FindLabelByScan(Transform under, string[] preferred)
         {
             TextMeshProUGUI best = null, underAny = null, any = null, inactive = null; int bestPref = int.MaxValue;
             try
@@ -269,6 +282,30 @@ namespace YazsCompanion
             }
             catch { }
             return best ?? underAny ?? any ?? inactive;
+        }
+
+        // the active labels of one object's own hierarchy, in hierarchy order: the preferred name that comes first in
+        // the list wins, else the first active label with a font
+        static TextMeshProUGUI FindLabelUnder(Transform under, string[] preferred)
+        {
+            if (under == null) return null;
+            TextMeshProUGUI best = null, any = null; int bestPref = int.MaxValue;
+            try
+            {
+                var all = under.GetComponentsInChildren(Il2CppType.Of<TextMeshProUGUI>(), false);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i].TryCast<TextMeshProUGUI>();
+                    if (t == null) continue;
+                    try { if (t.font == null || !t.gameObject.activeInHierarchy) continue; } catch { continue; }
+                    if (any == null) any = t;
+                    if (preferred == null || preferred.Length == 0) break;
+                    int pref = Array.IndexOf(preferred, t.name);
+                    if (pref >= 0 && pref < bestPref) { bestPref = pref; best = t; if (pref == 0) break; }
+                }
+            }
+            catch { }
+            return best ?? any;
         }
     }
 }
