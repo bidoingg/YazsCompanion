@@ -106,10 +106,13 @@ namespace YazsCompanion
             new ItemRule("abilities", @"abilit|(?<!weapon )(?<!\ds )cooldown", ability: .6, generic: .2, stats: "AbilityDamage,AbilityCDRed,AbilitySize,AbilityDuration,Multicast"),
             new ItemRule("economy", @"\bxp\b|experience|specializ|\bluck|level-up", generic: .5, stats: "XPMultiplier,TeamLuck", axis: "economy"),
             new ItemRule("cash", @"\bcash|money", generic: .4, stats: "MoneyMultiplier", axis: "cash"),
-            new ItemRule("elites/bosses", @"\belite|\bboss", generic: .6, axis: "boss"),
-            new ItemRule("pickups", @"magnet|pickup|pick-up|collect", generic: .4, stats: "MagnetRange", axis: "economy"),
-            new ItemRule("upgrade quality", @"military training|lockdown|reroll|banish|\bskip|rarity|quality|item chest", generic: .3, stats: "NumRerolls,NumBanishes", axis: "economy"),
-            new ItemRule("damage", @"(?<!receive )(?<!receives )(?<!receiving )(?<!take )\bdamage\b(?! type tag)(?! to survivors)", generic: .3),
+            // what a keyword is NOT about: "2 Elite enemies or 1 Boss enemy" is a kill count (Glass of Milk is a Max HP item),
+            // "Item Chests, responding to Signals, and collecting Samples" is the list of things one opens (Crowbar only
+            // makes them instant), "10% of the damage done" is a measure (Vampire Survivor restores health)
+            new ItemRule("elites/bosses", @"(?<!\d )\belite|(?<!\d )\bboss", generic: .6, axis: "boss"),
+            new ItemRule("pickups", @"magnet|pickup|pick-up|collect(?!(ing)? samples)", generic: .4, stats: "MagnetRange", axis: "economy"),
+            new ItemRule("upgrade quality", @"military training|lockdown|reroll|banish|\bskip|rarity|quality|item chest(?!s?, re)", generic: .3, stats: "NumRerolls,NumBanishes", axis: "economy"),
+            new ItemRule("damage", @"(?<!receive )(?<!receives )(?<!receiving )(?<!take )(?<!% of the )\bdamage\b(?! type tag)(?! to survivors)", generic: .3),
         };
 
         static readonly string[] Elemental = { "Pyro", "Engineer", "Medic", "Huntress", "Mechanic" };
@@ -129,10 +132,16 @@ namespace YazsCompanion
             var k = c.K ?? Knowledge.Current;
             var fitWhy = new List<string>();
             bool typed, fits, economic;
-            double fit = Score(description, c, fitWhy, out typed, out fits, out economic);
+            // a bonus per squad size (Duct Tape): only the line of the current size is scored, not the sum of the three. The
+            // highlighted statistics list all three lines too, so for such an item the line's own words decide
+            string sizeLine; string text = SizedText(description, c.Squad == null ? 0 : c.Squad.Count, out sizeLine);
+            var stats = c.Stats; if (sizeLine != null) c.Stats = null;
+            double fit;
+            try { fit = Score(text, c, fitWhy, out typed, out fits, out economic); } finally { c.Stats = stats; }
             string tier; k.ItemTier.TryGetValue(name ?? "", out tier);
             double tierScore = Knowledge.Tier(tier, 3.0, 2.0, 1.0, -1.5);
             string note; k.ItemNote.TryGetValue(name ?? "", out note);
+            if (sizeLine != null && note == null) note = "with " + c.Squad.Count + (c.Squad.Count == 1 ? " survivor: " : " survivors: ") + sizeLine;
 
             // an item that is ABOUT a damage type the squad does not deal keeps little of its tier
             if (typed && !fits && tierScore > 0) { tierScore *= 0.3; note = null; }
@@ -144,7 +153,12 @@ namespace YazsCompanion
             else if (Is(name, "Dartboard")) Ranged(c.LongShare, "long", c, ref tierScore, ref note);
             else if (Is(name, "Magazine Clip") || Is(name, "Last Round"))
             {
-                if (c.ClipShare >= 0) { tierScore += 1.2 * c.ClipShare - 0.4; note = c.ClipShare > 0 ? "the squad reloads magazines" : "no weapon on the squad uses a magazine"; }
+                if (c.ClipShare > 0) { tierScore += 1.2 * c.ClipShare - 0.4; note = "the squad reloads magazines"; }
+                // no magazine anywhere: by the item's own text ("only affects weapons that have more than one bullet or
+                // projectile in their magazines") it does nothing here. Like an item about a damage type nobody deals it
+                // keeps little of its tier (a later weapon tier or a recruit may still bring a magazine) and none of the
+                // keyword fit: "critical; weapons; damage" are about a round this squad never fires
+                else if (c.ClipShare == 0) { if (tierScore > 0) tierScore *= 0.2; fit = 0; fitWhy.Clear(); note = "no weapon on the squad uses a magazine"; }
             }
             else if (Is(name, "Glass Cannon"))
             {
@@ -181,6 +195,23 @@ namespace YazsCompanion
             public string Text, Neg;
             public bool[] InPos, InNeg;                              // per rule of All: its pattern is in the bonus / the malus clauses
             public List<KeyValuePair<int, string>> Grants;           // "+4 to Fire damage type tag": (4, Fire), in text order
+            public List<KeyValuePair<int, string>> Sizes;            // "1: +20% XP ... 2: +20 Armor ... 3: +15% Critical Chance": a bonus per squad size, else null
+            public string SizeHead;                                  // the text before that list
+        }
+        // Duct Tape: one bonus per squad size, on lines of their own in the game and run together in the extracted data
+        static readonly Regex PerSize = new Regex(@"(?<=^|\s)([1-9]):\s*(.+?)(?=\s+[1-9]:\s|\s*$)", RegexOptions.Singleline);
+
+        /// <summary>An item that lists a bonus per squad size gives only the line of the CURRENT size: the text with the other
+        /// lines cut out (and that line, for the reason), or the text as it is for every other item.</summary>
+        static string SizedText(string description, int size, out string line)
+        {
+            line = null;
+            var f = Parse(description);
+            if (f.Sizes == null || size <= 0) return description;
+            var mine = f.Sizes[0];
+            foreach (var kv in f.Sizes) if (kv.Key <= size && kv.Key >= mine.Key) mine = kv;
+            line = mine.Value;
+            return f.SizeHead + " " + mine.Value;
         }
         static readonly Dictionary<string, TextFacts> _parsed = new Dictionary<string, TextFacts>();
 
@@ -203,6 +234,12 @@ namespace YazsCompanion
             {
                 int n; if (!int.TryParse(m.Groups[1].Value, out n)) continue;
                 foreach (Match tm in TypeName.Matches(m.Groups[2].Value)) f.Grants.Add(new KeyValuePair<int, string>(n, Canon(tm.Value)));
+            }
+            var sizes = PerSize.Matches(f.Text);
+            if (sizes.Count >= 2 && sizes[0].Groups[1].Value == "1")
+            {
+                f.Sizes = new List<KeyValuePair<int, string>>(); f.SizeHead = f.Text.Substring(0, sizes[0].Index).Trim();
+                foreach (Match m in sizes) f.Sizes.Add(new KeyValuePair<int, string>(m.Groups[1].Value[0] - '0', m.Groups[2].Value.Trim()));
             }
             if (_parsed.Count > 2048) _parsed.Clear();      // 136 items in the game; a bound all the same
             _parsed[key] = f;
@@ -229,8 +266,12 @@ namespace YazsCompanion
                 var kw = All[ki];
                 bool inPos = parsed.InPos[ki] || StatHit(kw, c.Stats, neg.Length == 0), inNeg = !inPos && parsed.InNeg[ki];
                 if (!inPos && !inNeg) continue;
-                double axis = AxisOf(kw.Axis, ctx);
-                if (inPos) { if (kw.Axis == "economy" || kw.Axis == "cash") economyRules++; else if (kw.Tag != "damage") otherRules++; }
+                double axis = AxisOf(kw.Axis, ctx); bool named = false;
+                // a health word in the text of an item the game neither flags as healing nor lists a health statistic for is
+                // incidental ("magnets now also collect ... Healthpaks"): it must not keep an economy item from being one,
+                // or its tier never follows the clock (Electric Personality stood on GRAB to the last second)
+                bool incidental = kw.Tag == "healing" && c.Stats != null && !c.Healing && !StatHit(kw, c.Stats, true);
+                if (inPos) { if (kw.Axis == "economy" || kw.Axis == "cash") economyRules++; else if (kw.Tag != "damage" && !incidental) otherRules++; }
                 if (kw.Cls != null)
                 {
                     double best = 0; string who = null;
@@ -247,7 +288,7 @@ namespace YazsCompanion
                     else foreach (var s in squad) { double v; if (kw.Cls.TryGetValue(s, out v) && v > best) { best = v; who = s; } }
                     if (kw.Type != null && !exact && best > 0) fits = true;
                     if (inNeg) { if (best > 0) { score -= 0.7 * best; why.Add("hurts " + who + ": " + kw.Tag); } continue; }
-                    if (best > 0) { score += best * axis; why.Add(who + ": " + kw.Tag); }
+                    if (best > 0) { score += best * axis; why.Add(who + ": " + kw.Tag); named = true; }
                     else if (kw.Exclusive || (kw.PowerTag != null && c.OwnedTags != null && kw.Generic <= 0 && kw.Survival <= 0))
                     {
                         var needs = new List<string>(); foreach (var kv in kw.Cls) if (kv.Value >= 1) needs.Add(kv.Key);
@@ -267,6 +308,8 @@ namespace YazsCompanion
                     score += kw.Survival * (ctx.Survival - 0.4);       // a squad that is fine gains little from more health; one that is hurting, late, a lot
                     if (ctx.Survival <= 0) why.Add("health means nothing in One Hit");
                     else if (ctx.Survival >= 1.3) why.Add("survival matters now" + (ctx.Health < 0.5 ? " (the squad is hurting)" : ""));
+                    // say what it is scored for when no survivor is named for it: a MedKit read "no squad-specific value"
+                    else if (!named && !incidental && !why.Contains("survival")) why.Add("survival");
                 }
                 if (kw.Ability > 0) score += kw.Ability * (c.AbilityLean - 0.5) * 2 * 0.5;
                 if (kw.Weapon > 0) score += kw.Weapon * (0.5 - c.AbilityLean) * 2 * 0.5;
@@ -325,7 +368,33 @@ namespace YazsCompanion
 
             if (Is(name, "Ultra Instinct"))
             {
-                if (top >= 30) { why.Insert(0, topType + " is at " + top + ": every other tag point pours into it"); return 3.0; }
+                if (top >= 30 && !tags.Known) { why.Insert(0, topType + " is at " + top + ": every other tag point pours into it"); return 3.0; }
+                if (top >= 22 && tags.Known)
+                {
+                    // taking it POOLS the tags: every other type's points move into the top one. Gained: those points for the
+                    // share of the squad's damage that deals the top type; wiped: the same points for the shares that deal
+                    // THEIR types, and every special (10 points) that was on. On this file's scale a point is 0.25 x fit =
+                    // 0.4 x share and a special 1.2. Points spread thin over types the squad barely deals cost nothing to
+                    // pool; a second stack the squad lives on (Kinetic 26 and its special beside Slashing 33) costs about
+                    // what it brings, and then this is no top pick. What is wiped counts in full, what is gained at 85 %:
+                    // the shares are estimates, and the other types can never reach a special again
+                    int moved = 0, specials = 0; double lost = 0, worst = 0; string hurt = null;
+                    foreach (var t in TagProfile.Names)
+                    {
+                        int n = tags.PointsOf(t); if (n <= 0 || t == topType) continue;
+                        double l = tags.Share(t) * n; bool special = tags.SpecialAt > 0 && n >= tags.SpecialAt && tags.Share(t) > 0;
+                        moved += n; lost += l; if (special) specials++;
+                        if (l + (special ? 3 : 0) > worst) { worst = l + (special ? 3 : 0); hurt = t + " " + n + (special ? " and its special" : ""); }
+                    }
+                    double net = Math.Max(-1.5, Math.Min(3.0, 0.4 * (0.85 * tags.Share(topType) * moved - lost) - 1.2 * specials));
+                    // not switched on yet (22 to 29): worth the old "close to it" bonus at most, and nothing when switching it on
+                    // would wipe more than it pools
+                    if (top < 30 && net >= 0.8) { why.Add(topType + " " + top + "/30: close to switching it on"); return 0.8; }
+                    if (net >= 1.5) why.Insert(0, topType + " is at " + top + ": the " + moved + " points of the other tags pour into it");
+                    else if (hurt != null && worst >= 1) why.Insert(0, (top < 30 ? "at 30 it pools " : "pools ") + moved + " points into " + topType + " but wipes " + hurt);
+                    else why.Add(topType + (top < 30 ? " " + top + "/30" : " is at " + top) + ": only " + moved + " other points to pour into it");
+                    return net;
+                }
                 if (top >= 22) { why.Add(topType + " " + top + "/30: close to switching it on"); return 0.8; }
                 why.Add("does nothing until a tag reaches 30 (best: " + (topType ?? "none") + " " + top + ")"); return -0.8;
             }

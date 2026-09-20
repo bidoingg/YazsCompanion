@@ -137,22 +137,39 @@ namespace YazsCompanion
                 ability = C(Gold, N(pick != null ? "evolve " + G.Name(pick) : "evolve " + G.Name(kv.Key)));
                 break;
             }
-            // "take each ability once": while abilities are still missing and there is time for them, the next one comes first
-            if (ability == null && owned.Count < 4 && sv.Props != null && s.Ctx.Reach(3) >= 0.6)
-            {
-                var best = NextAbility(sv, s);
-                if (best != null) ability = Nx(G.Name(best));
-            }
+            // the ability the cards will rank first: the ranker is asked, the rules live there alone. "next X" (an ability
+            // still missing, while there is time for one) shows only when X's card would outrank the next level of every
+            // owned ability - it used to stand here whatever the cards said, and for a quarter of an hour they said otherwise
             if (ability == null)
             {
-                var focus = Ranker.FocusAbility(sv, s);
-                if (focus != null) ability = N(G.Name(focus) + " " + sv.LevelOf(focus) + "/" + G.MaxLevel(focus));
+                var missing = owned.Count < 4 && sv.Props != null && s.Ctx.Reach(3) >= 0.6 ? NextAbility(sv, s) : null;
+                var top = Ranker.TopAbility(sv, s, missing);
+                if (top != null) ability = sv.LevelOf(top) < 1 ? Nx(G.Name(top)) : N(G.Name(top) + " " + sv.LevelOf(top) + "/" + G.MaxLevel(top));
             }
             if (ability != null) items.Add(ability);
             Add("squad", sv.Name + ".plan", sv.Name.ToUpperInvariant(), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
         }
 
-        // the best ability this survivor does not own yet and whose tree node is bought
+        // Abilities of a class rank the survivor had not reached when the run began. Such a node still reads "level 1" (its
+        // minimum), so the owned-node test below lets it through - but the game does not offer the ability: "next Kunai
+        // Dance" (rank III) stood on a level-39 Ghost's row all run and the card never came, not even after the tree level
+        // (it climbs live) passed 40 mid-run. So what is closed at first sight stays closed until the run clock starts over.
+        static readonly HashSet<string> _closed = new HashSet<string>();
+        static double _closedClock = -1;
+
+        static bool RankClosed(PowerupBase a, SkillTreeUpgradeBase node, Survivor sv, Snapshot s)
+        {
+            if (s.Ctx.Seconds < _closedClock - 5) _closed.Clear();        // the clock went back: a new run
+            _closedClock = s.Ctx.Seconds;
+            string key = sv.Name + "/" + G.Name(a);
+            if (_closed.Contains(key)) return true;
+            int rank = 0; try { if (node != null) rank = node.rankRequirement; } catch { }
+            if (rank <= 1 || sv.TreeLevel >= (rank - 1) * 20) return false;      // ranks open at class level 20 / 40 / 60 / 80
+            _closed.Add(key);
+            return true;
+        }
+
+        // the best ability this survivor does not own yet and that the game can offer: its tree node bought, its rank open
         static PowerupBase NextAbility(Survivor sv, Snapshot s)
         {
             PowerupBase best = null; double bestScore = double.MinValue;
@@ -162,6 +179,7 @@ namespace YazsCompanion
                 SkillTreeUpgradeBase node = null; try { node = a.skillTreeAbilityBoost; } catch { }
                 if (node == null) { try { node = a.skillTreeRequirement; } catch { } }
                 if (node != null && !G.NodeOwned(node)) continue;
+                if (RankClosed(a, node, sv, s)) continue;
                 var v = Ranker.AbilityScore(a, sv, s);
                 if (v.Skipped) continue;
                 double sc = v.Score;

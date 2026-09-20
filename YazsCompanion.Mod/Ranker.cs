@@ -119,7 +119,11 @@ namespace YazsCompanion
         {
             public WeaponUpgradePowerup W; public int Depth; public int Index; public int Level; public bool Available;
             public double Pref; public bool Recommended; public bool Alt; public bool GuidePick; public bool BuildPick; public string Why;
+            public double Tree;        // the Training Yard part of Pref alone
+            public string WhyType;     // the damage type Why is about ("shares Kinetic with Bow"), when the squad's damage decided
         }
+        // what decided a fork when no damage type sets the branches apart
+        static string ForkFallback(WStep x) { return x.GuidePick ? "the guides' branch" : x.Tree > 0 ? "your Training Yard investment" : null; }
 
         static int Depth(WeaponUpgradePowerup w)
         {
@@ -152,7 +156,7 @@ namespace YazsCompanion
                 st.Available = st.Level >= 1 || node == null || G.NodeOwned(node);
                 st.GuidePick = guideBranch != null && SameName(G.Name(w), guideBranch);
                 st.BuildPick = build != null && !string.IsNullOrEmpty(build.Branch) && SameName(G.Name(w), build.Branch);
-                st.Pref = 0.5 * Math.Max(0, G.NodeLevel(node) - 1);
+                st.Pref = st.Tree = 0.5 * Math.Max(0, G.NodeLevel(node) - 1);
                 path.Add(st);
             }
             foreach (var g in path.GroupBy(x => x.Depth))
@@ -173,13 +177,14 @@ namespace YazsCompanion
                         if (x.GuidePick) x.Pref += 0.9;
                         if (others != null)
                         {
-                            var why = new List<string>();
-                            double fit = Synergy.BranchFit(G.Facts(x.W), others, s.Boosts, s.Ctx, why);
-                            x.Pref += fit; if (fit >= 0.3 && why.Count > 0) x.Why = why[0];
+                            // the reason names only a type that sets this branch apart from the others of the fork
+                            var why = new List<string>(); var rivals = pool.Where(y => y != x).Select(y => G.Facts(y.W)).ToList();
+                            double fit = Synergy.BranchFit(G.Facts(x.W), others, s.Boosts, s.Ctx, why, rivals);
+                            x.Pref += fit; if (fit >= 0.3 && why.Count > 0) { x.Why = why[0]; x.WhyType = Synergy.BranchType(G.Facts(x.W), others, rivals); }
                         }
                     }
                     var best = pool.OrderByDescending(x => x.Pref).ThenBy(x => x.Index).First();
-                    if (best.Why == null) best.Why = best.GuidePick ? "the guides' branch" : best.Pref > 0 ? "your Training Yard investment" : null;
+                    if (best.Why == null) best.Why = ForkFallback(best);
                     foreach (var x in g) { x.Recommended = x == best; x.Alt = x != best; }
                 }
                 else foreach (var x in g) x.Recommended = true;
@@ -238,7 +243,10 @@ namespace YazsCompanion
                 // the branches exclude each other. The player's own build: hold out for it. Auto: a tier-2 weapon of the
                 // other branch is still a big step up, so it ranks above the weak abilities, below the good ones
                 c.Score = chosen ? 2.0 : prefOffered ? 3.6 + syn : 6.2 + syn;
-                c.Why.Add(pref != null ? "other branch; " + (chosen ? "your build takes " : "the squad favours ") + G.Name(pref.W) + (pref.Why != null && !chosen ? " (" + pref.Why + ")" : "") : "the other branch");
+                // "shares Kinetic with Bow" speaks for the favoured branch against a rocket launcher, not against this card
+                // when it deals Kinetic too: there the tree investment or the guides decided (or nothing: card order)
+                string prefWhy = pref == null || chosen ? null : pref.WhyType != null && facts.Damage.Contains(pref.WhyType, StringComparer.OrdinalIgnoreCase) ? ForkFallback(pref) : pref.Why;
+                c.Why.Add(pref != null ? "other branch; " + (chosen ? "your build takes " : "the squad favours ") + G.Name(pref.W) + (prefWhy != null ? " (" + prefWhy + ")" : "") : "the other branch");
                 if (!chosen && prefOffered) c.Why.Add("taking it locks " + G.Name(pref.W) + " out");
             }
             else if (me == null) { c.Score = 2; c.Why.Add("weapon outside " + owner.Name + "'s line"); }
@@ -254,7 +262,10 @@ namespace YazsCompanion
             /// <summary>The one short thing that sets this ability apart on this squad ("unlocks the Kinetic special", "#1 in
             /// Rifleman", "synergy: Tank", "S-tier", "Kinetic: 100% of the squad"), for the headline under the card.</summary>
             public string Head; int _headRank;
-            public void Mark(int rank, string text) { if (rank > _headRank) { _headRank = rank; Head = text; } }
+            /// <summary>The Why line the head was cut from: the card shows the head, so it leaves that line out ("A-tier in the
+            /// guides; A-tier ability in the guides" said the same thing twice).</summary>
+            public string HeadFrom;
+            public void Mark(int rank, string text, string from = null) { if (rank > _headRank) { _headRank = rank; Head = text; HeadFrom = from; } }
         }
 
         /// <summary>What speaks for an ability on this squad right now, whatever its level: the build's order (or the guides'
@@ -267,18 +278,18 @@ namespace YazsCompanion
             if (build != null)
             {
                 v.Priority = build.PriorityOf(name); v.Skipped = build.Skips(name);
-                if (v.Skipped) { v.Score -= 2.0; v.Why.Add("your " + build.Name + " build skips it"); v.Mark(6, build.Name + " skips it"); }
+                if (v.Skipped) { v.Score -= 2.0; v.Why.Add("your " + build.Name + " build skips it"); v.Mark(6, build.Name + " skips it", v.Why[v.Why.Count - 1]); }
                 else if (v.Priority >= 0)
                 {
                     double[] bonus = { 1.6, 1.0, 0.5, 0.1 };
                     v.Score += bonus[Math.Min(v.Priority, bonus.Length - 1)];
                     v.Why.Add("#" + (v.Priority + 1) + " in your " + build.Name + " build");
-                    v.Mark(v.Priority <= 1 ? 4 : 1, "#" + (v.Priority + 1) + " in " + build.Name);
+                    v.Mark(v.Priority <= 1 ? 4 : 1, "#" + (v.Priority + 1) + " in " + build.Name, v.Why[v.Why.Count - 1]);
                 }
             }
             else
             {
-                string tier; if (K.AbilityTier.TryGetValue(name, out tier)) { v.Tier = tier; double b = Knowledge.Tier(tier, 1.2, 0.6, 0, -0.8); if (b != 0) { v.Score += b; v.Why.Add(tier + "-tier ability in the guides"); v.Mark(b > 0 ? 2 : 1, tier.ToUpperInvariant() + "-tier in the guides"); } }
+                string tier; if (K.AbilityTier.TryGetValue(name, out tier)) { v.Tier = tier; double b = Knowledge.Tier(tier, 1.2, 0.6, 0, -0.8); if (b != 0) { v.Score += b; v.Why.Add(tier + "-tier ability in the guides"); v.Mark(b > 0 ? 2 : 1, tier.ToUpperInvariant() + "-tier in the guides", v.Why[v.Why.Count - 1]); } }
             }
             if (owner.Props != null)
             {
@@ -288,7 +299,7 @@ namespace YazsCompanion
                     PowerupBase req = null; try { req = syn.requiredPowerup; } catch { }
                     if (req == null || !G.Same(req, ability)) continue;
                     CT partner; try { partner = syn.synergiesWithClass; } catch { continue; }
-                    if (s.OnSquad(partner)) { v.Score += 2.0; v.Why.Add("synergy with " + G.ClassName(partner) + " on the team"); v.Mark(3, "synergy: " + G.ClassName(partner)); }
+                    if (s.OnSquad(partner)) { v.Score += 2.0; v.Why.Add("synergy with " + G.ClassName(partner) + " on the team"); v.Mark(3, "synergy: " + G.ClassName(partner), v.Why[v.Why.Count - 1]); }
                     else if (!s.SquadFull && s.Ctx.RecruitValue > 0.5) { v.Score += 0.6; v.Why.Add("synergy if you recruit " + G.ClassName(partner)); }
                 }
             }
@@ -340,16 +351,34 @@ namespace YazsCompanion
             return open.OrderByDescending(kv => kv.Value).ThenByDescending(kv => AbilityScore(kv.Key, owner, s).Score).First().Key;
         }
 
+        /// <summary>The ability card the ranking would put first for this survivor right now: the next level of an owned
+        /// ability, or <paramref name="missing"/> (the best ability not owned yet; may be null) - by the very scores the cards
+        /// get. The PLAN readout asks here instead of keeping rules of its own, so that its row names what the cards will.</summary>
+        internal static PowerupBase TopAbility(Survivor owner, Snapshot s, PowerupBase missing)
+        {
+            var focus = FocusAbility(owner, s);
+            var pool = owner.Abilities().Where(kv => kv.Value < G.MaxLevel(kv.Key)).Select(kv => kv.Key).ToList();
+            if (missing != null) pool.Add(missing);
+            PowerupBase best = null; double bestScore = double.MinValue;
+            foreach (var p in pool)
+            {
+                var c = new Card(); ScoreAbility(c, p, owner, s, focus, true);
+                double sc = Math.Round(c.Score, 2);
+                if (sc > bestScore) { bestScore = sc; best = p; }      // a tie: the owned ability, listed first
+            }
+            return best;
+        }
+
         static double SoftCap(double x) { return x <= 4.6 ? x : 4.6 + (x - 4.6) * 0.3; }     // keeps the order among strong abilities, stays under 6
 
-        static void ScoreAbility(Card c, PowerupBase p, Survivor owner, Snapshot s)
+        static void ScoreAbility(Card c, PowerupBase p, Survivor owner, Snapshot s, PowerupBase focusKnown = null, bool haveFocus = false)
         {
             var a = AbilityScore(p, owner, s);
             int lvl = owner.LevelOf(p);
             int max = G.MaxLevel(p);
             var owned = owner.Abilities();
             var ctx = s.Ctx;
-            double score;
+            double score, once = 0;
             if (lvl == 0)
             {
                 // "take each ability once": a new damage source early is worth more than another level of an old one -
@@ -361,10 +390,21 @@ namespace YazsCompanion
                 c.Why.Add(a.Head != null ? what + " - " + a.Head : owned.Count < 4 && reach >= 0.6 ? "new ability: take each once early" : what);
                 if (a.Head != null && owned.Count < 4 && reach >= 0.6) c.Why.Add("take each ability once early");
                 if (reach < 0.6) c.Why.Add("little time to level it (" + ctx.ClockText + ")");
+                // Balanced says "each ability once early, THEN the weapon and the focus ability side by side" - but a third or
+                // fourth new ability (base 3.1) sat under the weapon floor (4.3): a run's first level-ups all went to the weapon
+                // and half the ability slots were still empty at the end. So under Balanced, while the clock still lets a fresh
+                // ability grow up, the first level of a missing ability goes before a plain weapon level. "Grow up" is its four
+                // levels and the evolution, counted twice because the weapon and the focus ability want their picks as well:
+                // Reach(10) - the full lift while some thirty level-ups are still to come (the first half of a 20:00 run), fading
+                // to nothing at about eleven, well before the "little time left" penalty above sets in. A plain weapon level
+                // is 4.4 to 5.0 as a rule; squeezed in under 6.1 below, the lift never passes a weapon tier-up (6.2 and more),
+                // a recruit's first weapon or an evolution. The other styles, and an ability the build skips, are left alone.
+                if (StyleOf(owner) == BuildStyle.Balanced && owned.Count < 4 && !a.Skipped) once = 1.5 * Math.Max(0, Math.Min(1, (ctx.Reach(10) - 0.4) / 0.6));
+                if (once >= 0.3) c.Why.Add("style: balanced - before another weapon level");
             }
             else
             {
-                var focusAbility = FocusAbility(owner, s);
+                var focusAbility = haveFocus ? focusKnown : FocusAbility(owner, s);
                 bool focus = focusAbility != null && G.Same(focusAbility, p);
                 bool completes = lvl == max - 1;
                 score = 2.6 + (focus ? 1.0 : 0.2) + (completes ? 0.5 : 0) + a.Score * 0.5;
@@ -378,7 +418,9 @@ namespace YazsCompanion
                 else c.Why.Add((focus ? "focus " : completes ? "completes it, " : "level ") + lvl + ">" + (lvl + 1) + " of " + max + (a.Head != null ? " - " + a.Head : ""));
             }
             c.Score = SoftCap(score);
-            c.Why.AddRange(a.Why);
+            // the lift, squeezed above 5.6 so that two new abilities keep their order and none reaches a tier-up's 6.2
+            if (once > 0) { double lifted = c.Score + once; c.Score = Math.Max(c.Score, lifted <= 5.6 ? lifted : 5.6 + (lifted - 5.6) * 0.25); }
+            foreach (var line in a.Why) if (a.Head == null || line != a.HeadFrom) c.Why.Add(line);      // the head already says that one
         }
 
         // ---------------------------------------------------------------- evolutions
@@ -582,7 +624,11 @@ namespace YazsCompanion
             var p = c.Powerup; c.Kind = "stat";
             var b = p.TryCast<BasicLevelPowerup>();
             string rarity = "Common"; try { if (b != null) rarity = b.GetRarity().ToString(); } catch { }
-            double r = rarity == "Legendary" ? 2.3 : rarity == "Endless" ? 2.0 : rarity == "Rare" ? 1.6 : 1.0;
+            // the cards' own numbers go about 1 : 2 : 3-4 by rarity (Luck 5 / 10 / 20, Ability Area 10 / 20 / 30): a Rare is
+            // twice the Common of its stat, a Legendary three times - at 1.6 / 2.3 a Legendary of a modest stat lost to a
+            // Common of a good one, and both times the player overrode the mod that was why. Endless keeps its place
+            // just under Legendary.
+            double r = rarity == "Legendary" ? 3.0 : rarity == "Endless" ? 2.6 : rarity == "Rare" ? 2.0 : 1.0;
             string asset = G.Asset(p); string stat = asset.StartsWith("MilitaryTraining_") ? asset.Substring("MilitaryTraining_".Length) : asset;
             double w = 0.5; bool known = false;
             foreach (var kv in K.MilitaryStat) if (string.Equals(stat, kv.Key, StringComparison.OrdinalIgnoreCase)) { w = kv.Value; known = true; }

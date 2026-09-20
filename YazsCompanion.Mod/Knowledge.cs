@@ -203,6 +203,7 @@ namespace YazsCompanion
     ""Homing Pigeon"": ""ability hits on full health enemies always crit"",
     ""Gaslighter"": ""+20% damage per status effect on the target"",
     ""Wooden Stick"": ""XP: an early pick"",
+    ""Crowbar"": ""chests and signals open at once: saves time, nothing else"",
     ""Boxing Gloves"": ""+30% against elites and bosses"",
     ""Acoustic Guitar"": ""guides disagree (a must-have in one, avoid in another)"",
     ""Magical Hat"": ""+2 to every elemental tag (+4 at 4 or more)""

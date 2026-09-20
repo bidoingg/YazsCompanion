@@ -107,7 +107,10 @@ namespace YazsCompanion
                     if (baseAbility.Damage.Contains(t, StringComparer.OrdinalIgnoreCase)) continue;
                     double share = tags.Share(t);
                     if (share > 0) { v += 0.35 * weight; if (why != null) why.Add("adds " + t + ", which " + (tags.SourceText(t).Length > 0 ? tags.SourceText(t) : "the squad") + " deals"); }
-                    else if (why != null) why.Add("adds " + t + " (nothing else on the squad deals it)");
+                    // a type nobody else deals: its tag point boosts this one ability alone and the evolution's damage is
+                    // split away from the stack the squad is feeding. A small malus, so that two evolutions that are
+                    // otherwise level are settled by the tag doctrine (stay inside the stacked type), not by card position
+                    else { v -= 0.15 * weight; if (why != null) why.Add("adds " + t + " (nothing else on the squad deals it)"); }
                 }
             }
             if (ctx != null && evo.Healing && !(baseAbility != null && baseAbility.Healing)) v += 0.3 * (ctx.Survival - 1.0);
@@ -115,21 +118,35 @@ namespace YazsCompanion
         }
 
         /// <summary>How well a tier-2 weapon branch fits what the REST of the squad deals (the survivor's own current weapon
-        /// is about to be replaced, so the caller leaves it out of <paramref name="others"/>).</summary>
-        public static double BranchFit(PowerFacts branch, TagProfile others, IList<TeamBoost> boosts, RunContext ctx, List<string> why)
+        /// is about to be replaced, so the caller leaves it out of <paramref name="others"/>). The score is the branch's own;
+        /// the REASON names only what sets it apart from the <paramref name="rivals"/> (the other branches of the fork):
+        /// "shares Kinetic with Bow" explains nothing when every branch of the fork deals Kinetic.</summary>
+        public static double BranchFit(PowerFacts branch, TagProfile others, IList<TeamBoost> boosts, RunContext ctx, List<string> why, IList<PowerFacts> rivals = null)
         {
             if (branch == null) return 0;
             double weight = ctx == null || ctx.D == null ? 1.0 : ctx.D.SynergyWeight;
-            double v = 0; string best = null; double bestShare = 0;
+            double v = 0;
             if (others != null)
                 foreach (var t in branch.Damage.Distinct(StringComparer.OrdinalIgnoreCase))
-                {
-                    double share = others.Share(t);
-                    v += 1.2 * share + 0.04 * Math.Min(10, others.PointsOf(t));
-                    if (share > bestShare) { bestShare = share; best = t; }
-                }
-            if (best != null && bestShare >= 0.2 && why != null) why.Add("shares " + best + " with " + (others.SourceText(best).Length > 0 ? others.SourceText(best) : "the squad"));
+                    v += 1.2 * others.Share(t) + 0.04 * Math.Min(10, others.PointsOf(t));
+            string best = BranchType(branch, others, rivals);
+            if (best != null && why != null) why.Add("shares " + best + " with " + (others.SourceText(best).Length > 0 ? others.SourceText(best) : "the squad"));
             return (v + BoostValue(branch, boosts, ctx, null)) * weight;
+        }
+
+        /// <summary>The damage type that speaks for this branch against its rivals: the one the rest of the squad deals most
+        /// (a fifth of its damage at least) among the types that not every rival deals too; null when nothing sets it apart.</summary>
+        public static string BranchType(PowerFacts branch, TagProfile others, IList<PowerFacts> rivals)
+        {
+            if (branch == null || others == null) return null;
+            string best = null; double bestShare = 0;
+            foreach (var t in branch.Damage.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (rivals != null && rivals.Count > 0 && rivals.All(r => r != null && r.Damage.Contains(t, StringComparer.OrdinalIgnoreCase))) continue;
+                double share = others.Share(t);
+                if (share > bestShare) { bestShare = share; best = t; }
+            }
+            return bestShare >= 0.2 ? best : null;
         }
     }
 }

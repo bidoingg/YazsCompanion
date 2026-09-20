@@ -2,7 +2,8 @@
 // powerup with the exact fields the game uses) and it
 //   1. VALIDATES the build presets and kits against the game's own names - a misspelt evolution would never match,
 //   2. shows the run clock at work: the same items and picks early, mid-run and near the end, and per game mode,
-//   3. shows which evolution and which weapon branch the live synergy rules pick for a few squads.
+//   3. shows which evolution and which weapon branch the live synergy rules pick for a few squads,
+//   4. replays item, Research Pod and evolution offers of the logged run of 2026-09-19 (the 0.11 advice review).
 // Usage: ItemBench [gamedata.json] --probe path\to\probe.json
 using System;
 using System.Collections.Generic;
@@ -63,6 +64,7 @@ namespace YazsCompanion.Bench
             Modes();
             Evolutions();
             Branches();
+            Logged();
             return bad == 0 ? 0 : 3;
         }
 
@@ -221,10 +223,73 @@ namespace YazsCompanion.Bench
                 Console.WriteLine("  " + c.Item1);
                 foreach (var b in new[] { kit.BranchA, kit.BranchB })
                 {
-                    var why = new List<string>();
-                    double fit = Synergy.BranchFit(Find(b), c.Item3, new List<TeamBoost>(), run, why);
+                    var why = new List<string>();      // the reason names only what the other branch of the fork does not deal too (as the live path)
+                    double fit = Synergy.BranchFit(Find(b), c.Item3, new List<TeamBoost>(), run, why, new List<PowerFacts> { Find(b == kit.BranchA ? kit.BranchB : kit.BranchA) });
                     Console.WriteLine("     " + fit.ToString("0.00").PadLeft(5) + "  " + b.PadRight(20) + string.Join("; ", why));
                 }
+            }
+        }
+
+        // ------------------------------------------------------------ 4. offers of the logged run of 2026-09-19 (the 0.11 advice review)
+        // Ghost (Thousand Cuts, Shuriken, Pulsar) + Tank (Shotgun, Sawblade Drone: Enchantment, Bombing Strike) + Huntress (Bow,
+        // Bear Trap): a Slashing stack, a Kinetic second, no magazine on the squad. What the item and tag rules say there.
+        static TagProfile LoggedTags(int slashing, int kinetic, int rest)
+        {
+            var t = new TagProfile { SpecialAt = 10 };
+            t.Source("Thousand Cuts", 1.0, new[] { "Slashing" }); t.Source("Shuriken", 0.4, new[] { "Slashing" }); t.Source("Sawblade Drone: Enchantment", 0.5, new[] { "Slashing", "Fire", "Ice" });
+            t.Source("Pump-Action Shotgun", 0.8, new[] { "Kinetic" }); t.Source("Bow", 0.6, new[] { "Kinetic" }); t.Source("Pulsar", 0.15, new[] { "Electric" }); t.Source("Bombing Strike", 0.15, new[] { "Explosive" });
+            t.Points["Slashing"] = slashing; t.Points["Kinetic"] = kinetic;
+            foreach (var n in new[] { "Fire", "Ice", "Electric", "Explosive" }) t.Points[n] = rest;
+            return t;
+        }
+
+        static ItemContext LoggedCtx(double seconds, TagProfile tags, double clipShare, params string[] squad)
+        {
+            var run = new RunContext { Mode = "Normal", Goal = 1200, Seconds = seconds, LevelRate = 2.6, LevelUps = (int)(seconds / 25), D = new Doctrine() };
+            var c = new ItemContext { Squad = squad, Tags = tags, K = Knowledge.FromJson(Knowledge.DefaultJson), Ctx = run, OwnedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Deployable", "Melee", "Projectile" }, Held = new HashSet<string>(StringComparer.OrdinalIgnoreCase) };
+            c.CloseShare = 0.67; c.LongShare = 0; c.ClipShare = clipShare; c.AbilityLean = 0.45; c.CritSquad = true;
+            return c;
+        }
+
+        static void Line(string label, string item, ItemContext c)
+        {
+            var it = Items.FirstOrDefault(x => x.Name == item); if (it == null) { Console.WriteLine("  (no item " + item + ")"); return; }
+            var why = new List<string>(); double sc = ScoreItem(it, c, why);
+            Console.WriteLine("  " + label.PadRight(34) + sc.ToString("0.00").PadLeft(6) + "  " + item.PadRight(21) + string.Join("; ", why));
+        }
+
+        static void Logged()
+        {
+            Console.WriteLine("\n=== the logged run (Ghost + Tank + Huntress, Slashing stacked): what the item and tag rules say");
+            string[] three = { "Ghost", "Tank", "Huntress" };
+            var at0646 = LoggedTags(19, 5, 1);
+            foreach (var name in new[] { "Last Round", "Magazine Clip", "Power Glove" })
+            {
+                Line("06:46, no magazine on the squad", name, LoggedCtx(406, at0646, 0, three));
+                Line("06:46, one weapon in three reloads", name, LoggedCtx(406, at0646, 1 / 3.0, three));
+            }
+            Line("09:01, squad of 1", "Duct Tape", LoggedCtx(541, at0646, 0, "Ghost"));
+            Line("09:01, squad of 2", "Duct Tape", LoggedCtx(541, at0646, 0, "Ghost", "Tank"));
+            Line("09:01, squad of 3", "Duct Tape", LoggedCtx(541, at0646, 0, three));
+            foreach (var name in new[] { "Crowbar", "Suspicious Pendrive", "Glass of Milk", "Vampire Survivor", "MedKit", "Coffee Cup" }) Line("03:00", name, LoggedCtx(180, LoggedTags(12, 1, 0), 0, "Ghost", "Tank"));
+            foreach (var t in new[] { 406.0, 1060.0, 1187.0 }) Line(TimeSpan.FromSeconds(t).ToString(@"mm\:ss"), "Electric Personality", LoggedCtx(t, at0646, 0, three));
+            Line("12:27, Slashing 32, Kinetic 13", "Ultra Instinct", LoggedCtx(747, LoggedTags(32, 13, 1), 0, three));
+            Line("19:47, Slashing 33, Kinetic 26", "Ultra Instinct", LoggedCtx(1187, LoggedTags(33, 26, 2), 0, three));
+            Line("Slashing 31, the rest spread thin", "Ultra Instinct", LoggedCtx(747, LoggedTags(31, 4, 5), 0, three));
+            Line("Slashing 24: not switched on", "Ultra Instinct", LoggedCtx(747, LoggedTags(24, 13, 1), 0, three));
+            Console.WriteLine("  Research Pod at 11:53 (Slashing 25, Kinetic 13):");
+            var pod = LoggedTags(25, 13, 1);
+            foreach (var type in new[] { "Slashing", "Kinetic", "Fire", "Chemical" }) { var why = new List<string>(); double sc = Tags.Score(type, 7, pod, why); Console.WriteLine("     " + sc.ToString("0.00").PadLeft(5) + "  #" + (type + " +7").PadRight(14) + string.Join("; ", why)); }
+            Console.WriteLine("  the two Sawblade Drone evolutions on that squad at 05:03 (Slashing 17):");
+            var evoTags = new TagProfile { SpecialAt = 10 };
+            evoTags.Source("Thousand Cuts", 0.8, new[] { "Slashing" }); evoTags.Source("Shuriken", 0.3, new[] { "Slashing" }); evoTags.Source("Sawblade Drone", 0.5, new[] { "Slashing" });
+            evoTags.Source("Shotgun", 0.6, new[] { "Kinetic" }); evoTags.Source("Pulsar", 0.15, new[] { "Electric" }); evoTags.Source("Bombing Strike", 0.15, new[] { "Explosive" });
+            evoTags.Points["Slashing"] = 17; evoTags.Points["Kinetic"] = 2; evoTags.Points["Electric"] = 1; evoTags.Points["Explosive"] = 1;
+            var run = new RunContext { Mode = "Normal", Goal = 1200, Seconds = 303, LevelRate = 3.3, D = new Doctrine() };
+            foreach (var e in new[] { "Sawblade Drone: Enchantment", "Sawblade Drone: Cogwheels" })
+            {
+                var why = new List<string>(); double fit = Synergy.EvolutionFit(Find(e), Find("Sawblade Drone"), evoTags, new List<TeamBoost>(), run, why);
+                Console.WriteLine("     " + fit.ToString("0.00").PadLeft(5) + "  card " + (7.6 + 0.6 * 0.1 + fit * 0.4).ToString("0.00") + "  " + e.PadRight(30) + string.Join("; ", why));
             }
         }
     }

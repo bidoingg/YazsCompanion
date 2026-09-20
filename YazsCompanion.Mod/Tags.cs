@@ -128,7 +128,10 @@ namespace YazsCompanion
             {
                 score += 2.5 * fit;
                 string src = p.SourceText(type);
-                why.Add(fit >= 1 ? type + " is what " + (src.Length > 0 ? src + " deals" : "the squad deals") : "some " + type + " damage" + (src.Length > 0 ? " (" + src + ")" : ""));
+                // say the share: "some Slashing damage" was the text for half of the squad's damage
+                int pct = (int)Math.Round(p.Share(type) * 100);
+                why.Add(fit >= 1 ? type + " is what " + (src.Length > 0 ? src + " deals" : "the squad deals")
+                    : (pct >= 25 ? type + ": " + pct + "% of the squad's damage" : "little " + type + " damage: " + pct + "% of the squad's") + (src.Length > 0 ? " (" + src + ")" : ""));
             }
             else why.Add(p == null || !p.Known ? "squad damage types unknown" : "nothing on the squad deals " + type);
             if (focus != null && string.Equals(focus, type, StringComparison.OrdinalIgnoreCase) && cur > 0)
@@ -140,6 +143,9 @@ namespace YazsCompanion
                 if (cur + n >= p.SpecialAt) { score += 1.5; why.Insert(0, "reaches the " + type + " special effect (" + p.SpecialAt + ")"); }
                 else if (fit > 0) why.Add((p.SpecialAt - cur - n) + " more to the special after this");
             }
+            // the other line a card can cross: Ultra Instinct needs one tag at 30 (said, not scored: whether that item is
+            // worth taking depends on what it would wipe)
+            if (fit > 0 && cur < 30 && cur + n >= 30) why.Add("takes " + type + " to " + (cur + n) + ", past the 30 Ultra Instinct needs");
             return score;
         }
     }

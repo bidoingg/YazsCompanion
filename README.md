@@ -115,6 +115,13 @@ those settings, and puts the settings back - well under fifty seconds of play, s
 
 ## The PLAN readout (during play)
 
+Since 0.11.0 the ability in a survivor's row is the one the cards will rank first: the readout asks the ranker
+(`Ranker.TopAbility`: the next level of every owned ability and the best missing one, by the very scores the cards
+get) instead of keeping a rule of its own. Before, "next Minefield" stood in the row for fourteen minutes of a
+logged run while the cards ranked Minefield first in none of eighteen offers. An ability of a class rank the
+survivor had not reached when the run began (ranks open at class level 20 / 40 / 60 / 80) is not announced: the
+game does not offer it.
+
 A HUD readout in the empty bottom-left corner, under the weapon and ability icons (0.7.0; up to 0.6.0 it was a
 framed panel at the right edge, which hid too much of the field). It is drawn like the game's quest tracker, not
 like a menu panel: a small gold diamond and `PLAN` over a gold rule that fades out, then the rows on a soft dark
@@ -295,7 +302,12 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   a new one 3.6 / 3.1 / 2.4 (fewer than two / up to four / after) - "take each ability once" early beats another
   level of an old one - a level 2.6, +1.0 for the focus ability (the build's highest-ranked open one, else the one
   furthest along), +0.5 for the level that completes it, up to +0.9 toward an unlocked evolution; all soft-capped
-  under the weapon-first band so strong abilities keep their order instead of tying.
+  under the weapon-first band so strong abilities keep their order instead of tying. Under *balanced* (0.11.0) the
+  first level of an ability the survivor does not have yet is lifted by up to +1.5 while a fresh ability can still
+  grow up (`Reach(10)`: the full lift through the first half of a 20:00 run, nothing from about 11:50 on), squeezed
+  in under 6.1 so it never passes a tier-up, a recruit's first weapon or an evolution: "each ability once early,
+  then the weapon and the focus ability side by side" is now what the scores do - in a logged run the first seven
+  level-ups had all gone to the weapon and half the ability slots were still empty at 20:00.
 - **The squad, live.** Every level of a weapon or ability adds ONE tag point to each damage type it deals (an
   evolution too, including the types it adds); a point is +2 % for everything dealing that type and the special
   switches on at 10. So a level is worth more the larger the share of the squad's damage that carries its type
@@ -304,7 +316,11 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   (Grenade / Turret / Trap Expertise, Cold Chain) add +0.5 to every powerup carrying their tag - including the
   evolutions that add one (Helicopter Strike: Chemtrails throws grenades, Automatic Turret: Provocation taunts).
   Bought synergy nodes with the partner on the team +2.0. **Evolutions** are chosen by exactly this: Bombing Strike
-  goes Supercharge next to an Engineer and Bioweapon next to a Medic.
+  goes Supercharge next to an Engineer and Bioweapon next to a Medic. A type an evolution adds that nobody else on
+  the squad deals costs 0.15 (0.11.0): two evolutions that are otherwise level are settled by the tag doctrine
+  (stay inside the stacked type), not by card position. A weapon branch's reason names only a damage type that sets
+  it apart from the other branch ("shares Kinetic with Bow" said nothing when both branches deal Kinetic); else it
+  says the guides or your Training Yard investment decided.
 - **The clock** (`Context.cs`). `Reach(n)` = can a plan that needs n more picks of one powerup still finish, from
   the level-up pace of the last three minutes and the time left. It scales a new ability, the pull toward an
   evolution, an unfinished weapon (late, a weapon that cannot be finished falls back to the balanced floor: a
@@ -320,22 +336,30 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
 - **Chests** (`ItemRules.cs`, pure). Guide tier (S +3, A +2, B +1, C -1.5; 59 items tiered, human go-to picks
   added), then the fit: damage types by the squad's share; turret / melee / taunt / deployable / grenade by
   whether the squad OWNS such a powerup (the game's powerup tags, not a class table); Silencer and Dartboard by the
-  squad's weapons' own range modifiers; Magazine Clip and Last Round by clip sizes; Glass Cannon by an owned Energy
-  Shield. An item about a type the squad does not deal keeps 30 % of its tier; an item that is ONLY about the
+  squad's weapons' own range modifiers; Magazine Clip and Last Round by clip sizes (with no magazine on the squad
+  they keep a fifth of their tier and no fit - 0.11.0: Last Round had been RECOMMENDED with the reason "no weapon on
+  the squad uses a magazine"); Glass Cannon by an owned Energy Shield. An item about a type the squad does not deal keeps 30 % of its tier; an item that is ONLY about the
   economy follows the clock with its whole tier. Items that grant tag points are judged from the run's live
-  points (+1.2 when a +N reaches the special; Ultra Instinct needs a tag at 30; One For All is a malus on a
-  stacked type), pairs the items name are worth more once the other half is held (Accumulator and the magnet
+  points (+1.2 when a +N reaches the special; Ultra Instinct needs a tag at 30 and is judged by what pooling the
+  tags gains against the stack and the specials it wipes, -1.5 .. +3.0, no longer a flat +3; One For All is a malus
+  on a stacked type), pairs the items name are worth more once the other half is held (Accumulator and the magnet
   items, Golden Key and Silver Padlock, the Parca set), and what your builds want adds +0.5. Malus clauses count
-  against the squad; an enemy's malus ("enemy projectiles deal -50 %") does not. +3 for the quest target, -1 for a
+  against the squad; an enemy's malus ("enemy projectiles deal -50 %") does not. A health word in the text of an
+  item the game does not flag as healing (Electric Personality's "Healthpaks") no longer keeps an economy item from
+  fading with the clock, and an item with a line per squad size (Duct Tape) is scored by the line for the squad as
+  it is. +3 for the quest target, -1 for a
   single-slot item already held. The GRAB row only lists what can still drop (`stillAvailableItems`).
 - **Research Pod rewards**: 1 + 0.15 per point, +2.5 scaled by the squad's share of that type, +1.0 for the type
   you stack (or the type fixed on the ADVICE tab; nothing with "Spread"), +1.5 when the card reaches the special.
+  The reason states the share ("Slashing: 51% of the squad's damage") and says when a card takes a type past 30.
 - **SOS**: a recruit is a third gun and +20 % XP for the rest of the run (2.0), plus the guides' rescue tier, +1.1
   per BOUGHT synergy node either way (an unbought node does nothing in a run), shared damage types, team passives
   either way, how trained the recruit is - all scaled by the time a newcomer still has to grow. Liberate: 5 with a
   full squad, else 1.0 rising to 4.2 as that time runs out.
-- **Military training**: `1 + rarity x weight x 2` (Common 1, Rare 1.6, Endless 2, Legendary 2.3: rarity
-  multiplies the stat instead of outvoting it), weights by the card's real asset name, weapon stats scaled by how
+- **Military training**: `1 + rarity x weight x 2` (Common 1, Rare 2, Endless 2.6, Legendary 3 - the cards' own
+  numbers go about 1 : 2 : 3 by rarity; up to 0.10.2 it was 1 / 1.6 / 2 / 2.3, and both times a logged run's player
+  overrode the mod it was a Legendary or Rare the mod had under a Common: rarity multiplies the stat instead of
+  outvoting it), weights by the card's real asset name, weapon stats scaled by how
   much of the squad's levels are weapons and ability stats likewise, XP / luck / pickup range by the clock, health
   / armor / regeneration by how much survival matters right now, +20 % when a selected build wants it.
 
