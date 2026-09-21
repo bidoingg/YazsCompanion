@@ -8,7 +8,12 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-20): **0.10.2 — the readout after the mod menu** (a follow-up to the performance pass, found in the
+Status (2026-09-20): **0.12.0 — extensions** (not released yet): other mods can add options of their own to the
+mod menu (a fourth tab, MODS, that exists only while one does) and lend build guides per survivor that stand next
+to the presets - see "Extensions (for other mods)". Nothing changes while no mod registers anything: the offline
+bench prints the same 772 lines before and after. Compiled, and the API driven through reflection against the built
+DLL outside the game; the MODS tab and lent builds have not been seen in the game yet.
+**0.10.2 — the readout after the mod menu** (a follow-up to the performance pass, found in the
 log of a full run: using the mod menu from the pause menu left the old readout behind under the HUD and brought the
 new one up with a search through every label in the scene, a 27 - 28 ms frame; now 4 ms, and nothing is left behind;
 nothing you see changes; see "What the mod costs").
@@ -92,6 +97,11 @@ game's own buttons, wired into their up / down navigation), or with **F10** (`[M
   canvas's geometry, so the text has exactly the pixels it will have in play (the caption says how many). It is
   rebuilt on every change, runs through sample plans so the gold change highlight and the settling to the idle
   opacity can be seen, and sits on a stand-in field with bright effects where the readout can be placed.
+- **MODS** (0.12.0) - only there while another mod has registered an option (see "Extensions (for other mods)"): a
+  header per mod, a sub-header per group, and under them the same left / right rows as on the other tabs. A list
+  longer than the tab scrolls with the focus and the mouse wheel. Builds another mod lends show up on the BUILDS
+  tab instead, tagged with that mod's title; with more than five cards the row keeps the cards readable and scrolls
+  with the focus. A survivor on Auto whose lender names a default reads `Auto: <build>` and the card says `VIA AUTO`.
 
 Every change is written as it is made (BepInEx saves the config file inside the setter; `builds.json` is written by
 `Builds`), the header says `SAVED - applies at once` for a moment (or `NOT SAVED` when the file could not be
@@ -623,6 +633,134 @@ Outside the mod: BepInEx's console window (`[Logging.Console] Enabled = true` in
 development PC) makes every log line of every plugin and of the game a synchronous console write; the packaged
 zip ships with it off.
 
+## Extensions (for other mods)
+
+Since 0.12.0 another BepInEx plugin can put options into the mod menu and lend build guides. The one public class
+is `YazsCompanion.Api.Extensions` (`Api/Extensions.cs`); its signatures use BCL types only, so it is called through
+reflection, without a reference to this DLL (a plugin that referenced it would not load where the Companion is
+missing). Nothing changes for anyone while nothing is registered.
+
+```csharp
+public static int  ApiVersion { get; }      // 1
+public static void RegisterOption(string owner, string group, string label, string description,
+                                  Func<string[]> choices, Func<int> get, Action<int> set);
+public static void RegisterBuildProvider(string owner, Func<string, string> buildPackPathForClass);
+public static void Unregister(string owner);
+```
+
+- **`RegisterOption`** adds a row to the **MODS** tab: `owner` is your mod's display name (the section header),
+  `group` a sub-header under it (may be empty), `description` the footer text while the row has the focus.
+  `choices()` is asked every time the row is drawn or changed, so the list may change at run time; `get()` is the
+  index shown; `set(index)` is called when the player changes the value - save it there. The menu then reads
+  `get()` again (for every MODS row: one option may move another) and shows `SAVED - applies at once`, or
+  `NOT SAVED` when `set` threw. The same owner + group + label again replaces the row in place.
+- **`RegisterBuildProvider`** lends builds. The function is asked with a survivor's name as `builds.json` has it -
+  `SWAT`, `Tank`, `Engineer`, `Huntress`, `Ghost` (the class the game's code calls Ninja), `Medic`, `Pyro`,
+  `Mechanic`, `Ranger` - and answers the full path of a build pack file, or `null` for "none right now". It is asked
+  whenever a survivor's build is resolved (an answer stands for one second: the ranking asks dozens of times per
+  offer) and every time the BUILDS tab is drawn or a MODS option changes, so the answer may change at run time.
+  Files are parsed once per path and write time. One provider per owner.
+- **`Unregister`** takes back everything the owner registered.
+- A call never throws back at you, and your callbacks may throw: each failure is caught and logged once (`[ext]`
+  lines; `[builds]` for the pack files). Registrations may come before or after the Companion's own `Load()`, while
+  the menu is open, from any thread. Declare the soft dependency below so that the Companion's assembly is loaded
+  before your `Load()` looks for it.
+
+```csharp
+[BepInPlugin("my.mod", "My Mod", "1.0.0")]
+[BepInDependency("bidoi.yazs.companion", BepInDependency.DependencyFlags.SoftDependency)]   // load after it, when it is there
+public class MyMod : BasePlugin
+{
+    static Type _companion;
+    bool Companion(string method, params object[] args)
+    {
+        try
+        {
+            if (_companion == null)
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                    if ((_companion = asm.GetType("YazsCompanion.Api.Extensions", false)) != null) break;
+            if (_companion == null) return false;                   // no Companion, or one older than 0.12.0
+            _companion.GetMethod(method).Invoke(null, args);
+            return true;
+        }
+        catch (Exception e) { Log.LogWarning("YAZS Companion: " + e.Message); return false; }
+    }
+
+    public override void Load()
+    {
+        var style = Config.Bind("Ghost", "BladeStyle", 0, "0 = Classic, 1 = Wind");
+        Companion("RegisterOption", "My Mod", "Ghost", "Blade style", "Which moveset the blade uses.",
+            (Func<string[]>)(() => new[] { "Classic", "Wind" }),
+            (Func<int>)(() => style.Value),
+            (Action<int>)(i => style.Value = i));                   // BepInEx saves inside the setter
+        string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        Companion("RegisterBuildProvider", "My Mod",
+            (Func<string, string>)(survivor => survivor == "Ghost" ? Path.Combine(dir, "ghost-builds.json") : null));
+    }
+}
+```
+
+**A build pack** is a JSON file for ONE survivor: `"builds"` holds the same objects as `"custom"` in `builds.json`
+(comments and trailing commas are fine), plus two optional keys:
+
+| key | |
+| --- | --- |
+| `title` | shown on the cards of these builds (where a preset says GUIDE PICK / ALTERNATIVE) and in the header over them; default: the owner |
+| `default` | the `id` or `name` of the build that **Auto** follows for this survivor while the pack is lent; without it Auto stays Auto |
+| `builds[].id` | your own id, used for `default` and kept in `builds.json` as `ext:<owner>:<id>` when the player selects the build |
+| `builds[].name`, `summary` | the card's title, and the footer text while the card has the focus |
+| `builds[].glyph` | card art, one of `crosshair bullets blast flame bolt snow flask blade turret shield cross paw gear magnet chevrons clock skull link coin heart hash radio eye diamond up` |
+| `builds[].style` | `Weapon` (every weapon level first), `Balanced` or `Ability` (abilities first) |
+| `builds[].branch` | the tier-2 weapon to take, by its English name; `""` = decided live |
+| `builds[].abilities` | priority order, the first is the ability to focus; abilities left out come after these |
+| `builds[].skip` | abilities the build does not want |
+| `builds[].evolution` | ability -> the evolution to take when both are offered (`"Kunai Dance: Microbombs"`, or just `"Microbombs"`); an ability left out is decided live |
+| `builds[].wants` | item leanings: `weapons abilities critical armor healing slow turret melee`, other `ItemRules` tags, damage types |
+
+Names are the game's English names, as in `Builds.Kits` (`Builds.cs`); they are checked against the survivor's kit
+when the file is read, and what does not fit is dropped and named in the log - a misspelt name would otherwise
+silently never match. For Ghost (weapon line Katana, Katana Splash, then Thousand Cuts OR Windcutter, then Soul
+Reaper; abilities Pulsar, Shuriken, Holo-bait, Kunai Dance):
+
+```json
+{
+  "title": "My Mod",
+  "default": "gale",
+  "builds": [
+    {
+      "id": "gale",
+      "name": "Gale",
+      "summary": "Weapon first: the katana line into Windcutter, Pulsar as the ability to focus.",
+      "glyph": "up",
+      "style": "Weapon",
+      "branch": "Windcutter",
+      "abilities": [ "Pulsar", "Shuriken", "Holo-bait", "Kunai Dance" ],
+      "skip": [],
+      "wants": [ "weapons", "critical", "Slashing" ],
+      "evolution": { "Pulsar": "Pulsar: Unstoppable" }
+    },
+    {
+      "id": "bomber",
+      "name": "Kunai Bomber",
+      "summary": "Abilities first: Kunai Dance to its last level, then Microbombs; the blade fills in.",
+      "glyph": "blast",
+      "style": "Ability",
+      "branch": "",
+      "abilities": [ "Kunai Dance", "Shuriken", "Pulsar", "Holo-bait" ],
+      "skip": [],
+      "wants": [ "abilities", "Explosive", "Slashing" ],
+      "evolution": { "Kunai Dance": "Kunai Dance: Microbombs" }
+    }
+  ]
+}
+```
+
+Lent builds are listed on the BUILDS tab after the presets, selected and saved like any of them, and followed
+through the same `Build` object as a preset - the ranking, the PLAN readout and the Training Yard advice have no
+code of their own for them. When the pack goes away (the provider answers `null`, or the mod unregisters) a
+survivor that followed one of its builds reads as Auto again, without a word; `builds.json` keeps the selection, so
+it is back in force when the pack returns. `[Debug] PreviewMenu` photographs the MODS tab too while there is one.
+
 ## How it hooks the game
 
 The game code is not obfuscated. The selection screens are `UIGameplayLevelUp`, `UIGameplayChestOpened`,
@@ -661,11 +799,12 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Ranker.cs                     the ranking rules: the build, the squad, the clock, the mode
     Context.cs                    the run context (mode, clock, pace, health), the player's doctrine, the timing curves (pure)
     Synergy.cs                    tag value of a level, team-passive boosts, evolution and branch fit (pure)
-    Builds.cs / BuildPresets.cs   the build model, the nine kits, builds.json; the presets and where each comes from (pure)
+    Builds.cs / BuildPresets.cs   the build model, the nine kits, builds.json, build packs lent by other mods; the presets and where each comes from (pure)
     Knowledge.cs                  guide-derived tiers, item pairs, scaling items, stat weights; knowledge.json
     ItemRules.cs                  the pure item score: exact squad fit, the clock, live tag points, pairs, build leanings
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
-    Menu.cs                       the mod menu: builds, editor, advice, display; its own focus and input; the COMPANION buttons
+    Menu.cs                       the mod menu: builds, editor, advice, display, other mods' options; its own focus and input; the COMPANION buttons
+    Api/Extensions.cs             the one public class: other mods register menu options and lend build packs (reflection-friendly)
     Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
     Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
     Perf.cs                       [Debug] Perf: times the mod's own sections and logs the sums once a minute
@@ -695,3 +834,6 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
    a test; check it on the Deck (the pad uses `GameMaster.GetButtonDown("UISubmit" / "Cancel" / "GoNextTab")`).
 4. Item tiers cover 59 of 136 items; the rest score on fit alone. Boss Rush's item pool mask is not understood yet.
 5. Later: a cycle key for the readout (hidden / compact / full), run history in-process, optional autoselect.
+6. 0.12.0's extension point has only been driven outside the game (reflection against the built DLL, the pack
+   parser in a console): see the MODS tab and a lent build with a real second plugin - four tabs in the header, the
+   rows with mouse / keyboard / controller, a list long enough to scroll, six or more build cards, `VIA AUTO`.

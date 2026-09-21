@@ -23,7 +23,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.11.0";
+        public const string VERSION = "0.12.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -161,6 +161,7 @@ namespace YazsCompanion
             var knowledge = Knowledge.Load(Path.Combine(PluginDir, "knowledge.json"));
             Builds.Logger = s => Logger.LogInfo("[builds] " + s);
             Builds.Load(Path.Combine(PluginDir, "builds.json"));
+            Api.Extensions.Attach();        // another mod may have registered options or a build provider before this Load() ran
 
             var harmony = new Harmony(GUID);
             harmony.PatchAll(typeof(Plugin).Assembly);

@@ -1,7 +1,8 @@
 // The mod menu: BUILDS (the build the advice follows per survivor, with an editor for your own), ADVICE (the standing
 // orders of the ranking: level-up style, the run clock, the game mode, squad synergy, what the run is for, caution,
-// tags, recruiting) and DISPLAY (what the mod draws). Opened from a COMPANION button the mod adds to the main menu
-// and the pause menu, or with a key (F10). Mouse, keyboard and controller.
+// tags, recruiting) and DISPLAY (what the mod draws) - and MODS, a fourth tab that exists only while another mod
+// has registered an option (Api\Extensions.cs): its rows are the same rows, under a header per mod. Opened from a
+// COMPANION button the mod adds to the main menu and the pause menu, or with a key (F10). Mouse, keyboard and controller.
 //
 // It lives on its own overlay canvas and runs its own focus: input is polled once a frame (the mouse by hit-testing
 // its controls, the keyboard through Unity's legacy input, the controller through the game's own Rewired wrapper,
@@ -26,19 +27,33 @@ namespace YazsCompanion
     internal static class Menu
     {
         const float W = 3840f, H = 2160f;
-        static readonly string[] Tabs = { "BUILDS", "ADVICE", "DISPLAY" };
-        static readonly string[] TabGlyphs = { "chevrons", "clock", "eye" };
+        static readonly string[] Tabs = { "BUILDS", "ADVICE", "DISPLAY", "MODS" };          // MODS only while another mod has an option registered
+        static readonly string[] TabGlyphs = { "chevrons", "clock", "eye", "link" };
 
         sealed class Ctl
         {
             public string Key; public RectTransform Rt; public Image Bg; public RectTransform Glow;
             public Func<string> Desc; public Action Press; public Action<int> Change; public Action Focused;
             public RectTransform Left, Right;
+            public Scroller In; public float Lead;      // the clipped area it lives in, if any (it is only under the mouse where that shows it), and the height of the headers over it
+            public Action Refresh;          // read the shown value again (a row whose value another row's change may have moved)
+        }
+
+        /// <summary>A clipped area whose content follows the focus: the rows of the MODS tab (down), the cards of the BUILDS
+        /// tab once other mods lend builds and they no longer fit side by side (across).</summary>
+        sealed class Scroller
+        {
+            public string Key; public RectTransform View, Content, Before, After; public bool Across;
+            public float Size, Extent, Pos, Inset;       // the view's length, the content's, how far it is scrolled, the content's margin inside the view
+            public float Max { get { return Mathf.Max(0f, Extent - Size); } }
         }
 
         static GameObject _go; static RectTransform _stage, _body; static CanvasGroup _group, _bodyGroup;
-        static TextMeshProUGUI _template, _desc, _hints; static readonly TextMeshProUGUI[] _tabLabels = new TextMeshProUGUI[3];
-        static RectTransform _tabRule;
+        static TextMeshProUGUI _template, _desc, _hints; static readonly TextMeshProUGUI[] _tabLabels = new TextMeshProUGUI[4];
+        static RectTransform _tabRule, _tabBar; static int _tabCount = 3, _extSeen = -1;
+        static readonly List<Scroller> _scrolls = new List<Scroller>();
+        static readonly Dictionary<string, float> _scrollPos = new Dictionary<string, float>();      // where each area stood: the body is rebuilt on every change
+        static bool _building;
         static readonly List<Ctl> _ctls = new List<Ctl>(); static Ctl _focus; static string _focusKey = "";
         static bool _open, _dirty, _editing; static int _tab, _survivor, _blockFrame = -1;
         static GameObject _restoreSelected;
@@ -164,7 +179,8 @@ namespace YazsCompanion
             _open = false; _viaSearch = false; _blockFrame = Time.frameCount + 1;
             Fx.Cancel("menu");
             try { if (_go != null) UnityEngine.Object.Destroy(_go); } catch { }
-            _go = null; _stage = null; _body = null; _ctls.Clear(); _focus = null; _saved = null; _pvWindow = null; _pvCaption = null;
+            _go = null; _stage = null; _body = null; _ctls.Clear(); _scrolls.Clear(); _focus = null; _saved = null; _pvWindow = null; _pvCaption = null;
+            _tabBar = null; _tabRule = null;
             try
             {
                 var es = UnityEngine.EventSystems.EventSystem.current;
@@ -192,6 +208,12 @@ namespace YazsCompanion
                 }
                 if (_go == null || (MainMenu() == null && PauseMenu() == null)) { Close(); return; }      // the scene changed under us
                 try { var es = UnityEngine.EventSystems.EventSystem.current; if (es != null && es.currentSelectedGameObject != null) es.SetSelectedGameObject(null); } catch { }
+                if (_extSeen != Api.Extensions.Version)
+                {   // another mod registered or took back something while the menu is open: the MODS tab comes, changes or goes
+                    _extSeen = Api.Extensions.Version; BuildTabs();
+                    if (_tab >= _tabCount) { _tab = 0; _focusKey = ""; }
+                    _dirty = true;
+                }
                 if (_dirty) { _dirty = false; BuildBody(); }
                 ReadInput();
                 if (_dirty && _open) { _dirty = false; BuildBody(); }
@@ -202,12 +224,12 @@ namespace YazsCompanion
 
         /// <summary>A setting was written (BepInEx saves the file inside the setter; builds.json is written by Builds): say so
         /// in the header for a moment. Called from the config's SettingChanged and after every change to the builds.</summary>
-        internal static void SettingSaved(bool written)
+        internal static void SettingSaved(bool written, string why = null)
         {
             if (!_open || _saved == null) return;
             try
             {
-                _saved.text = written ? "SAVED  <color=" + Theme.DimHex + ">-  applies at once</color>" : "NOT SAVED  <color=" + Theme.DimHex + ">-  the file could not be written</color>";
+                _saved.text = written ? "SAVED  <color=" + Theme.DimHex + ">-  applies at once</color>" : "NOT SAVED  <color=" + Theme.DimHex + ">-  " + (why ?? "the file could not be written") + "</color>";
                 _saved.color = written ? Theme.GoldText : Theme.Rust;
                 var label = _saved;
                 Fx.Cancel("menu.saved");
@@ -317,12 +339,13 @@ namespace YazsCompanion
             bool fire = (x != 0 || y != 0) && (fresh || now >= _repeatAt);
             if (fire && !fresh) _repeatAt = now + 0.11f;
 
-            if (Pad("GoNextTab") || Pad("GoNextTab2") || Key(KeyCode.E) || Key(KeyCode.PageDown)) { SetTab((_tab + 1) % Tabs.Length); return; }
-            if (Pad("GoPrevTab") || Pad("GoPrevTab2") || Key(KeyCode.Q) || Key(KeyCode.PageUp)) { SetTab((_tab + Tabs.Length - 1) % Tabs.Length); return; }
+            if (Pad("GoNextTab") || Pad("GoNextTab2") || Key(KeyCode.E) || Key(KeyCode.PageDown)) { SetTab((_tab + 1) % _tabCount); return; }
+            if (Pad("GoPrevTab") || Pad("GoPrevTab2") || Key(KeyCode.Q) || Key(KeyCode.PageUp)) { SetTab((_tab + _tabCount - 1) % _tabCount); return; }
             if (Pad("Cancel") || Key(KeyCode.Escape) || Key(KeyCode.Backspace)) { Back(); return; }
 
             bool mouseDown = Mouse();
             if (!_open) return;
+            if (_scrolls.Count > 0) { float wheel = Wheel(); if (wheel != 0f) WheelScroll(wheel); }
             if (fire)
             {
                 if (y != 0) Move(0, y);
@@ -349,10 +372,10 @@ namespace YazsCompanion
             bool down = false; try { down = UnityEngine.Input.GetMouseButtonDown(0); } catch { }
             if (!moved && !down) return false;
             var p = new Vector2(mp.x, mp.y);
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < _tabCount; i++)
                 if (down && _tabLabels[i] != null && Hit(_tabLabels[i].rectTransform, p)) { SetTab(i); return true; }
             Ctl over = null;
-            foreach (var c in _ctls) if (c.Rt != null && Hit(c.Rt, p)) { over = c; break; }
+            foreach (var c in _ctls) if (c.Rt != null && Hit(c.Rt, p) && (c.In == null || Hit(c.In.View, p))) { over = c; break; }
             if (over == null) return down;
             if (over != _focus) Focus(over, true);
             if (!down) return false;
@@ -423,6 +446,7 @@ namespace YazsCompanion
                 if (img != null) Fx.Loop("menu.glow", 1.8f, k => { img.color = new Color(1f, 0.93f, 0.7f, 0.62f + 0.3f * Mathf.Sin(k * Mathf.PI * 2f)); });
             }
             SetDesc(c.Desc != null ? c.Desc() : "");
+            if (!byMouse) Reveal(c);        // the mouse focuses what it can see; the wheel scrolls for it
             if (c.Focused != null) c.Focused();
         }
 
@@ -521,6 +545,7 @@ namespace YazsCompanion
             c.Right = Arrow(c.Rt, vx + valueW - 70f, (h - 56f) / 2f, 56f, true);
             var val = Text(c.Rt, "Value", vx + 80f, 0, valueW - 160f, h, 46f, Theme.GoldText, value(), TextAlignmentOptions.Center, true);
             c.Change = d => { change(d); if (val != null) val.text = value(); SetDesc(desc()); };
+            c.Refresh = () => { if (val != null) val.text = value(); };
             c.Desc = desc;
             return c;
         }
@@ -533,6 +558,70 @@ namespace YazsCompanion
             Text(c.Rt, "Label", tx, 0, tw, h, 46f, Theme.White, label, glyph != null ? TextAlignmentOptions.Left : TextAlignmentOptions.Center, true);
             c.Press = press; c.Desc = desc;
             return c;
+        }
+
+        // ================================================================ clipped areas that follow the focus
+        // Controls are placed on Content as anywhere else (Place), say which area they are in (Ctl.In), and the rest
+        // follows: the focus moving onto a control that is not fully shown brings it into view, the mouse only works
+        // a control where the area shows it, the wheel scrolls the area under the pointer, and a small gold arrow
+        // outside the area says on which side there is more. Where an area stood outlives the rebuild of the body.
+        static Scroller Scroll(string key, float x, float y, float w, float h, bool across, float inset)
+        {
+            var s = new Scroller { Key = key, Across = across, Inset = inset, Size = across ? w : h };
+            s.View = Place(Ui.NewRect("View:" + key, _body), x - inset, y - inset, w + 2f * inset, h + 2f * inset);     // the inset keeps the focus glow of a control at the edge whole
+            s.View.gameObject.AddComponent(Il2CppType.Of<RectMask2D>());
+            s.Content = Place(Ui.NewRect("Content", s.View), inset, inset, w, h);
+            s.Before = across ? Pointer(_body, x + w - 124f, y - 78f, 52f, 90f) : Pointer(_body, x + w + inset + 12f, y, 52f, 0f);
+            s.After = across ? Pointer(_body, x + w - 56f, y - 78f, 52f, -90f) : Pointer(_body, x + w + inset + 12f, y + h - 52f, 52f, 180f);
+            _scrolls.Add(s);
+            return s;
+        }
+
+        static RectTransform Pointer(RectTransform parent, float x, float y, float size, float degrees)
+        {
+            var rt = Pic(parent, "More", x, y, size, size, Art.Glyph("up"), Theme.Gold);
+            rt.pivot = new Vector2(0.5f, 0.5f); rt.anchoredPosition = new Vector2(x + size / 2f, -(y + size / 2f));
+            rt.localRotation = Quaternion.Euler(0, 0, degrees);
+            return rt;
+        }
+
+        /// <summary>The content is laid out: this is how long it is. Back to where the area stood before the rebuild.</summary>
+        static void Settle(Scroller s, float extent)
+        {
+            s.Extent = extent; float pos; _scrollPos.TryGetValue(s.Key, out pos);
+            ScrollTo(s, pos, false);
+        }
+
+        static void ScrollTo(Scroller s, float pos, bool glide)
+        {
+            pos = Mathf.Clamp(pos, 0f, s.Max); s.Pos = pos; _scrollPos[s.Key] = pos;
+            try { s.Before.gameObject.SetActive(pos > 1f); s.After.gameObject.SetActive(pos < s.Max - 1f); } catch { }
+            Fx.Cancel("menu.scroll");
+            var content = s.Content; bool across = s.Across; float inset = s.Inset;
+            float from = across ? inset - content.anchoredPosition.x : content.anchoredPosition.y + inset;      // where it is on screen: a glide cut short starts from there
+            Action<float> put = p => { content.anchoredPosition = across ? new Vector2(inset - p, -inset) : new Vector2(inset, p - inset); };
+            if (!glide || Mathf.Abs(from - pos) < 1f) { put(pos); return; }
+            Fx.Run("menu.scroll", 0f, 0.16f, k => put(Mathf.Lerp(from, pos, Fx.OutCubic(k))));
+        }
+
+        /// <summary>Bring a control of a clipped area fully into view, with the headers that stand over it (Ctl.Lead).</summary>
+        static void Reveal(Ctl c)
+        {
+            var s = c == null ? null : c.In;
+            if (s == null || c.Rt == null) return;
+            float start = s.Across ? c.Rt.anchoredPosition.x : -c.Rt.anchoredPosition.y, len = s.Across ? c.Rt.sizeDelta.x : c.Rt.sizeDelta.y;
+            float pos = s.Pos;
+            if (start + len > pos + s.Size) pos = start + len - s.Size;
+            if (start - c.Lead < pos) pos = start - c.Lead;
+            if (Mathf.Abs(pos - s.Pos) >= 1f) ScrollTo(s, pos, !_building);
+        }
+
+        static float Wheel() { try { return UnityEngine.Input.mouseScrollDelta.y; } catch (Exception e) { InputError("Input.mouseScrollDelta", e); return 0f; } }
+
+        static void WheelScroll(float wheel)
+        {
+            var p = new Vector2(_lastMouse.x, _lastMouse.y);
+            foreach (var s in _scrolls) if (s.Max > 0f && Hit(s.View, p)) { ScrollTo(s, s.Pos - wheel * 150f, true); return; }
         }
 
         // ================================================================ the shell: backdrop, header, tabs, footer
@@ -568,13 +657,8 @@ namespace YazsCompanion
             crest.pivot = new Vector2(0.5f, 0.5f); crest.anchoredPosition = new Vector2(250, -166);
             Text(_stage, "Title", 410, 66, 1500, 110, 96f, Theme.White, "<color=" + Theme.GoldHex + ">YAZS</color> COMPANION", TextAlignmentOptions.Left, true);
             Text(_stage, "Sub", 414, 182, 1500, 60, 42f, Theme.Grey, "v" + Plugin.VERSION + "   -   builds, advice and display", TextAlignmentOptions.Left);
-            float tx = 2050f;
-            for (int i = 0; i < Tabs.Length; i++)
-            {
-                Pic(_stage, "TabIcon" + i, tx + i * 560f, 112f, 64f, 64f, Art.Glyph(TabGlyphs[i]), Theme.Gold);
-                _tabLabels[i] = Text(_stage, "Tab" + i, tx + i * 560f + 84f, 96f, 440f, 96f, 60f, Theme.Grey, Tabs[i], TextAlignmentOptions.Left, true);
-            }
-            _tabRule = Box(_stage, "TabRule", tx, 204f, 420f, 8f, Theme.Gold);
+            _tabBar = Place(Ui.NewRect("Tabs", _stage), 0, 0, W, H);
+            BuildTabs();
             _saved = Text(_stage, "Saved", 2520f, 238f, 1200f, 60f, 38f, Theme.GoldText, "", TextAlignmentOptions.Right, true);
             if (_saved != null) _saved.alpha = 0f;
             var rule = Ui.FadeRule(_stage, "HeaderRule", Theme.GoldLine); Place(rule, 120, 312, W - 240, 4);
@@ -589,6 +673,28 @@ namespace YazsCompanion
 
             _body = Ui.NewRect("Body", _stage); Place(_body, 0, 0, W, H);
             _bodyGroup = _body.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>();
+        }
+
+        // Three tabs, where they always stood. While another mod has an option registered there is a fourth, MODS, and
+        // the four are set closer so they still end at the right margin. Rebuilt when that changes under an open menu.
+        static float TabX(int i) { return _tabCount > 3 ? 1930f + i * 450f : 2050f + i * 560f; }
+        static float TabRuleWidth { get { return _tabCount > 3 ? 330f : 420f; } }
+
+        static void BuildTabs()
+        {
+            if (_tabBar == null) return;
+            Fx.Cancel("menu.tab");
+            for (int i = _tabBar.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(_tabBar.GetChild(i).gameObject);
+            for (int i = 0; i < _tabLabels.Length; i++) _tabLabels[i] = null;
+            bool mods = false; try { mods = Api.Extensions.HasOptions; _extSeen = Api.Extensions.Version; } catch { }
+            _tabCount = mods ? 4 : 3;
+            if (_tab >= _tabCount) { _tab = 0; _focusKey = ""; }
+            for (int i = 0; i < _tabCount; i++)
+            {
+                Pic(_tabBar, "TabIcon" + i, TabX(i), 112f, 64f, 64f, Art.Glyph(TabGlyphs[i]), Theme.Gold);
+                _tabLabels[i] = Text(_tabBar, "Tab" + i, TabX(i) + 84f, 96f, (mods ? 450f : 560f) - 120f, 96f, 60f, i == _tab ? Theme.GoldText : Theme.Grey, Tabs[i], TextAlignmentOptions.Left, true);
+            }
+            _tabRule = Box(_tabBar, "TabRule", TabX(_open ? _tab : 0), 204f, TabRuleWidth, 8f, Theme.Gold);      // a menu that opens slides it to its tab
         }
 
         static void Intro()
@@ -614,17 +720,20 @@ namespace YazsCompanion
             if (Panel.Previewing) Panel.PreviewEnd();           // the readout in the DISPLAY tab's window goes with the body
             _pvWindow = null; _pvCaption = null;
             for (int i = _body.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(_body.GetChild(i).gameObject);
-            _ctls.Clear(); _focus = null;
-            for (int i = 0; i < Tabs.Length; i++) if (_tabLabels[i] != null) _tabLabels[i].color = i == _tab ? Theme.GoldText : Theme.Grey;
-            if (_tabRule != null) { float to = 2050f + _tab * 560f, from = _tabRule.anchoredPosition.x; Fx.Run("menu.tab", 0f, 0.22f, k => { _tabRule.anchoredPosition = new Vector2(Mathf.Lerp(from, to, Fx.OutCubic(k)), -204f); }); }
+            _ctls.Clear(); _scrolls.Clear(); _focus = null; Fx.Cancel("menu.scroll");
+            if (_tab >= _tabCount) _tab = 0;
+            for (int i = 0; i < _tabCount; i++) if (_tabLabels[i] != null) _tabLabels[i].color = i == _tab ? Theme.GoldText : Theme.Grey;
+            if (_tabRule != null) { var tabRule = _tabRule; float to = TabX(_tab), from = tabRule.anchoredPosition.x; Fx.Cancel("menu.tab"); Fx.Run("menu.tab", 0f, 0.22f, k => { tabRule.anchoredPosition = new Vector2(Mathf.Lerp(from, to, Fx.OutCubic(k)), -204f); }); }
 
             if (_tab == 0) { if (_editing) BuildEditor(); else BuildBuilds(); }
             else if (_tab == 1) BuildAdvice();
-            else BuildDisplay();
+            else if (_tab == 2) BuildDisplay();
+            else BuildMods();
             Hints();
 
             Ctl want = _ctls.FirstOrDefault(c => c.Key == _focusKey) ?? _ctls.FirstOrDefault();
-            if (want != null) Focus(want, false);
+            _building = true;           // an area that has to scroll to the control in focus is simply there, it does not travel
+            try { if (want != null) Focus(want, false); } finally { _building = false; }
             if (_bodyGroup != null) Fx.Run("menu.body", 0f, 0.2f, k => { _bodyGroup.alpha = Fx.OutCubic(k); _body.anchoredPosition = new Vector2(0f, -18f * (1f - Fx.OutCubic(k))); });
         }
 
@@ -634,6 +743,7 @@ namespace YazsCompanion
 
         static void BuildBuilds()
         {
+            Builds.ForgetPacks();       // builds other mods lend: what is listed is what their providers say as this is drawn
             // ---- the nine survivors
             for (int i = 0; i < Builds.Survivors.Length; i++)
             {
@@ -645,9 +755,14 @@ namespace YazsCompanion
                 else Pic(c.Rt, "Portrait", 40, 30, 90, 90, Art.Glyph("diamond"), Theme.Gold);
                 bool unlocked; if (!_unlocked.TryGetValue(sv, out unlocked)) unlocked = true;
                 Text(c.Rt, "Name", 170, 16, 570, 70, 56f, unlocked ? Theme.White : Theme.Grey, sv.ToUpperInvariant(), TextAlignmentOptions.Left, true);
-                var b = Builds.For(sv);
-                Text(c.Rt, "Build", 172, 84, 570, 54, 40f, b != null ? Theme.GoldText : Theme.Grey, b != null ? b.Name : "Auto", TextAlignmentOptions.Left);
-                c.Desc = () => sv + (unlocked ? "" : " (not unlocked yet)") + ": " + (Builds.For(sv) != null ? "following " + Builds.For(sv).Name + ". " : "on Auto - the advice reads your squad. ") + "Move right to choose a build.";
+                var b = Builds.For(sv); bool lent = b != null && Builds.OnAuto(sv);        // on Auto, and a build pack of another mod says what Auto follows
+                Text(c.Rt, "Build", 172, 84, 570, 54, 40f, b != null ? Theme.GoldText : Theme.Grey, b == null ? "Auto" : lent ? "Auto: " + b.Name : b.Name, TextAlignmentOptions.Left);
+                c.Desc = () =>
+                {
+                    var f = Builds.For(sv);
+                    return sv + (unlocked ? "" : " (not unlocked yet)") + ": " + (f == null ? "on Auto - the advice reads your squad. "
+                        : Builds.OnAuto(sv) ? "on Auto, which follows " + f.Name + " while " + f.Pack + " lends its builds. " : "following " + f.Name + ". ") + "Move right to choose a build.";
+                };
                 c.Focused = () => { if (_survivor != index) { _survivor = index; _dirty = true; } };
                 c.Press = () => Move(1, 0);
             }
@@ -655,19 +770,31 @@ namespace YazsCompanion
             // ---- the builds of the survivor in focus
             string who = Builds.Survivors[_survivor];
             var choices = Builds.ChoicesOf(who);
-            string selected = Builds.SelectedId(who);
+            // a selection that points into a build pack which is not there right now reads as Auto; and Auto follows the
+            // default of a pack that is there, if it names one
+            bool onAuto = Builds.OnAuto(who); string selected = onAuto ? Builds.AutoId : Builds.SelectedId(who);
+            var viaAuto = onAuto ? Builds.AutoOf(who) : null;
             int n = choices.Count + 1; float gap = 26f, area = 2760f, cw = Mathf.Min(700f, (area - (n - 1) * gap) / n), x0 = 940f, y0 = 352f, ch = 1230f;
-            Text(_body, "Who", x0, y0 - 2f, 2000, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + who.ToUpperInvariant() + "</color>   the build the advice follows", TextAlignmentOptions.Left, true);
+            var lenders = choices.Where(b => b.Pack.Length > 0).Select(b => b.Pack).Distinct().ToList();
+            Text(_body, "Who", x0, y0 - 2f, 2000, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + who.ToUpperInvariant() + "</color>   the build the advice follows"
+                + (lenders.Count > 0 ? "   <color=" + Theme.DimHex + ">+ builds from " + string.Join(", ", lenders) + "</color>" : ""), TextAlignmentOptions.Left, true);
             y0 += 84f;
+            // Auto, the presets and your own build fit side by side (five cards at most). With builds lent by other mods
+            // there can be more: the cards keep a readable width and the row scrolls with the focus, the next card peeking in
+            Scroller row = null;
+            if (cw < 531f) { cw = 560f; row = Scroll("builds:" + who, x0, y0, area, ch, true, 40f); }
             for (int i = 0; i < n; i++)
             {
                 Build b = i == 0 ? null : choices[i - 1];
                 string id = b == null ? Builds.AutoId : b.Id;
                 bool active = string.Equals(id, selected, StringComparison.OrdinalIgnoreCase);
-                var c = Plate(_body, "build:" + id, x0 + i * (cw + gap), y0, cw, ch, active ? new Color(1f, 0.93f, 0.74f, 1f) : new Color(1f, 1f, 1f, 0.82f));
-                BuildCard(c, who, b, cw, active);
+                bool followed = active || (viaAuto != null && b != null && string.Equals(b.Id, viaAuto.Id, StringComparison.OrdinalIgnoreCase));
+                var c = Plate(row != null ? row.Content : _body, "build:" + id, (row != null ? 0f : x0) + i * (cw + gap), row != null ? 0f : y0, cw, ch, followed ? new Color(1f, 0.93f, 0.74f, 1f) : new Color(1f, 1f, 1f, 0.82f));
+                c.In = row;
+                BuildCard(c, who, b, cw, active, viaAuto);
                 c.Press = () => { Builds.Select(who, id); SettingSaved(Builds.LastSaveOk); _focusKey = "build:" + id; _dirty = true; Plugin.Logger.LogInfo("[menu] " + who + " follows " + (b == null ? "Auto" : b.Name) + (Builds.LastSaveOk ? " (saved)" : " (builds.json was NOT written)")); };
             }
+            if (row != null) Settle(row, n * (cw + gap) - gap);
 
             // ---- your own build
             var custom = Builds.CustomOf(who); float by = y0 + ch + 30f;
@@ -698,17 +825,19 @@ namespace YazsCompanion
             Ui.Frame(frame, "Edge", 0, 3, Theme.GoldRule, 0);
         }
 
-        static void BuildCard(Ctl c, string who, Build b, float cw, bool active)
+        // viaAuto: the survivor is on Auto and a build pack of another mod names this build as what Auto follows
+        static void BuildCard(Ctl c, string who, Build b, float cw, bool active, Build viaAuto = null)
         {
+            bool lentAuto = viaAuto != null && b != null && string.Equals(b.Id, viaAuto.Id, StringComparison.OrdinalIgnoreCase);
             var rt = c.Rt; float pad = 30f, inner = cw - 2 * pad;
             Pic(rt, "Glyph", pad, 30, 116, 116, Art.Glyph(b == null ? "chevrons" : string.IsNullOrEmpty(b.Glyph) ? "diamond" : b.Glyph), Theme.Gold);
             Text(rt, "Name", pad + 136, 30, inner - 136, 70, 54f, Theme.White, b == null ? "Auto" : b.Name, TextAlignmentOptions.Left, true);
-            string tag = b == null ? "READS YOUR SQUAD" : b.Custom ? "YOUR BUILD" : b.Source == "guides" ? "GUIDE PICK" : "ALTERNATIVE";
+            string tag = b == null ? (viaAuto != null ? "NOW: " + viaAuto.Name.ToUpperInvariant() : "READS YOUR SQUAD") : b.Custom ? "YOUR BUILD" : b.Pack.Length > 0 ? b.Pack.ToUpperInvariant() : b.Source == "guides" ? "GUIDE PICK" : "ALTERNATIVE";
             Text(rt, "Tag", pad + 138, 100, inner - 136, 48, 34f, b != null && b.Source == "guides" ? Theme.GoldText : Theme.Grey, tag, TextAlignmentOptions.Left, true);
-            if (active)
+            if (active || lentAuto)
             {
                 var rib = Box(rt, "Active", cw - 250, -18, 232, 50, Theme.Gold);
-                Text(rib, "T", 0, 0, 232, 50, 32f, new Color(0.08f, 0.06f, 0.03f, 1f), "FOLLOWING", TextAlignmentOptions.Center, true);
+                Text(rib, "T", 0, 0, 232, 50, 32f, new Color(0.08f, 0.06f, 0.03f, 1f), active ? "FOLLOWING" : "VIA AUTO", TextAlignmentOptions.Center, true);
             }
             Box(rt, "Rule", pad, 172, inner, 3, Theme.GoldRule);
 
@@ -751,8 +880,9 @@ namespace YazsCompanion
             if (b != null && b.Wants.Count > 0) Text(rt, "Wants", pad, 1070, inner, 140, 34f, Theme.Grey, "<color=" + Theme.DimHex + ">ITEMS  </color>" + string.Join(" · ", b.Wants.Take(5)).ToLowerInvariant(), TextAlignmentOptions.TopLeft, false, true);
 
             c.Desc = () => b == null
-                ? "AUTO. No fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab."
-                : b.Summary + (active ? "" : "   [select to follow it]");
+                ? (viaAuto != null ? "AUTO - while " + viaAuto.Pack + " lends its builds, Auto follows its " + viaAuto.Name + "; select any card to follow that instead. Otherwise: no" : "AUTO. No")
+                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab."
+                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + b.Summary + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]");
         }
 
         // ---------------------------------------------------------------- the editor of your own build
@@ -923,6 +1053,49 @@ namespace YazsCompanion
             Ui.Frame(Place(Ui.NewRect("Edge", _body), wx, top, ww, wh), "Line", 0, 3, Theme.GoldRule, 18f);
             _pvCaption = Text(_body, "PreviewCaption", wx, top + wh + 18f, ww, 96f, 42f, Theme.Grey, "", TextAlignmentOptions.TopLeft, false, true);
             _pvWindow = host; _pvDirty = true;
+        }
+
+        // ---------------------------------------------------------------- MODS: the options other mods registered (Api\Extensions.cs)
+        // A header per mod, a sub-header per group, and under them the same rows as on the other tabs: the value comes
+        // from the mod's get(), left / right hands the next index to its set(), and the row reads get() again. The
+        // callbacks are another mod's code: Api.Extensions catches what they throw. A list longer than the tab scrolls
+        // with the focus (and the wheel).
+        static void BuildMods()
+        {
+            var options = Api.Extensions.Options();         // a copy: registrations come and go on their own time
+            float x = 320f, w = 3200f, y0 = 360f, rh = 124f, step = 140f, vw = 1300f;
+            Text(_body, "Lead", x, y0, w, 60, 44f, Theme.Grey, "What other mods have added to this menu. Each of them keeps and saves its own settings; a change is handed over as you make it.", TextAlignmentOptions.Left);
+            float top = y0 + 110f;
+            var area = Scroll("mods", x, top, w, 1800f - top, false, 40f);
+            float y = 0f; string owner = null, group = null;
+            foreach (var option in options)
+            {
+                var o = option; float head = y;
+                if (o.Owner != owner)
+                {
+                    owner = o.Owner; group = null;
+                    if (y > 0f) { y += 36f; head = y; }
+                    Text(area.Content, "Owner", 0, y, w, 78, 50f, Theme.GoldText, owner.ToUpperInvariant(), TextAlignmentOptions.Left, true);
+                    Box(area.Content, "OwnerRule", 0, y + 82f, w, 3f, Theme.GoldRule);
+                    y += 104f;
+                }
+                if (o.Group != group)
+                {
+                    group = o.Group;
+                    if (group.Length > 0) { Text(area.Content, "Group", 8, y, w, 60, 38f, Theme.Grey, group.ToUpperInvariant(), TextAlignmentOptions.Left, true); y += 66f; }
+                }
+                var c = Cycler(area.Content, "mod:" + o.Key, 0, y, w, rh, o.Label, null, () => Api.Extensions.ValueOf(o),
+                    d =>
+                    {
+                        if (Api.Extensions.ChoicesOf(o).Length == 0) return;        // nothing to choose from right now
+                        SettingSaved(Api.Extensions.Step(o, d), o.Owner + " did not take the change");
+                        foreach (var k in _ctls) if (k.Refresh != null && k.Key.StartsWith("mod:", StringComparison.Ordinal)) k.Refresh();      // one option may move another, and its choices
+                    },
+                    () => o.Description.Length > 0 ? o.Description : "An option of " + o.Owner + ".", vw);
+                c.In = area; c.Lead = y - head;
+                y += step;
+            }
+            Settle(area, Mathf.Max(0f, y - (step - rh)));
         }
 
         // ================================================================ the game's own art: portraits, weapon and ability icons
@@ -1252,7 +1425,9 @@ namespace YazsCompanion
                         Builds.DropCustom("Tank"); SetTab(1); _focusKey = "ad:timing"; _dirty = true;
                         Shots.Later(0.9f, "menu4_advice", true); _pvAt = now + 1.5f; _pvStage = 6; return;
                     case 6:
-                        SetTab(2); Shots.Later(0.9f, "menu5_display", true); _pvAt = now + 1.5f; _pvStage = 7; return;
+                        SetTab(2); Shots.Later(0.9f, "menu5_display", true); _pvAt = now + 1.5f; _pvStage = _tabCount > 3 ? 61 : 7; return;
+                    case 61:    // only while another mod has options registered
+                        SetTab(3); Shots.Later(0.9f, "menu6_mods", true); _pvAt = now + 1.5f; _pvStage = 7; return;
                     case 7:
                         Close(); Preview.Restore(); _pvAt = now + 1.5f; _pvStage = 8; return;
                     default:
