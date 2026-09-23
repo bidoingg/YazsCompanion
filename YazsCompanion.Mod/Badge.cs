@@ -47,7 +47,7 @@ namespace YazsCompanion
                 if (reason != null)
                 {
                     string prefix = best ? "" : "<b>" + (c.Rank < Ordinal.Length ? Ordinal[c.Rank] : "#" + c.Rank) + "</b>   ";
-                    reason.text = prefix + Clean(c.Reason);
+                    reason.text = prefix + Clean(Names.Text(c.Reason));      // the rules' words; a name another mod lends in place of the game's
                     reason.color = best ? Theme.Cream : (c.Score < 1 ? Theme.Rust : Theme.Grey);
                     reason.gameObject.SetActive(true);
                 }

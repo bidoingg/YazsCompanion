@@ -740,6 +740,11 @@ namespace YazsCompanion
         // ---------------------------------------------------------------- BUILDS
         static string StyleText(BuildStyle s) { return s == BuildStyle.Weapon ? "Weapon first" : s == BuildStyle.Ability ? "Abilities first" : "Balanced"; }
         static string Short(string evolution) { int i = evolution == null ? -1 : evolution.IndexOf(':'); return i >= 0 ? evolution.Substring(i + 1).Trim() : evolution ?? ""; }
+        // what the tab SHOWS for a survivor, a weapon or an ability, an evolution: the name another mod lends, else the
+        // game's (Names.cs). The builds, their keys and every comparison keep the game's names.
+        static string Who(string survivor) { return Names.Class(survivor); }
+        static string Say(string name) { return Names.Name(name); }
+        static string Evo(string evolution) { return Short(Names.Name(evolution)); }
 
         static void BuildBuilds()
         {
@@ -754,13 +759,13 @@ namespace YazsCompanion
                 if (p != null) Portrait(c.Rt, 22, 12, 126, p, unlocked0(sv));
                 else Pic(c.Rt, "Portrait", 40, 30, 90, 90, Art.Glyph("diamond"), Theme.Gold);
                 bool unlocked; if (!_unlocked.TryGetValue(sv, out unlocked)) unlocked = true;
-                Text(c.Rt, "Name", 170, 16, 570, 70, 56f, unlocked ? Theme.White : Theme.Grey, sv.ToUpperInvariant(), TextAlignmentOptions.Left, true);
+                Text(c.Rt, "Name", 170, 16, 570, 70, 56f, unlocked ? Theme.White : Theme.Grey, Who(sv).ToUpperInvariant(), TextAlignmentOptions.Left, true);
                 var b = Builds.For(sv); bool lent = b != null && Builds.OnAuto(sv);        // on Auto, and a build pack of another mod says what Auto follows
                 Text(c.Rt, "Build", 172, 84, 570, 54, 40f, b != null ? Theme.GoldText : Theme.Grey, b == null ? "Auto" : lent ? "Auto: " + b.Name : b.Name, TextAlignmentOptions.Left);
                 c.Desc = () =>
                 {
                     var f = Builds.For(sv);
-                    return sv + (unlocked ? "" : " (not unlocked yet)") + ": " + (f == null ? "on Auto - the advice reads your squad. "
+                    return Who(sv) + (unlocked ? "" : " (not unlocked yet)") + ": " + (f == null ? "on Auto - the advice reads your squad. "
                         : Builds.OnAuto(sv) ? "on Auto, which follows " + f.Name + " while " + f.Pack + " lends its builds. " : "following " + f.Name + ". ") + "Move right to choose a build.";
                 };
                 c.Focused = () => { if (_survivor != index) { _survivor = index; _dirty = true; } };
@@ -776,7 +781,7 @@ namespace YazsCompanion
             var viaAuto = onAuto ? Builds.AutoOf(who) : null;
             int n = choices.Count + 1; float gap = 26f, area = 2760f, cw = Mathf.Min(700f, (area - (n - 1) * gap) / n), x0 = 940f, y0 = 352f, ch = 1230f;
             var lenders = choices.Where(b => b.Pack.Length > 0).Select(b => b.Pack).Distinct().ToList();
-            Text(_body, "Who", x0, y0 - 2f, 2000, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + who.ToUpperInvariant() + "</color>   the build the advice follows"
+            Text(_body, "Who", x0, y0 - 2f, 2000, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + Who(who).ToUpperInvariant() + "</color>   the build the advice follows"
                 + (lenders.Count > 0 ? "   <color=" + Theme.DimHex + ">+ builds from " + string.Join(", ", lenders) + "</color>" : ""), TextAlignmentOptions.Left, true);
             y0 += 84f;
             // Auto, the presets and your own build fit side by side (five cards at most). With builds lent by other mods
@@ -803,11 +808,11 @@ namespace YazsCompanion
                 var mine = Builds.EnsureCustom(who); Builds.Select(who, mine.Id); SettingSaved(Builds.LastSaveOk);
                 _editing = true; _focusKey = "ed:style"; _dirty = true;
             }, () => custom == null
-                ? "Start your own " + who + " build from the one selected: change the level-up style, the weapon branch, the order of the abilities, the evolution of each, and what the build wants from items."
-                : "Edit your own " + who + " build: style, weapon branch, ability order, evolutions, item leanings.");
+                ? "Start your own " + Who(who) + " build from the one selected: change the level-up style, the weapon branch, the order of the abilities, the evolution of each, and what the build wants from items."
+                : "Edit your own " + Who(who) + " build: style, weapon branch, ability order, evolutions, item leanings.");
             if (custom != null)
                 Btn(_body, "delete", x0 + 790, by, 620, 116, "DELETE MY BUILD", null, () => { Builds.DropCustom(who); SettingSaved(Builds.LastSaveOk); _focusKey = "customize"; _dirty = true; },
-                    () => "Remove your own " + who + " build. The presets stay; the survivor goes back to Auto if it was following it.");
+                    () => "Remove your own " + Who(who) + " build. The presets stay; the survivor goes back to Auto if it was following it.");
         }
 
         static bool unlocked0(string sv) { bool u; return !_unlocked.TryGetValue(sv, out u) || u; }
@@ -850,7 +855,7 @@ namespace YazsCompanion
             {
                 Sprite icon; _icons.TryGetValue(branch, out icon);
                 if (icon != null) Pic(rt, "WIcon", pad, 348, 92, 92, icon, Color.white);
-                Text(rt, "Branch", pad + (icon != null ? 108 : 0), 362, inner - 108, 60, 44f, Theme.White, branch, TextAlignmentOptions.Left);
+                Text(rt, "Branch", pad + (icon != null ? 108 : 0), 362, inner - 108, 60, 44f, Theme.White, Say(branch), TextAlignmentOptions.Left);
             }
             else Text(rt, "Branch", pad, 350, inner, 110, 36f, Theme.Cream, "decided live: what the squad deals, then your Training Yard, then the guides", TextAlignmentOptions.TopLeft, false, true);
 
@@ -871,18 +876,18 @@ namespace YazsCompanion
                 if (icon != null) Pic(rt, "AIcon" + i, pad, ry + 6, 100, 100, icon, Color.white);
                 string evo = b == null ? null : b.EvolutionOf(a);
                 string tier = null; if (b == null) Knowledge.Current.AbilityTier.TryGetValue(a, out tier);
-                Text(rt, "AName" + i, pad + 118, ry + (evo != null || tier != null ? 8 : 28), inner - 118, 56, 42f, Theme.White, (b != null ? "<color=" + Theme.GoldHex + ">" + (i + 1) + "</color>  " : "") + a, TextAlignmentOptions.Left);
-                if (evo != null) Text(rt, "AEvo" + i, pad + 118, ry + 60, inner - 118, 46, 34f, Theme.GoldText, "evolve: " + Short(evo), TextAlignmentOptions.Left);
+                Text(rt, "AName" + i, pad + 118, ry + (evo != null || tier != null ? 8 : 28), inner - 118, 56, 42f, Theme.White, (b != null ? "<color=" + Theme.GoldHex + ">" + (i + 1) + "</color>  " : "") + Say(a), TextAlignmentOptions.Left);
+                if (evo != null) Text(rt, "AEvo" + i, pad + 118, ry + 60, inner - 118, 46, 34f, Theme.GoldText, "evolve: " + Evo(evo), TextAlignmentOptions.Left);
                 else if (tier != null) Text(rt, "AEvo" + i, pad + 118, ry + 60, inner - 118, 46, 34f, Theme.Grey, tier.ToUpperInvariant() + " tier in the guides", TextAlignmentOptions.Left);
                 ry += 122f;
             }
-            if (b != null && b.Skip.Count > 0) Text(rt, "Skip", pad, ry + 6, inner, 46, 34f, Theme.Rust, "skips " + string.Join(", ", b.Skip), TextAlignmentOptions.Left);
+            if (b != null && b.Skip.Count > 0) Text(rt, "Skip", pad, ry + 6, inner, 46, 34f, Theme.Rust, "skips " + string.Join(", ", b.Skip.Select(Say)), TextAlignmentOptions.Left);
             if (b != null && b.Wants.Count > 0) Text(rt, "Wants", pad, 1070, inner, 140, 34f, Theme.Grey, "<color=" + Theme.DimHex + ">ITEMS  </color>" + string.Join(" · ", b.Wants.Take(5)).ToLowerInvariant(), TextAlignmentOptions.TopLeft, false, true);
 
             c.Desc = () => b == null
                 ? (viaAuto != null ? "AUTO - while " + viaAuto.Pack + " lends its builds, Auto follows its " + viaAuto.Name + "; select any card to follow that instead. Otherwise: no" : "AUTO. No")
                     + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab."
-                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + b.Summary + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]");
+                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]");
         }
 
         // ---------------------------------------------------------------- the editor of your own build
@@ -891,7 +896,7 @@ namespace YazsCompanion
             string who = Builds.Survivors[_survivor];
             var b = Builds.EnsureCustom(who); var kit = Builds.KitOf(who);
             float x = 520f, w = 2800f, y = 352f, rh = 118f, step = 132f;
-            Text(_body, "Who", x, y - 2f, w, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + who.ToUpperInvariant() + "</color>   your own build", TextAlignmentOptions.Left, true);
+            Text(_body, "Who", x, y - 2f, w, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + Who(who).ToUpperInvariant() + "</color>   your own build", TextAlignmentOptions.Left, true);
             y += 84f;
             Action changed = () => { Builds.Save(); SettingSaved(Builds.LastSaveOk); };
 
@@ -903,10 +908,10 @@ namespace YazsCompanion
                     : "BALANCED: each ability once early, then the weapon and your #1 ability side by side, the other abilities after."); y += step;
 
             var branches = new List<string> { "" }; if (kit != null) { branches.Add(kit.BranchA); branches.Add(kit.BranchB); }
-            Cycler(_body, "ed:branch", x, y, w, rh, "Weapon branch", "crosshair", () => string.IsNullOrEmpty(b.Branch) ? "Decided live" : b.Branch,
+            Cycler(_body, "ed:branch", x, y, w, rh, "Weapon branch", "crosshair", () => string.IsNullOrEmpty(b.Branch) ? "Decided live" : Say(b.Branch),
                 d => { int i = Math.Max(0, branches.FindIndex(s => string.Equals(s, b.Branch, StringComparison.OrdinalIgnoreCase))); b.Branch = branches[(i + d + branches.Count) % branches.Count]; changed(); },
                 () => string.IsNullOrEmpty(b.Branch) ? "The tier-2 weapon is decided live: the branch that shares damage types with the rest of your squad, then your Training Yard investment, then the guides."
-                    : "Always go " + b.Branch + ". The two tier-2 weapons exclude each other; the other branch will be ranked low when it is offered." + (kit != null ? "  Final weapon: " + kit.Line[4] + "." : "")); y += step;
+                    : "Always go " + Say(b.Branch) + ". The two tier-2 weapons exclude each other; the other branch will be ranked low when it is offered." + (kit != null ? "  Final weapon: " + Say(kit.Line[4]) + "." : "")); y += step;
 
             // the four abilities: a rank (or SKIP) and an evolution each
             if (kit != null)
@@ -916,14 +921,14 @@ namespace YazsCompanion
                     var row = Place(Ui.NewRect("Row:" + a, _body), x, y, w, rh);
                     Sprite icon; _icons.TryGetValue(a, out icon);
                     if (icon != null) Pic(row, "Icon", 20, 9, 100, 100, icon, Color.white);
-                    Text(row, "Name", 140, 0, 800, rh, 48f, Theme.White, a, TextAlignmentOptions.Left, true);
+                    Text(row, "Name", 140, 0, 800, rh, 48f, Theme.White, Say(a), TextAlignmentOptions.Left, true);
                     Cycler(_body, "ed:rank:" + a, x + 960, y, 640, rh, "", null, () => b.Skips(a) ? "SKIP" : "#" + (b.PriorityOf(a) + 1),
                         d => { Rerank(b, a, d); changed(); _focusKey = "ed:rank:" + a; _dirty = true; },
-                        () => b.Skips(a) ? a + " is skipped: the advice ranks it under everything else for this build." : a + " is #" + (b.PriorityOf(a) + 1) + " in your order. #1 is the ability to focus; new abilities are suggested in this order.", 560f);
-                    Cycler(_body, "ed:evo:" + a, x + 1630, y, 1170, rh, "", null, () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "Evolution: live" : Short(b.EvolutionOf(a)),
+                        () => b.Skips(a) ? Say(a) + " is skipped: the advice ranks it under everything else for this build." : Say(a) + " is #" + (b.PriorityOf(a) + 1) + " in your order. #1 is the ability to focus; new abilities are suggested in this order.", 560f);
+                    Cycler(_body, "ed:evo:" + a, x + 1630, y, 1170, rh, "", null, () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "Evolution: live" : Evo(b.EvolutionOf(a)),
                         d => { int i = Math.Max(0, evos.FindIndex(s => string.Equals(s, b.EvolutionOf(a) ?? "", StringComparison.OrdinalIgnoreCase))); string pick = evos[(i + d + evos.Count) % evos.Count]; if (pick.Length == 0) b.Evolution.Remove(a); else b.Evolution[a] = pick; changed(); },
-                        () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "The evolution of " + a + " is decided live: the one that shares a damage type with what your squad deals, or carries a tag a team passive boosts (" + Short(ab[1]) + " or " + Short(ab[2]) + ")."
-                            : "Always evolve " + a + " into " + Short(b.EvolutionOf(a)) + ".", 1090f);
+                        () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "The evolution of " + Say(a) + " is decided live: the one that shares a damage type with what your squad deals, or carries a tag a team passive boosts (" + Evo(ab[1]) + " or " + Evo(ab[2]) + ")."
+                            : "Always evolve " + Say(a) + " into " + Evo(b.EvolutionOf(a)) + ".", 1090f);
                     y += step;
                 }
 

@@ -48,9 +48,15 @@ namespace YazsCompanion
         {
             Lines.Add(new PlanLine { Group = group, Key = key, Label = label ?? "", Text = text ?? "", Head = head });
         }
+        // What the rows SHOW goes through Names (a name another mod lends, else the game's own); keys, groups and every
+        // comparison keep the game's names. Show = a powerup or an item, Tag = a survivor's label.
+        static string Show(PowerupBase p) { return Names.Of(p); }
+        static string Show(ItemBase it) { return Names.Of(it); }
+        static string Tag(Survivor sv) { return Names.ClassLabel(sv.Type); }
+
         static string EvoShort(PowerupBase evo, PowerupBase baseAbility)
         {
-            string n = G.Name(evo), b = G.Name(baseAbility);
+            string n = Show(evo), b = Show(baseAbility);
             if (n.StartsWith(b + ":")) n = n.Substring(b.Length + 1).Trim();
             else if (n.StartsWith(b + " ")) n = n.Substring(b.Length + 1).Trim();
             return n;
@@ -94,7 +100,7 @@ namespace YazsCompanion
             foreach (var sv in s.Squad)
             {
                 try { if (compact) p.SurvivorCompact(sv, s); else p.Survivor(sv, s); }
-                catch (Exception e) { p.Add(compact ? "squad" : sv.Name, sv.Name + (compact ? ".plan" : ".weapon"), sv.Name.ToUpperInvariant(), C(Dim, e.GetType().Name), true); }
+                catch (Exception e) { p.Add(compact ? "squad" : sv.Name, sv.Name + (compact ? ".plan" : ".weapon"), Tag(sv), C(Dim, e.GetType().Name), true); }
             }
             try { p.TagsLine(s); } catch { }
             try { p.Recruits(s); } catch { }
@@ -113,16 +119,16 @@ namespace YazsCompanion
             if (current == null)
             {
                 var first = path.FirstOrDefault(x => x.Depth == 0);
-                if (first != null) items.Add(C(Gold, N("take " + G.Name(first.W))));
+                if (first != null) items.Add(C(Gold, N("take " + Show(first.W))));
             }
             else
             {
                 int max = G.MaxLevel(current.W);
-                if (current.Level < max) items.Add(N(G.Name(current.W) + " " + current.Level + "/" + max));
+                if (current.Level < max) items.Add(N(Show(current.W) + " " + current.Level + "/" + max));
                 else
                 {
                     var next = path.FirstOrDefault(x => x.Recommended && x.Available && x.Level < 1 && x.Depth > current.Depth);
-                    if (next != null) items.Add(C(Gold, N(Arrow.TrimStart() + G.Name(next.W))));
+                    if (next != null) items.Add(C(Gold, N(Arrow.TrimStart() + Show(next.W))));
                 }
             }
 
@@ -134,7 +140,7 @@ namespace YazsCompanion
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
                 if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
                 var pick = PickEvolution(v, kv.Key, sv, s);
-                ability = C(Gold, N(pick != null ? "evolve " + G.Name(pick) : "evolve " + G.Name(kv.Key)));
+                ability = C(Gold, N(pick != null ? "evolve " + Show(pick) : "evolve " + Show(kv.Key)));
                 break;
             }
             // the ability the cards will rank first: the ranker is asked, the rules live there alone. "next X" (an ability
@@ -144,10 +150,10 @@ namespace YazsCompanion
             {
                 var missing = owned.Count < 4 && sv.Props != null && s.Ctx.Reach(3) >= 0.6 ? NextAbility(sv, s) : null;
                 var top = Ranker.TopAbility(sv, s, missing);
-                if (top != null) ability = sv.LevelOf(top) < 1 ? Nx(G.Name(top)) : N(G.Name(top) + " " + sv.LevelOf(top) + "/" + G.MaxLevel(top));
+                if (top != null) ability = sv.LevelOf(top) < 1 ? Nx(Show(top)) : N(Show(top) + " " + sv.LevelOf(top) + "/" + G.MaxLevel(top));
             }
             if (ability != null) items.Add(ability);
-            Add("squad", sv.Name + ".plan", sv.Name.ToUpperInvariant(), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
+            Add("squad", sv.Name + ".plan", Tag(sv), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
         }
 
         // Abilities of a class rank the survivor had not reached when the run began. Such a node still reads "level 1" (its
@@ -198,17 +204,17 @@ namespace YazsCompanion
             if (current == null)
             {
                 var first = path.FirstOrDefault(x => x.Depth == 0);
-                w = first != null ? C(Gold, "take " + N(G.Name(first.W))) : C(Dim, "no weapon yet");
+                w = first != null ? C(Gold, "take " + N(Show(first.W))) : C(Dim, "no weapon yet");
             }
             else
             {
                 bool locked = next == null && path.Any(x => !x.Available && x.Level < 1 && x.Depth > current.Depth);
                 int max = G.MaxLevel(current.W);
-                w = N(G.Name(current.W) + " " + current.Level + "/" + max);
-                if (next != null) w += C(current.Level < max ? Dim : Gold, N(Arrow + G.Name(next.W)));
+                w = N(Show(current.W) + " " + current.Level + "/" + max);
+                if (next != null) w += C(current.Level < max ? Dim : Gold, N(Arrow + Show(next.W)));
                 else if (current.Level >= max) w += C(Dim, locked ? "  next tier locked" : "  line complete");
             }
-            Add(sv.Name, sv.Name + ".weapon", sv.Name.ToUpperInvariant(), w, true);
+            Add(sv.Name, sv.Name + ".weapon", Tag(sv), w, true);
 
             // ability line, two items at most: the evolution card to wait for > the ability to feed > the next ability
             var owned = sv.Abilities();
@@ -218,7 +224,7 @@ namespace YazsCompanion
                 if (kv.Value < G.MaxLevel(kv.Key)) continue;
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
                 if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
-                items.Add(N(G.Name(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key, sv, s)));
+                items.Add(N(Show(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key, sv, s)));
                 break;
             }
             var focusAbility = Ranker.FocusAbility(sv, s);
@@ -228,12 +234,12 @@ namespace YazsCompanion
                 var v = Ranker.AbilityScore(focusAbility, sv, s);
                 // the evolution names only from one level below max: earlier they just make the line wrap
                 bool nearMax = fl >= G.MaxLevel(focusAbility) - 1;
-                items.Add(N(G.Name(focusAbility) + " " + fl + "/" + G.MaxLevel(focusAbility)) + (v.EvoOwned && nearMax ? C(Dim, Arrow + Evos(v, focusAbility, sv, s)) : ""));
+                items.Add(N(Show(focusAbility) + " " + fl + "/" + G.MaxLevel(focusAbility)) + (v.EvoOwned && nearMax ? C(Dim, Arrow + Evos(v, focusAbility, sv, s)) : ""));
             }
             if (owned.Count < 4 && sv.Props != null && items.Count < 2)
             {
                 var best = NextAbility(sv, s);
-                if (best != null) items.Add(Nx(G.Name(best)));
+                if (best != null) items.Add(Nx(Show(best)));
             }
             if (items.Count > 0) Add(sv.Name, sv.Name + ".ability", "", Join(items.Take(2).ToList()));
         }
@@ -259,7 +265,7 @@ namespace YazsCompanion
                 if (props == null || !G.Unlocked(props)) continue;
                 var why = new List<string>();
                 double sc = Ranker.RecruitScore(cls, props, s, why);
-                ranked.Add(new KeyValuePair<string, double>(G.ClassName(cls), sc));
+                ranked.Add(new KeyValuePair<string, double>(Names.Class(cls), sc));
             }
             if (ranked.Count == 0) return;
             if (s.Ctx.RecruitValue < 0.45) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
@@ -287,7 +293,7 @@ namespace YazsCompanion
                 if (s.AnyoneHas(it)) continue;
                 var why = new List<string>();
                 double sc = Ranker.ItemScore(it, s, why, shared);
-                if (sc >= 3.0) ranked.Add(new KeyValuePair<string, double>(G.Name(it), sc));
+                if (sc >= 3.0) ranked.Add(new KeyValuePair<string, double>(Show(it), sc));
             }
             if (ranked.Count == 0) return;
             var top = ranked.OrderByDescending(kv => kv.Value).Take(2).Select(kv => kv.Key);
@@ -321,6 +327,7 @@ namespace YazsCompanion
                     p.Add("run", "tags", "TAGS", "Kinetic 31" + C(Dim, Sep + "stack Explosive"));
                     p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
                 }
+                p.LendNames();
                 p.Signature = string.Join("|", p.Rows);
                 return p;
             }
@@ -346,8 +353,21 @@ namespace YazsCompanion
                 p.Add("run", "tags", "TAGS", "Kinetic 31, Electric 22" + C(Dim, Sep + "stack Explosive"));
                 p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
             }
+            p.LendNames();
             p.Signature = string.Join("|", p.Rows);
             return p;
+        }
+
+        // the samples name real survivors and powerups: with names lent by another mod they read as the live rows would
+        void LendNames()
+        {
+            if (!Names.Active) return;
+            foreach (var l in Lines)
+            {
+                l.Text = Names.Text(l.Text);
+                int dot = l.Key.IndexOf('.');
+                if (l.Head && dot > 0) l.Label = Names.Class(l.Key.Substring(0, dot)).ToUpperInvariant();
+            }
         }
     }
 }

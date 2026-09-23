@@ -8,11 +8,17 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-20): **0.12.0 — extensions** (not released yet): other mods can add options of their own to the
+Status (2026-09-23): **0.12.1 — display names from other mods** (not released yet): another mod can lend the names
+the Companion SHOWS for a class, a powerup or an item (`RegisterDisplayNames`, extension API version 2). The PLAN
+readout, the reasons under the cards, the BUILDS tab and the Training Yard strip draw them; the ranking, the builds
+and the `[card]` / `[pick]` log lines keep the game's own names, so the advice is exactly what it was. Nothing
+changes while no mod lends names (the pure rule files and the offline bench are untouched). Compiled, and the API
+driven through reflection against the built DLL outside the game; not seen in the game yet.
+**0.12.0 — extensions** (2026-09-20): other mods can add options of their own to the
 mod menu (a fourth tab, MODS, that exists only while one does) and lend build guides per survivor that stand next
 to the presets - see "Extensions (for other mods)". Nothing changes while no mod registers anything: the offline
-bench prints the same 772 lines before and after. Compiled, and the API driven through reflection against the built
-DLL outside the game; the MODS tab and lent builds have not been seen in the game yet.
+bench prints the same 772 lines before and after. Seen in the game before the release: the MODS tab and a lent
+build driving Auto in a run.
 **0.10.2 — the readout after the mod menu** (a follow-up to the performance pass, found in the
 log of a full run: using the mod menu from the pause menu left the old readout behind under the HUD and brought the
 new one up with a search through every label in the scene, a 27 - 28 ms frame; now 4 ms, and nothing is left behind;
@@ -635,16 +641,19 @@ zip ships with it off.
 
 ## Extensions (for other mods)
 
-Since 0.12.0 another BepInEx plugin can put options into the mod menu and lend build guides. The one public class
-is `YazsCompanion.Api.Extensions` (`Api/Extensions.cs`); its signatures use BCL types only, so it is called through
-reflection, without a reference to this DLL (a plugin that referenced it would not load where the Companion is
-missing). Nothing changes for anyone while nothing is registered.
+Since 0.12.0 another BepInEx plugin can put options into the mod menu and lend build guides; since 0.12.1 it can
+also lend the names the Companion shows. The one public class is `YazsCompanion.Api.Extensions`
+(`Api/Extensions.cs`); its signatures use BCL types only, so it is called through reflection, without a reference to
+this DLL (a plugin that referenced it would not load where the Companion is missing). Nothing changes for anyone
+while nothing is registered.
 
 ```csharp
-public static int  ApiVersion { get; }      // 1
+public static int  ApiVersion { get; }      // 2 (0.12.1); 1 = 0.12.0, which has the first three calls below
 public static void RegisterOption(string owner, string group, string label, string description,
                                   Func<string[]> choices, Func<int> get, Action<int> set);
 public static void RegisterBuildProvider(string owner, Func<string, string> buildPackPathForClass);
+public static void RegisterDisplayNames(string owner, Func<string, string, string> nameFor);   // 2
+public static void InvalidateDisplayNames();                                                   // 2
 public static void Unregister(string owner);
 ```
 
@@ -660,7 +669,30 @@ public static void Unregister(string owner);
   whenever a survivor's build is resolved (an answer stands for one second: the ranking asks dozens of times per
   offer) and every time the BUILDS tab is drawn or a MODS option changes, so the answer may change at run time.
   Files are parsed once per path and write time. One provider per owner.
-- **`Unregister`** takes back everything the owner registered.
+- **`RegisterDisplayNames`** lends the names the Companion SHOWS - in the PLAN readout (survivor labels, weapons,
+  abilities, evolutions, SOS and GRAB rows), the reasons under the cards, the BUILDS tab (survivors, branches,
+  abilities, evolutions, skips, summaries) and the Training Yard strip. `nameFor(kind, key)` answers the name to show,
+  or `null` for the game's own:
+
+  | kind | key |
+  | --- | --- |
+  | `"class"` | the game's class enum name: `SWAT`, `Tank`, `Engineer`, `Huntress`, `Ninja` (the class shown as Ghost), `Medic`, `Pyro`, `Mechanic`, `Ranger` |
+  | `"powerup"` | the powerup's asset name (`PowerupBase.name`, e.g. `KatanaUpgrade`) - weapons, abilities, evolutions |
+  | `"item"` | the item's asset name (`ItemBase.name`, e.g. `Item_BloodyAxe`); answering `null` for every item is fine |
+
+  Only what is drawn changes: the ranking, the builds (`builds.json` and build packs still name things by their
+  English names), the plan's keys and the `[card]` / `[pick]` / `[yard]` log lines keep the game's names, so the
+  advice is the same whatever is shown (the `[plan]` log line records the readout as drawn). Names are plain text:
+  markup and line breaks are dropped, an empty answer counts as `null`. Where a sentence of the rules names a game
+  name ("first weapon for Ghost", "then Katana Splash"), whole words in the game's spelling are swapped; a longer
+  game name you did not rename stays whole even when it contains one you did. Every answer is kept - per class,
+  powerup and item, until the run ends, a new one starts or the mod menu closes - so `nameFor` is asked about once
+  per name and run, always on the game's main thread, and must be quick. Several mods may lend names: they are asked
+  in the order they registered and the first answer that is not `null` wins. One function per owner: a second call
+  replaces it and keeps its place.
+- **`InvalidateDisplayNames`** says your answers changed (another look chosen in your options, say): everything kept
+  is asked again, and the PLAN readout on screen is redrawn within two seconds. Cheap; any thread.
+- **`Unregister`** takes back everything the owner registered, display names included.
 - A call never throws back at you, and your callbacks may throw: each failure is caught and logged once (`[ext]`
   lines; `[builds]` for the pack files). Registrations may come before or after the Companion's own `Load()`, while
   the menu is open, from any thread. Declare the soft dependency below so that the Companion's assembly is loaded
@@ -696,9 +728,15 @@ public class MyMod : BasePlugin
         string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
         Companion("RegisterBuildProvider", "My Mod",
             (Func<string, string>)(survivor => survivor == "Ghost" ? Path.Combine(dir, "ghost-builds.json") : null));
+        // ApiVersion 2 and later: what the Companion shows for the class and its blade (null = the game's own name)
+        Companion("RegisterDisplayNames", "My Mod", (Func<string, string, string>)((kind, key) =>
+            kind == "class" && key == "Ninja" ? "Shade" : kind == "powerup" && key == "KatanaUpgrade" ? "Moonblade" : null));
     }
 }
 ```
+
+Check `ApiVersion` (a static property: `_companion.GetProperty("ApiVersion").GetValue(null)`) before calling
+`RegisterDisplayNames` - a 0.12.0 Companion has no such method (the helper above would log a warning and return false).
 
 **A build pack** is a JSON file for ONE survivor: `"builds"` holds the same objects as `"custom"` in `builds.json`
 (comments and trailing commas are fine), plus two optional keys:
@@ -804,7 +842,8 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     ItemRules.cs                  the pure item score: exact squad fit, the clock, live tag points, pairs, build leanings
     Tags.cs                       damage type tag profile of the squad and the Research Pod card score (pure)
     Menu.cs                       the mod menu: builds, editor, advice, display, other mods' options; its own focus and input; the COMPANION buttons
-    Api/Extensions.cs             the one public class: other mods register menu options and lend build packs (reflection-friendly)
+    Api/Extensions.cs             the one public class: other mods register menu options, lend build packs and display names (reflection-friendly)
+    Names.cs                      the names drawn for classes / powerups / items: lent by another mod, else the game's; the rules never see them
     Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
     Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
     Perf.cs                       [Debug] Perf: times the mod's own sections and logs the sums once a minute
@@ -837,3 +876,6 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 6. 0.12.0's extension point has only been driven outside the game (reflection against the built DLL, the pack
    parser in a console): see the MODS tab and a lent build with a real second plugin - four tabs in the header, the
    rows with mouse / keyboard / controller, a list long enough to scroll, six or more build cards, `VIA AUTO`.
+7. 0.12.1's display names have only been driven outside the game: see them with a second plugin that lends names -
+   the readout's rows and a label longer than HUNTRESS (the label column widens), the card reasons, the BUILDS tab,
+   the Training Yard strip, a switch of names mid-run (`InvalidateDisplayNames`), and `[card]` lines unchanged.

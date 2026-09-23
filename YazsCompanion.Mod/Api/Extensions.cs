@@ -1,6 +1,8 @@
 // The extension point: the ONE public surface of the mod. Another BepInEx plugin can
-//   - put options of its own into the mod menu (a MODS tab that exists only while an option is registered), and
-//   - lend build guides per survivor (a "build pack" file, see Builds.cs), which then stand next to the presets.
+//   - put options of its own into the mod menu (a MODS tab that exists only while an option is registered),
+//   - lend build guides per survivor (a "build pack" file, see Builds.cs), which then stand next to the presets, and
+//   - (ApiVersion 2) lend display names for classes, powerups and items: what the Companion SHOWS (the PLAN readout,
+//     the card reasons, the BUILDS tab, the Training Yard strip) - the rules keep the game's own names (Names.cs).
 // Nothing here knows who calls it, and the mod behaves exactly as before while nobody does.
 //
 // It is meant to be called through REFLECTION, without a reference to this DLL (a plugin that references it would
@@ -21,8 +23,10 @@ namespace YazsCompanion.Api
 {
     public static class Extensions
     {
-        /// <summary>Raised when a signature here changes or one is added; check it before relying on a newer call.</summary>
-        public static int ApiVersion => 1;
+        /// <summary>Raised when a signature here changes or one is added; check it before relying on a newer call.
+        /// 1 = RegisterOption, RegisterBuildProvider, Unregister (0.12.0); 2 = RegisterDisplayNames, InvalidateDisplayNames
+        /// (0.12.1). The calls of an older version stay as they were.</summary>
+        public static int ApiVersion => 2;
 
         /// <summary>Add a choice option to the mod menu's MODS tab: a row with <paramref name="label"/> and a left / right value
         /// selector. <paramref name="owner"/> is the registering mod's display name (the section header),
@@ -74,22 +78,68 @@ namespace YazsCompanion.Api
             catch (Exception e) { Once("RegisterBuildProvider", "RegisterBuildProvider: " + e, true); }
         }
 
-        /// <summary>Take back everything <paramref name="owner"/> registered: its options and its build provider. A survivor
-        /// that followed one of its builds reads as Auto again.</summary>
+        /// <summary>Lend display names: what the Companion shows for a class, a powerup or an item, wherever it draws one (the
+        /// PLAN readout, the reasons under the cards, the BUILDS tab, the Training Yard strip). The advice does not change:
+        /// the rules, the builds and the log lines that review them keep the game's own names.
+        /// <paramref name="nameFor"/>(kind, key) answers the name to show, or null for "the game's own":
+        /// kind "class" with key = the game's class enum name (SWAT, Tank, Engineer, Huntress, Ninja - the class shown as
+        /// Ghost -, Medic, Pyro, Mechanic, Ranger); kind "powerup" with key = the powerup's asset name (e.g. KatanaUpgrade);
+        /// kind "item" with key = the item's asset name (e.g. Item_BloodyAxe). Plain text: angle brackets and line breaks
+        /// are dropped, an empty answer counts as null.
+        /// Every answer is kept - per class, powerup and item, for the run - so the function is asked about once per name
+        /// and run, always on the game's main thread; call <see cref="InvalidateDisplayNames"/> when your answers change.
+        /// Several mods may lend names: they are asked in the order they registered, the first answer that is not null
+        /// wins. One function per owner: a second call replaces it and keeps its place in that order.</summary>
+        public static void RegisterDisplayNames(string owner, Func<string, string, string> nameFor)
+        {
+            try
+            {
+                owner = Clean(owner, "Another mod");
+                if (nameFor == null) { Once("names:" + owner + ":null", "'" + owner + "' registered display names without a function: ignored", true); return; }
+                bool replaced;
+                lock (_lock)
+                {
+                    var list = new List<Namer>(_namers);
+                    int i = list.FindIndex(n => n.Owner == owner);
+                    replaced = i >= 0;
+                    var namer = new Namer { Owner = owner, NameFor = nameFor };
+                    if (replaced) list[i] = namer; else list.Add(namer);
+                    Volatile.Write(ref _namers, list.ToArray());
+                }
+                Interlocked.Increment(ref _namesVersion);
+                Log("'" + owner + "' " + (replaced ? "replaced its" : "registered") + " display names", false);
+            }
+            catch (Exception e) { Once("RegisterDisplayNames", "RegisterDisplayNames: " + e, true); }
+        }
+
+        /// <summary>The names you lend have changed (another look chosen, say): everything the Companion kept is asked again,
+        /// and the PLAN readout on screen is redrawn within two seconds. Cheap; callable from any thread.</summary>
+        public static void InvalidateDisplayNames()
+        {
+            try { Interlocked.Increment(ref _namesVersion); }
+            catch { }
+        }
+
+        /// <summary>Take back everything <paramref name="owner"/> registered: its options, its build provider and its display
+        /// names. A survivor that followed one of its builds reads as Auto again; the game's names are shown again.</summary>
         public static void Unregister(string owner)
         {
             try
             {
-                owner = Clean(owner, "Another mod"); int options, providers;
+                owner = Clean(owner, "Another mod"); int options, providers, namers;
                 lock (_lock)
                 {
                     options = _options.RemoveAll(o => o.Owner == owner);
                     providers = _providers.RemoveAll(p => p.Owner == owner);
                     if (_providers.Count == 0) Builds.PackSource = null;        // nobody left: the builds cost what they did before
+                    var list = new List<Namer>(_namers);
+                    namers = list.RemoveAll(n => n.Owner == owner);
+                    if (namers > 0) Volatile.Write(ref _namers, list.ToArray());
                 }
-                if (options + providers == 0) return;
-                Builds.ForgetPacks(); Interlocked.Increment(ref _version);
-                Log("'" + owner + "' unregistered (" + options + " option(s), " + providers + " build provider(s))", false);
+                if (options + providers + namers == 0) return;
+                if (options + providers > 0) { Builds.ForgetPacks(); Interlocked.Increment(ref _version); }
+                if (namers > 0) Interlocked.Increment(ref _namesVersion);
+                Log("'" + owner + "' unregistered (" + options + " option(s), " + providers + " build provider(s)" + (namers > 0 ? ", its display names" : "") + ")", false);
             }
             catch (Exception e) { Once("Unregister", "Unregister: " + e, true); }
         }
@@ -102,15 +152,60 @@ namespace YazsCompanion.Api
             public string Key { get { return Owner + "/" + Group + "/" + Label; } }
         }
         sealed class Provider { public string Owner; public Func<string, string> PathFor; }
+        sealed class Namer { public string Owner; public Func<string, string, string> NameFor; }
 
         static readonly object _lock = new object();
         static readonly List<Option> _options = new List<Option>();
         static readonly List<Provider> _providers = new List<Provider>();
-        static int _version;
+        static Namer[] _namers = new Namer[0];          // replaced whole under the lock, read without it (Names asks from the main thread)
+        static int _version, _namesVersion;
 
         /// <summary>Moves with every registration: the open menu compares it once a frame.</summary>
         internal static int Version { get { return Volatile.Read(ref _version); } }
         internal static bool HasOptions { get { lock (_lock) return _options.Count > 0; } }
+
+        /// <summary>Moves whenever the display names may have changed (a provider came, went, or said so): Names.cs compares
+        /// it on every lookup and forgets what it kept when it moved.</summary>
+        internal static int NamesVersion { get { return Volatile.Read(ref _namesVersion); } }
+        internal static bool HasDisplayNames { get { return Volatile.Read(ref _namers).Length > 0; } }
+
+        /// <summary>The name another mod lends for (kind, key), the first answer in registration order; null = none. The
+        /// provider's code is not trusted not to throw: a failure is logged once per owner and counts as no answer.</summary>
+        internal static string DisplayName(string kind, string key)
+        {
+            var namers = Volatile.Read(ref _namers);
+            for (int i = 0; i < namers.Length; i++)
+            {
+                string s;
+                try { s = namers[i].NameFor(kind, key); }
+                catch (Exception e) { Once("names:" + namers[i].Owner, "'" + namers[i].Owner + "': the display-name provider threw " + e.GetType().Name + " for " + kind + " '" + key + "': " + e.Message + " (logged once; no name from it)", true); continue; }
+                s = Plain(s);
+                if (s != null) return s;
+            }
+            return null;
+        }
+
+        // a name is drawn inside TMP rich text on one row: markup ("<b>...</b>") goes whole, a stray angle bracket and a line
+        // break go too
+        static string Plain(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return null;
+            if (s.IndexOfAny(Unsafe) >= 0)
+            {
+                var sb = new System.Text.StringBuilder(s.Length);
+                for (int i = 0; i < s.Length; i++)
+                {
+                    char ch = s[i];
+                    if (ch == '<') { int end = s.IndexOf('>', i + 1); if (end > i) { i = end; continue; } }
+                    if (ch == '\n' || ch == '\r' || ch == '\t') sb.Append(' ');
+                    else if (ch != '<' && ch != '>') sb.Append(ch);
+                }
+                s = sb.ToString();
+            }
+            s = s.Trim();
+            return s.Length > 0 ? s : null;
+        }
+        static readonly char[] Unsafe = { '<', '>', '\n', '\r', '\t' };
 
         /// <summary>A copy of the options, sections together: by owner, then by group, each in the order it first came - but
         /// an owner's rows without a group first, straight under its header (after a group they would read as part of it).</summary>

@@ -409,7 +409,7 @@ namespace YazsCompanion
 
         static void Finish(List<string> rows)
         {
-            _text.text = string.Join("\n", rows);
+            _text.text = Names.Text(string.Join("\n", rows));      // the nodes' names; a class, weapon or ability name another mod lends in place of the game's
             try { _text.ForceMeshUpdate(); float h = _text.preferredHeight; if (h > 0) _strip.sizeDelta = new Vector2(_width, HeadH + HeadGap + h); } catch { }
         }
     }

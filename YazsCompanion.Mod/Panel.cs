@@ -45,6 +45,7 @@ namespace YazsCompanion
         const float PadSide = 22f, PadTop = 14f, PadBottom = 18f, Font = 31f, LineGap = 6f;
         const float HeadH = 40f, HeadRule = 3f, HeadGap = 12f, HeadDiamond = 13f, TitleSize = 23f;  // the title line, its fading gold rule, the gap under it
         const float LabelW = 136f, LabelSize = 25f;             // the label column: survivor names (HUNTRESS, ENGINEER), TAGS / SOS / GRAB
+        const float LabelMaxW = 300f;                           // ... wider only for a longer name another mod lends (Names.cs), up to this
         // the hairline between two groups: 3 units so it is at least 1.45 px on the Deck (2 units was 0.97 px there and
         // vanished when it fell between two pixel rows)
         const float GroupGap = 12f, RuleH = 3f;
@@ -72,7 +73,7 @@ namespace YazsCompanion
 
         /// <summary>A plan worked out ahead of time (while the game was still paused on the screen that closed), good for as
         /// long as the run's fingerprint stays what it was then.</summary>
-        sealed class Ahead { public long Quick; public string Key, Clock; public Plan Plan; }
+        sealed class Ahead { public long Quick; public string Key, Clock; public Plan Plan; public int Names; }
 
         static RectTransform _root, _content, _head, _rule, _tip;
         static bool _intro;                           // just became visible: play the entrance on the next frame (the groups exist by then)
@@ -92,6 +93,8 @@ namespace YazsCompanion
         static Dictionary<string, string> _prev;                  // key -> text of the previous plan (null = first build of a run)
         static readonly HashSet<string> _changed = new HashSet<string>();
         static float _hlStart = -100f, _nextFade;
+        static float _labelW = LabelW;                // the label column of the plan on screen
+        static int _namesSeen;                        // Names.Version the plan on screen was built under
         static string _hlHex;                         // the highlight colour of the last render: the ramp re-renders only when it moves
         static bool _glyphsChecked;
         static string _sig = "", _stateKey = "";
@@ -141,7 +144,7 @@ namespace YazsCompanion
         {
             _root = null; _content = null; _head = null; _rule = null; _tip = null; _intro = false; Fx.Cancel("plan"); _fade = null; _template = null; _groups.Clear(); _rules.Clear();
             _sig = ""; _stateKey = ""; _visible = false; _alpha = 0f; _target = 0f; _level = 1f; _awakeUntil = 0f;
-            _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f; _hlHex = null; _quick = 0; _ahead = null;
+            _plan = null; _prev = null; _changed.Clear(); _hlStart = -100f; _hlHex = null; _quick = 0; _ahead = null; _labelW = LabelW;
         }
 
         // The pick has been applied and the game is still paused while the screen animates out: the moment to take the
@@ -164,7 +167,7 @@ namespace YazsCompanion
                     if (snap.Squad.Count == 0) return;
                     string key = StateKey(snap);
                     if (key == _stateKey) { _quick = quick; return; }       // a skip, a reroll, a banish: the plan on screen still stands
-                    _ahead = new Ahead { Quick = quick, Key = key, Clock = snap.Clock, Plan = Plan.Build(snap, CompactDetail()) };
+                    _ahead = new Ahead { Quick = quick, Key = key, Clock = snap.Clock, Plan = Plan.Build(snap, CompactDetail()), Names = Names.Version };
                 }
             }
             catch (Exception e) { _ahead = null; Plugin.Logger.LogWarning("[panel] plan ahead: " + e.Message); }
@@ -193,7 +196,7 @@ namespace YazsCompanion
             try
             {
                 float now = Time.realtimeSinceStartup;
-                if (hud != null) { _hud = hud; _lastHudFrame = Time.frameCount; } else hud = _hud;
+                if (hud != null) { if ((object)_hud == null) Names.Forget(); _hud = hud; _lastHudFrame = Time.frameCount; } else hud = _hud;     // a new run's HUD: display names are asked afresh
                 if (!_sourceLogged) { _sourceLogged = true; Plugin.Logger.LogInfo("[panel] first tick from " + (hud != null ? "UIGameplay.Update" : "GameMaster.Update (no HUD tick)")); }
                 Animate(now);
                 Shots.Tick();
@@ -250,6 +253,10 @@ namespace YazsCompanion
             {
                 long quick = G.QuickKey();
                 var ahead = _ahead; _ahead = null;
+                // another mod lends other names now (Extensions.InvalidateDisplayNames, or it came or went): the rows are
+                // drawn again with them even though nothing in the run moved
+                int names = Names.Version;
+                if (names != _namesSeen) { _namesSeen = names; _quick = 0; _stateKey = ""; if (ahead != null && ahead.Names != names) ahead = null; }
                 Plan plan; string key, clock;
                 if (ahead != null && quick != 0 && ahead.Quick == quick) { plan = ahead.Plan; key = ahead.Key; clock = ahead.Clock; }
                 else
@@ -564,6 +571,7 @@ namespace YazsCompanion
             }
             for (int i = gi; i < _groups.Count; i++) { _groups[i].Rows.Clear(); try { _groups[i].Block.gameObject.SetActive(false); } catch { } }
             foreach (var gr in _groups) { gr.Hot = false; foreach (var l in gr.Rows) if (_changed.Contains(l.Key)) { gr.Hot = true; break; } }
+            _labelW = LabelWidth();
 
             float hlSeconds = 3f; try { hlSeconds = Plugin.PanelHighlight.Value; } catch { }
             _hlStart = _changed.Count > 0 && hlSeconds > 0 ? now : -100f;
@@ -571,6 +579,30 @@ namespace YazsCompanion
             if (_changed.Count > 0 && !_intro) Pulse();
             Render(now, true);
             Layout();
+        }
+
+        // The label column is 136 units: HUNTRESS and ENGINEER fit. A survivor name another mod lends may be longer - then
+        // the column widens to the widest label (measured in the readout's own font), up to LabelMaxW. Without lent names
+        // nothing is measured and the column is what it always was.
+        static float LabelWidth()
+        {
+            if (!Names.Active || _plan == null) return LabelW;
+            TextMeshProUGUI probe = null;
+            foreach (var g in _groups) if (g.Rows.Count > 0 && g.Text != null) { probe = g.Text; break; }
+            if (probe == null) return LabelW;
+            float widest = 0f;
+            try
+            {
+                foreach (var l in _plan.Lines)
+                {
+                    if (l.Label.Length == 0) continue;
+                    float w = probe.GetPreferredValues("<size=" + LabelSize + "><b>" + l.Label + "</b></size>").x;
+                    if (w > widest) widest = w;
+                }
+            }
+            catch { return LabelW; }
+            finally { foreach (var g in _groups) g.Shown = null; }      // measuring went through a label's text buffers: every label is written again below
+            return Mathf.Clamp(Mathf.Ceil(widest) + 16f, LabelW, LabelMaxW);
         }
 
         // the text of every group: "LABEL<indent>value</indent>" rows, the changed values in the highlight colour
@@ -609,7 +641,7 @@ namespace YazsCompanion
                         else sb.Append("<color=").Append(Theme.GoldHex).Append('>').Append(l.Label).Append("</color>");
                         sb.Append("</b></size>");
                     }
-                    sb.Append("<indent=").Append(LabelW).Append('>');
+                    sb.Append("<indent=").Append(_labelW).Append('>');
                     if (hl && _changed.Contains(l.Key)) sb.Append("<color=").Append(hex).Append('>').Append(l.Text).Append("</color>");
                     else sb.Append(l.Text);
                     sb.Append("</indent>");

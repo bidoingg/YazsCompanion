@@ -223,7 +223,7 @@ namespace YazsCompanion
         sealed class TaggedNode { public SkillTreeUpgradeBase Node; public CT Class; public string Tag, NotTag, Name; public bool AbilitiesOnly; }
 
         /// <summary>The HUD is gone (a run ended) or the mod menu closed: drop what was kept for the run.</summary>
-        public static void ForgetRun() { _allNodes = null; _nodesOf.Clear(); _taggedNodes = null; _nodeList = IntPtr.Zero; _nodeCount = 0; _props.Clear(); }
+        public static void ForgetRun() { _allNodes = null; _nodesOf.Clear(); _taggedNodes = null; _nodeList = IntPtr.Zero; _nodeCount = 0; _props.Clear(); Names.Forget(); }
 
         static List<SkillTreeUpgradeBase> NodeList()
         {
