@@ -72,7 +72,10 @@ namespace YazsCompanion
         }
 
         // the evolution to take: the build's pick, else the one that clearly fits the squad better (damage types, team
-        // passives); null while the two are a toss-up
+        // passives); null while the two are a toss-up. Either evolution is the biggest spike of its level-up - the cards
+        // rank whichever one the game offers first - so the rows name this one as the one PREFERRED, not as the only one
+        // (0.12.2, F12: "evolve Downpour" on the readout, then PICK on Thunderstruck, the only one offered, read as a
+        // contradiction)
         static PowerupBase PickEvolution(Ranker.AbilityVerdict v, PowerupBase baseAbility, Survivor sv, Snapshot s)
         {
             if (sv == null || s == null || v.EvoA == null || v.EvoB == null) return null;
@@ -140,7 +143,7 @@ namespace YazsCompanion
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
                 if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
                 var pick = PickEvolution(v, kv.Key, sv, s);
-                ability = C(Gold, N(pick != null ? "evolve " + Show(pick) : "evolve " + Show(kv.Key)));
+                ability = C(Gold, N("evolve " + Show(kv.Key)) + (pick != null ? " " + N("(" + EvoShort(pick, kv.Key) + " preferred)") : ""));
                 break;
             }
             // the ability the cards will rank first: the ranker is asked, the rules live there alone. "next X" (an ability
@@ -224,7 +227,8 @@ namespace YazsCompanion
                 if (kv.Value < G.MaxLevel(kv.Key)) continue;
                 var v = Ranker.AbilityScore(kv.Key, sv, s);
                 if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
-                items.Add(N(Show(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key, sv, s)));
+                var pick = PickEvolution(v, kv.Key, sv, s);
+                items.Add(N(Show(kv.Key) + " " + kv.Value + "/" + G.MaxLevel(kv.Key)) + C(Gold, Arrow + Evos(v, kv.Key, sv, s)) + (pick != null ? C(Dim, N(" preferred")) : ""));
                 break;
             }
             var focusAbility = Ranker.FocusAbility(sv, s);
@@ -257,20 +261,12 @@ namespace YazsCompanion
         void Recruits(Snapshot s)
         {
             if (s.SquadFull || s.Squad.Count == 0) return;
-            var ranked = new List<KeyValuePair<string, double>>();
-            foreach (CT cls in Enum.GetValues(typeof(CT)))
-            {
-                if (cls == CT.None || cls == CT.NumCharacters || s.OnSquad(cls)) continue;
-                var props = G.PropsOf(cls);
-                if (props == null || !G.Unlocked(props)) continue;
-                var why = new List<string>();
-                double sc = Ranker.RecruitScore(cls, props, s, why);
-                ranked.Add(new KeyValuePair<string, double>(Names.Class(cls), sc));
-            }
+            var ranked = Ranker.Recruitable(s);          // who could join, by the SOS cards' rules (shared with the reroll hint, 0.12.2)
             if (ranked.Count == 0) return;
-            if (s.Ctx.RecruitValue < 0.45) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
-            var top = ranked.OrderByDescending(kv => kv.Value).Take(2).Select(kv => kv.Key);
-            Add("run", "sos", "SOS", string.Join(", ", top.Select(N)));
+            if (s.Ctx.RecruitValue < RerollCall.Late) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
+            // the order the SOS cards use (0.12.2, F12): an exact tie is settled the same way here and on the card
+            ranked.Sort(Recruit.Compare);
+            Add("run", "sos", "SOS", string.Join(", ", ranked.Take(2).Select(r => N(Names.Class((CT)r.Class)))));
         }
 
         void Items(Snapshot s)

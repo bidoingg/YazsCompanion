@@ -96,7 +96,7 @@ namespace YazsCompanion.Bench
                 cards.Sort((a, b) => b.Item1.CompareTo(a.Item1));
                 foreach (var c in cards) Console.WriteLine("  " + c.Item1.ToString("0.00").PadLeft(5) + "  " + c.Item2.PadRight(16) + " " + c.Item3);
             }
-            return Checks.Run(probe);
+            return Checks.Run(probe, path);
         }
     }
 }

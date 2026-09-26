@@ -386,7 +386,7 @@ namespace YazsCompanion
             catch { }
         }
         /// <summary>What the squad deals when <paramref name="without"/>'s current weapon is left out: the weapon is about
-        /// to be replaced by a tier-2 branch, so it must not vote for its own damage type. The run's tag points are kept.</summary>
+        /// to be replaced by a tier-3 branch, so it must not vote for its own damage type. The run's tag points are kept.</summary>
         public static TagProfile SquadProfile(Snapshot s, Survivor without)
         {
             var p = new TagProfile { SpecialAt = s.Tags.SpecialAt, Plan = s.Tags.Plan };

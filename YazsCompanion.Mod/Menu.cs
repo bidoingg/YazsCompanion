@@ -907,11 +907,13 @@ namespace YazsCompanion
                     : b.Style == BuildStyle.Ability ? "ABILITIES FIRST: the abilities in your order come before weapon levels; the weapon fills in. For support and ability-damage builds."
                     : "BALANCED: each ability once early, then the weapon and your #1 ability side by side, the other abilities after."); y += step;
 
-            var branches = new List<string> { "" }; if (kit != null) { branches.Add(kit.BranchA); branches.Add(kit.BranchB); }
+            // 0.12.2 (F05): the fork has THREE branches - the fifth weapon of a line is a third tier-3 weapon, not a final one
+            var branches = new List<string> { "" }; if (kit != null) branches.AddRange(kit.Branches);
             Cycler(_body, "ed:branch", x, y, w, rh, "Weapon branch", "crosshair", () => string.IsNullOrEmpty(b.Branch) ? "Decided live" : Say(b.Branch),
                 d => { int i = Math.Max(0, branches.FindIndex(s => string.Equals(s, b.Branch, StringComparison.OrdinalIgnoreCase))); b.Branch = branches[(i + d + branches.Count) % branches.Count]; changed(); },
-                () => string.IsNullOrEmpty(b.Branch) ? "The tier-2 weapon is decided live: the branch that shares damage types with the rest of your squad, then your Training Yard investment, then the guides."
-                    : "Always go " + Say(b.Branch) + ". The two tier-2 weapons exclude each other; the other branch will be ranked low when it is offered." + (kit != null ? "  Final weapon: " + Say(kit.Line[4]) + "." : "")); y += step;
+                () => string.IsNullOrEmpty(b.Branch) ? "The tier-3 weapon is decided live: the branch that shares damage types with the rest of your squad, then your Training Yard investment, then the guides."
+                    : "Always go " + Say(b.Branch) + ". The three tier-3 weapons exclude each other; the other two will be ranked low when they are offered."
+                        + (kit != null ? "  The others: " + string.Join(", ", kit.Branches.Where(other => !string.Equals(other, b.Branch, StringComparison.OrdinalIgnoreCase)).Select(Say)) + "." : "")); y += step;
 
             // the four abilities: a rank (or SKIP) and an evolution each
             if (kit != null)
@@ -1011,7 +1013,10 @@ namespace YazsCompanion
             Cycler(_body, "ad:caution", x, y, w, rh, "Caution", "heart", () => Words(Plugin.AdviceCaution.Value.ToString()), d => Plugin.AdviceCaution.Value = Next(Plugin.AdviceCaution.Value, d),
                 () => "How much max health, armor, regeneration and healing weigh. They already weigh more late, on higher difficulties and while the squad is hurting; this scales all of that."); y += step;
             Cycler(_body, "ad:recruit", x, y, w, rh, "SOS signals late in a run", "radio", () => Words(Plugin.AdviceRecruit.Value.ToString()), d => Plugin.AdviceRecruit.Value = Next(Plugin.AdviceRecruit.Value, d),
-                () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark.");
+                () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark."); y += step;
+            // 0.12.2: the ninth row still ends above the footer rule (1640 + 128 < 1846)
+            Cycler(_body, "ad:reroll", x, y, w, rh, "Reroll hint on the rescue screen", "diamond", () => Plugin.AdviceRerollHint.Value ? "On" : "Off", d => Plugin.AdviceRerollHint.Value = !Plugin.AdviceRerollHint.Value,
+                () => "ON: when a survivor who could still come - unlocked, not on the squad, not on the cards - rates clearly higher than every card on the rescue screen (0.75 or more on the cards' own scores) and you have a reroll left, the game's Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. It never rerolls for you.");
         }
 
         // the steps of "Readout size": 70 % .. 200 % of the automatic size

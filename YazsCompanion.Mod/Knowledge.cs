@@ -12,7 +12,7 @@ namespace YazsCompanion
     {
         public readonly Dictionary<string, string> LeaderTier = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> RescueTier = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        public readonly Dictionary<string, string> WeaponBranch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // class -> preferred tier-2 weapon
+        public readonly Dictionary<string, string> WeaponBranch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // class -> preferred weapon branch (a tier-3 weapon)
         public readonly Dictionary<string, string> AbilityTier = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> ItemTier = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> ItemNote = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

@@ -1,9 +1,9 @@
-// Build guides: for every survivor the builds the advice can follow. A build names the tier-2 weapon branch, the
-// order in which the four abilities matter, which evolution to take when both are offered, how level-ups are split
-// between the weapon and the abilities, and what the build wants from items. Most survivors have more than one
-// build worth playing - the two weapon branches deal different damage types, and abilities and evolutions line up
-// behind one or the other - so the player picks (mod menu, BUILDS tab) and the ranking follows; "Auto" reads the
-// squad instead: the branch and the evolutions that share damage types with what the squad already deals.
+// Build guides: for every survivor the builds the advice can follow. A build names the weapon branch (one of the
+// three tier-3 weapons), the order in which the four abilities matter, which evolution to take when both are offered,
+// how level-ups are split between the weapon and the abilities, and what the build wants from items. Most survivors
+// have more than one build worth playing - the weapon branches deal different damage types, and abilities and
+// evolutions line up behind one or another - so the player picks (mod menu, BUILDS tab) and the ranking follows;
+// "Auto" reads the squad instead: the branch and the evolutions that share damage types with what the squad deals.
 //
 // The presets below come from the game's own data (what each weapon, ability and evolution deals and which tags it
 // carries) and the published guides listed in Knowledge.cs. The player's choices and edited copies live in
@@ -35,7 +35,7 @@ namespace YazsCompanion
         public string Glyph = "";                                   // menu art: one of Art's glyph names
         public string Source = "";                                  // "guides" = a build the human guides describe, "data" = an alternative read from the game's data, "" = the player's own
         public string Pack = "";                                    // the title of the build pack another mod lent it with; "" = the mod's own or the player's
-        public string Branch = "";                                // tier-2 weapon; "" = decided live (squad damage types, tree investment, guides)
+        public string Branch = "";                                // one of the three tier-3 weapons; "" = decided live (squad damage types, tree investment, guides)
         public BuildStyle Style = BuildStyle.Weapon;
         public List<string> Abilities = new List<string>();         // priority order, the first is the one to focus; unlisted = after these
         public List<string> Skip = new List<string>();              // abilities this build does not want
@@ -65,10 +65,23 @@ namespace YazsCompanion
     internal sealed class Kit
     {
         public string Survivor;
-        public string[] Line;                 // start, upgrade, branch A, branch B, final
+        // the weapon line: the starting weapon (Tier1), its upgrade (Tier2), then the fork - the three Tier3 weapons, each
+        // following the upgrade, excluding each other. 0.12.2 (F05): the fifth weapon was taken for a "final weapon" that
+        // comes after the fork; the game's data says otherwise (probe.json: previousWeapon = the Tier2 weapon, weaponTier
+        // Tier3; only its Training Yard node sits one column further right), and the ranking in a run always treated it
+        // as a third branch - but a build could not name it, and the Training Yard pushed points into it as "the final
+        // weapon of the line" against the build's own branch.
+        public string[] Line;                 // start, upgrade, then the three branches
         public string[][] Abilities;          // { ability, evolution A, evolution B }
-        public string BranchA { get { return Line[2]; } }
-        public string BranchB { get { return Line[3]; } }
+        /// <summary>The three tier-3 weapons, in the kit's order (Line[2..4]) - NOT always the game's weaponIndex order: Tank, Engineer
+        /// and Ghost list their weaponIndex-3 weapon before the weaponIndex-2 one. Nothing may map Branches[i] to a weaponIndex.</summary>
+        public string[] Branches { get { return new[] { Line[2], Line[3], Line[4] }; } }
+        /// <summary>The branch by that name, in the kit's own spelling; null = none of the three.</summary>
+        public string BranchNamed(string name)
+        {
+            for (int i = 2; i < Line.Length; i++) if (string.Equals((Line[i] ?? "").Trim(), (name ?? "").Trim(), StringComparison.OrdinalIgnoreCase)) return Line[i];
+            return null;
+        }
         public string[] EvolutionsOf(string ability)
         {
             foreach (var a in Abilities) if (string.Equals(a[0], ability, StringComparison.OrdinalIgnoreCase)) return new[] { a[1], a[2] };
@@ -93,7 +106,7 @@ namespace YazsCompanion
         static string _path;
         public const string AutoId = "auto";
 
-        // ------------------------------------------------------------------ the kits (from the game's data, 1.0.1)
+        // ------------------------------------------------------------------ the kits (from the game's data, 1.0.1; the bench checks them against probe.json)
         public static readonly Kit[] Kits =
         {
             K("SWAT", new[] { "Pistol", "SMG", "Assault Rifle", "Sniper Rifle", "Grenade Launcher" },
@@ -326,8 +339,8 @@ namespace YazsCompanion
             if (kit == null) return;
             if (b.Branch.Length > 0)
             {
-                string branch = Same(b.Branch, kit.BranchA) ? kit.BranchA : Same(b.Branch, kit.BranchB) ? kit.BranchB : null;
-                if (branch == null) say("the weapon branch '" + b.Branch + "' is neither " + kit.BranchA + " nor " + kit.BranchB + ": decided live");
+                string branch = kit.BranchNamed(b.Branch);
+                if (branch == null) say("the weapon branch '" + b.Branch + "' is none of " + string.Join(", ", kit.Branches) + ": decided live");
                 b.Branch = branch ?? "";
             }
             Func<List<string>, string, List<string>> known = (names, what) =>

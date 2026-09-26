@@ -8,7 +8,33 @@ cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
 and never picks for you.
 
-Status (2026-09-23): **0.12.1 — display names from other mods** (not released yet): another mod can lend the names
+Status (2026-09-25): **0.12.2 — fixes from a round of Steam Deck logs** (not released yet):
+- the rescue (SOS) cards have their RECOMMENDED ribbon and reason line back. The game's patch of 2026-09-23 gave them
+  a card class of their own (`UIPowerupButtonSOS`), which the badges did not know: only the gold frame was drawn, and
+  every rescue card logged a warning. A card class the mod has never seen now borrows the card's first label (said
+  once per class), and at load the log lists the game's card classes (`[badge] card classes: ...`);
+- the fifth weapon of every survivor (Grenade Launcher, Super Shotgun, Plasma, Toxic Arrows, Soul Reaper, Syringer,
+  Axerangs, Spanner Spammer, Flarebolt) is a THIRD branch of the fork, as the game's data has it (it follows the tier-2
+  weapon like the other two tier-3 weapons), not a "final weapon": a build may name it (the editor cycles three
+  branches; up to 0.12.1 a build pack naming it was cut back to "decided live"), and the Training Yard no longer
+  pushes points into it ahead of rank III abilities while the build takes another branch - the other two branches
+  come last. The SWAT's Grenadier and the Tank's Shotgunner presets, written around their fifth weapon, now name it
+  as their branch (they were "decided live", so the Training Yard put the guides' weapon first), and no preset text
+  promises a second tier-3 weapon after its branch any more;
+- two recruits that score the same are ordered the same way on the SOS cards and in the readout's SOS row (the
+  guides' rescue tier, then bought synergies, then a fixed class order) - the card used to follow button position;
+  a recruit's team passive reads `team passive: +Armor` instead of the game's sentence cut after 41 characters;
+- when a level-up offers only the evolution your build does NOT name, the card still comes first and now says why
+  (`only X is offered - your build prefers Y; still the biggest spike`), and the readout says `evolve Arrow Rain
+  (Downpour preferred)` rather than naming one evolution as if the other were wrong;
+- a reroll or a banish that refills the same screen is recognised (`[offer] ... replaced (reroll): gone ...; new ...`)
+  and no longer counted as another level-up by the pace estimate;
+- NEW: a **reroll hint on the rescue screen** - when a survivor who could still come rates clearly higher than every
+  card on offer and the game still has a reroll for the screen, its Reroll button gets a gold frame and a line:
+  `REROLL - Tank would rate higher (5.9 vs 4.6)`. A switch on the ADVICE tab (`[Advice] RerollHint`, on by default);
+  see "The reroll hint on the rescue screen".
+The ranking scores themselves are unchanged; only exact ties between recruits are ordered anew.
+**0.12.1 — display names from other mods** (2026-09-23): another mod can lend the names
 the Companion SHOWS for a class, a powerup or an item (`RegisterDisplayNames`, extension API version 2). The PLAN
 readout, the reasons under the cards, the BUILDS tab and the Training Yard strip draw them; the ranking, the builds
 and the `[card]` / `[pick]` log lines keep the game's own names, so the advice is exactly what it was. Nothing
@@ -82,21 +108,21 @@ game's own buttons, wired into their up / down navigation), or with **F10** (`[M
 `GoNextTab` / `GoPrevTab` actions and the move axes). While it is open the game's menu underneath holds still.
 
 - **BUILDS** - the nine survivors on the left, the builds of the one in focus on the right; select one and the
-  advice follows it: its tier-2 **weapon branch**, the **order of the abilities** (#1 is the one to focus), the
-  **evolution** to take when both are offered, its **level-up style**, and what it **wants from items**. `Auto`
+  advice follows it: its **weapon branch** (one of the three tier-3 weapons), the **order of the abilities** (#1
+  is the one to focus), the **evolution** to take when both are offered, its **level-up style**, and what it **wants from items**. `Auto`
   (the default for everyone) fixes nothing and reads the squad instead. Presets are labelled honestly:
   `GUIDE PICK` = a build human guide writers describe, `ALTERNATIVE` = an option read from the game's own data where
   the guides are silent (Medic and Mechanic have ONE build in the guides; their alternatives say so). The footer
   explains the build in focus.
-- **MAKE MY OWN BUILD** - copies the selected build and opens the editor: level-up style, weapon branch (or
-  "decided live"), a rank or SKIP per ability, an evolution per ability (or "live"), item leanings as toggles,
-  "start over from" any preset. Saved as you change it (`builds.json` next to the DLL; presets stay in the DLL, so
+- **MAKE MY OWN BUILD** - copies the selected build and opens the editor: level-up style, weapon branch (any of the
+  three tier-3 weapons, or "decided live"), a rank or SKIP per ability, an evolution per ability (or "live"), item
+  leanings as toggles, "start over from" any preset. Saved as you change it (`builds.json` next to the DLL; presets stay in the DLL, so
   updates refresh them without touching your own).
 - **ADVICE** - the standing orders for every survivor: level-up style for survivors on Auto (weapon first /
   balanced / abilities first), how strongly the run clock moves the advice, whether the game mode steers it, the
   weight of squad synergy, the damage type tag plan (auto-stack / spread / a fixed type), what the run is for
-  (win it / balanced / farm progress), caution, and what to do with SOS signals late in a run. Stored in the
-  `[Advice]` section of the config file, so they can be hand-edited too.
+  (win it / balanced / farm progress), caution, what to do with SOS signals late in a run, and (0.12.2) the reroll
+  hint on the rescue screen. Stored in the `[Advice]` section of the config file, so they can be hand-edited too.
 - **DISPLAY** - what the mod draws: card verdicts, the PLAN readout (size, detail, position, backing, idle
   opacity), Training Yard advice, motion. Next to the settings sits the readout itself (0.11.0): the same widget
   the HUD gets, built with the settings as they stand, in a window of the menu - the menu's canvas has the HUD
@@ -162,7 +188,9 @@ GRAB      Accumulator, Bleeding Edge
 **Compact (the default):** one row per survivor with only what to pick next. The weapon item is the level to
 finish (`Pump-Action Shotgun 3/4`), or the next tier in gold once the weapon is maxed (`› Rocket Launcher`), or
 nothing when the line is complete; the ability item is, in priority order, a maxed ability whose unlocked
-evolution is waiting (`evolve Arrow Rain`, gold), the ability to keep feeding (`Sawblade Drone 2/4`), or the next
+evolution is waiting (`evolve Arrow Rain`, gold; `evolve Arrow Rain (Downpour preferred)` when your build or the
+squad favours one of the two - either one is the spike of its level-up, and the cards rank whichever the game offers
+first), the ability to keep feeding (`Sawblade Drone 2/4`), or the next
 ability worth taking (`next Minefield`). `TAGS` shows the highest damage-type tag count and `stack X` only when
 the type to stack at the next Research Pod is another one. A full squad is five or six rows.
 
@@ -183,8 +211,8 @@ Taunt`, gold), the ability to keep feeding (with its evolutions once it is one l
 unlocked them; earlier the names only made the line wrap), and the next ability worth taking. `TAGS` shows the two
 highest tag point counts. A full squad is nine lines.
 
-In both: `SOS` is the two best rescues by the SOS-card rules (hidden with a full squad); `GRAB` the two best items
-worth a chest slot (S/A tier or quest target, not held). When a rebuild changes a line (a pick, a recruit, a
+In both: `SOS` is the two best rescues by the SOS-card rules, exact ties settled as on the cards (hidden with a
+full squad); `GRAB` the two best items worth a chest slot (S/A tier or quest target, not held). When a rebuild changes a line (a pick, a recruit, a
 Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
 0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.plan]`).
 The `›` and `·` glyphs are checked against the HUD font at creation and replaced by `>` and `|` when missing
@@ -219,16 +247,20 @@ On the Training Yard (`UIViewSkillTree`, "Train your survivors") every tab gets,
   node to save for next;
 - a strip in the empty band under the tree, between the legend and the Reset points button:
   `SPEND 9   1 Blowtorch 3>4 · 2 No pain no gain Evolutions 0>1` / `THEN   save 4 more for Rocket Launcher 3>4 ·
-  after that Tank <-> Pyro, Bombing Strike` / `WHY   Blowtorch — Tier-1 weapon levels are cheap and speed up the
-  start.` The WHY row follows the cursor when the node under it is part of the advice, and otherwise says where that
-  node stands ("later in the plan (step 14 of 41)", "its rank is still locked", "maxed").
+  after that Tank <-> Pyro, Bombing Strike` / `WHY   Blowtorch — Levels of the first two weapons are cheap and speed
+  up the start.` The WHY row follows the cursor when the node under it is part of the advice, and otherwise says
+  where that node stands ("later in the plan (step 14 of 41)", "its rank is still locked", "maxed").
 
 The plan is a port of the PC app's "Spend now" (`lib/engine.js`) without its run-history tailoring (`TreePlan.cs`,
 pure): the General tab follows a fixed order (economy, then the strongest multipliers, survivability in between);
-a survivor's tab follows a rule sequence - starting abilities to 2 then 3, the cheap tier-1 weapons, the evolutions
-of the starting abilities, the main tier-2 weapon (the guides' branch from `knowledge.json`, else the one levelled
-most), abilities maxed, the final weapon, rank III abilities, badges and synergies as their ranks open, rank V
-passives by impact, then everything that is left; abilities inside a group go by the guides' tier. The walk spends
+a survivor's tab follows a rule sequence - starting abilities to 2 then 3, the cheap first two weapons, the evolutions
+of the starting abilities, the main weapon branch (one of the three tier-3 weapons: your build's, else the guides'
+branch from `knowledge.json`, else the one levelled most), abilities maxed, rank III abilities, badges and synergies
+as their ranks open, rank V passives by impact, then the two other branches for the runs that offer them, then
+everything that is left; abilities inside a group go by the guides' tier. The weapon nodes are sorted by the weapon
+they boost, not by their column (0.12.2): the fifth weapon's node sits one column further right, and up to 0.12.1
+the plan took it for "the final weapon of the line" and put points into it before rank III abilities - on the Deck
+it advised exactly that for a Pyro whose build takes Infernax. The walk spends
 the points level by level (from level L to L + 1 costs `levelUpCosts[L]`, levels below `levelMin` are free), skips
 locked ranks (the node shows its lock) and unmet prerequisites, keeps the first step that does not fit as the thing
 to save for and lets leftover points go to cheaper steps further down, like the PC app. `TreeState.cs` reads the
@@ -292,6 +324,43 @@ Turn the badges off with `ShowBadges = false` in `BepInEx\config\bidoi.yazs.comp
 automatic) enlarges the ribbon and the reason lines on small screens (up to 1.3, so they stay inside the band
 under the card; about 1.2 on the Deck, 1.0 on a desktop monitor); the frame is not scaled.
 
+## The reroll hint on the rescue screen (0.12.2)
+
+In a round of Steam Deck logs the rescue cards were rerolled five times on four screens, each time until the
+survivor the readout's `SOS` row named came up. So the rescue screen now says when a reroll is worth it:
+
+```
+REROLL  -  Tank would rate higher (5.9 vs 4.6)
+```
+
+- **When.** The best survivor who could still come rates at least **0.75** above the best card on the table (a
+  recruit, or Liberate when the cards rank it first), and the game still has a reroll for the screen. Everyone is
+  scored by the very rules of the SOS cards, so the hint, the cards and the readout's `SOS` row always agree. Why
+  0.75: early in a run one guide tier apart is 0.5 and one bought synergy 1.1, so a tier alone, a trained level or
+  an exact tie stay silent (a reroll is spent for the run, and the next draw may be no better), while a synergy, or a
+  tier together with shared damage types, speaks. On the Deck's four screens the gap was 0.96 - 1.29 each time. When
+  two survivors clear the margin the line names both (`SWAT or Tank would rate higher`). No hint late in a run,
+  when the cards say Liberate anyway (a recruit no longer has the time to grow).
+- **Who could still come** follows how the game draws the cards: every survivor unlocked in your profile who is not
+  on the squad, not on the cards, and not held back after a reroll (the cards shown before one); where the game's
+  own availability check of a survivor's unlock card can be read, it must agree.
+- **The reroll count is the game's own** for that screen: the number it hands the screen's action buttons, else the
+  number on the Reroll button, else the team's `Rerolls available`; a FREE reroll counts too.
+- **Where.** The Reroll button gets the recommended card's gold frame, and the line stands over the button in the
+  band between the cards' reason lines and the button - measured on screen 0.6 s after the cards came, never over
+  a card's text; when that band is too low it goes under the button, and without room for either only the frame
+  shows. Motion only when it appears (the frame settles, the line unfolds from its left tip and types on); nothing
+  loops.
+- **After a reroll** the screen is judged again (the replaced offer); the pick takes the hint away. It never rerolls
+  for you.
+- **Off:** the ADVICE tab's "Reroll hint on the rescue screen" (`[Advice] RerollHint = false`).
+- **The log**, one line per judgement with the scores:
+  `[squad] reroll hint: SHOWN - Tank would rate higher (5.93 vs Huntress 4.64, +1.29) | rerolls 3 (the Reroll
+  button's count) | on the cards: Huntress 4.64, Ghost 2.98, Liberate 1.00 | could still come: Tank 5.93, Engineer
+  4.03, Ranger 3.78 | margin 0.75, recruit value 1.00`, or `not shown - the best survivor is on the cards ...` /
+  `... only 0.60 above the cards - under the 0.75 margin` / `no reroll left (0 ...)`; then where it was drawn
+  (`[squad] reroll hint: drawn over the Reroll button - ... band N units ...`).
+
 ## How it ranks (0.10.0: the build, the squad, the clock, the mode)
 
 What a card is worth is read live from four things. Every score is logged with its reasons (`[ctx]`, `[card]`), so
@@ -308,12 +377,13 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
 "weapon first" (one goes ability-first for five survivors), which is why the level-up style is yours to set.
 
 - **The build** (mod menu). A selected build ranks its abilities (#1 +1.6, #2 +1.0, #3 +0.5, skipped -2.0), picks
-  the tier-2 branch (the other branch drops to 2.0: the branches exclude each other), picks the evolution (+1.0 /
-  -0.5, so its pick is on top when both are offered) and sets the level-up style. On Auto: the guides' ability
-  tiers (S +1.2, A +0.6, C -0.8), and the branch that shares damage types with the REST of the squad, then your
+  the weapon branch - one of the three tier-3 weapons (the other two drop to 2.0: the branches exclude each other) -,
+  picks the evolution (+1.0 / -0.5, so its pick is on top when both are offered; offered alone, the other one still
+  outranks any tier-up and its card says `only X is offered - your build prefers Y`) and sets the level-up style.
+  On Auto: the guides' ability tiers (S +1.2, A +0.6, C -0.8), and the branch that shares damage types with the REST of the squad, then your
   Training Yard investment (+0.5 a paid level), then the guides' branch (+0.9).
-- **Level-up styles.** Evolutions (7.6 and up), a recruit's first weapon (7.2), the final weapon (6.9) and the next
-  weapon tier (6.6) are always on top. Below them a weapon level scores `floor + 0.1 x level`: floor 6.0 *weapon
+- **Level-up styles.** Evolutions (7.6 and up), a recruit's first weapon (7.2) and the next weapon tier (6.6) are
+  always on top. Below them a weapon level scores `floor + 0.1 x level`: floor 6.0 *weapon
   first* (every weapon level before any ability level), 4.3 *balanced* (default), 3.3 *abilities first*. Abilities:
   a new one 3.6 / 3.1 / 2.4 (fewer than two / up to four / after) - "take each ability once" early beats another
   level of an old one - a level 2.6, +1.0 for the focus ability (the build's highest-ranked open one, else the one
@@ -371,7 +441,10 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
 - **SOS**: a recruit is a third gun and +20 % XP for the rest of the run (2.0), plus the guides' rescue tier, +1.1
   per BOUGHT synergy node either way (an unbought node does nothing in a run), shared damage types, team passives
   either way, how trained the recruit is - all scaled by the time a newcomer still has to grow. Liberate: 5 with a
-  full squad, else 1.0 rising to 4.2 as that time runs out.
+  full squad, else 1.0 rising to 4.2 as that time runs out. Two recruits that score the same (an A-tier rescue with
+  a team passive ties an S-tier one once both are fully trained) go by the guides' tier, then bought synergies, then
+  the class order - on the cards and in the readout's SOS row alike (0.12.2; the cards used to take the one further
+  left, the row the class order).
 - **Military training**: `1 + rarity x weight x 2` (Common 1, Rare 2, Endless 2.6, Legendary 3 - the cards' own
   numbers go about 1 : 2 : 3 by rarity; up to 0.10.2 it was 1 / 1.6 / 2 / 2.3, and both times a logged run's player
   overrode the mod it was a Legendary or Rare the mod had under a Common: rarity multiplies the stat instead of
@@ -384,12 +457,18 @@ Run history is deliberately not used.
 ### Offline bench
 
 `tools\bench.cmd [path\to\gamedata.json] [--probe path\to\probe.json] [--all]` compiles the pure rule files
-(`ItemRules.cs`, `Tags.cs`, `Knowledge.cs`, `Context.cs`, `Synergy.cs`, `Builds.cs`, `BuildPresets.cs`) into a
-console app (`tools\ItemBench`). With a `probe.json` (the `[Debug] Probe` dump; by default next to
+(`ItemRules.cs`, `Tags.cs`, `Knowledge.cs`, `Context.cs`, `Synergy.cs`, `Builds.cs`, `BuildPresets.cs`, and since
+0.12.2 `TreePlan.cs`) into a console app (`tools\ItemBench`). With a `probe.json` (the `[Debug] Probe` dump; by default next to
 `gamedata.json`) it first VALIDATES every preset and kit name against the game's own names - a misspelt evolution
-would silently never match - then shows the run clock at work (the same items at 02:00 / 10:00 / 18:30), the
-modes side by side, which evolution fits which squad and which branch fits the rest of the squad. It also scores every item of the game for a few squads,
-listing the top picks, any item that reaches the `GRAB` threshold (3.0) on keywords alone, the bottom of
+would silently never match - and that a preset's text and its branch agree (a tier-3 weapon its summary names is its
+branch; no text promises another tier-3 weapon after it) - then shows the run clock at work (the same items at 02:00 / 10:00 / 18:30), the
+modes side by side, which evolution fits which squad and which branch fits the rest of the squad. Since 0.12.2 it
+also checks every survivor's weapon fork against the game's data (three tier-3 weapons after the tier-2 one, each
+accepted in a build), walks the Training Yard plan of every survivor over the tree in `gamedata.json` (Auto, and a
+build on the fifth weapon), and replays the recruit ties and evolution headlines of a round of Steam Deck logs, and
+the reroll hint on that round's rescue screens (the four the player rerolled must speak, the offers after the reroll
+must not) and on made-up screens for its edges (the margin, ties, no reroll left, late, Liberate on top). It
+also scores every item of the game for a few squads, listing the top picks, any item that reaches the `GRAB` threshold (3.0) on keywords alone, the bottom of
 the list, and how a Research Pod screen would rank. It reads the PC app's extracted `data\gamedata.json`
 (from `tools\extract_gamedata.py` in the project root, outside this repository); pass the path if it lives
 elsewhere. Use it before changing a rule or a tier.
@@ -473,7 +552,14 @@ build that fails to load leaves every auto-updated install without the mod until
   `[tags] points: Explosive 7/10, Kinetic 3/10 (special at 10) | deals: Explosive (Rocket Launcher, Minefield),
   Kinetic (Assault Rifle) | stack Explosive`, one `[card] #1 PICK Rocket Launcher (weapon, Tank) 6.40 - next
   step of the weapon line` per card, then `[pick] LevelUp 03:31: Rocket Launcher (#1, the pick)` when the
-  screen closes.
+  screen closes. A screen refilled by a reroll or a banish (0.12.2) says so on its offer line:
+  `[offer] LevelUp 01:52 (Normal horde 1) replaced (reroll): gone Molotov Cocktail; new Fireaxe` (the kind comes
+  from the game's own flags when it sets them; a replaced level-up is not counted again by the pace estimate).
+  A rescue screen adds `[squad] reroll hint: SHOWN - ...` or `not shown - <why>` with the scores on the cards and of
+  everyone who could still come (see "The reroll hint on the rescue screen").
+  At load, `[badge] card classes: Hashtag, Item, Military, SOS, Skill - all have a label template`; a card class
+  the badges do not know is named in a warning (a game build older than the rescue card class says so once, and its
+  rescue cards borrow their first label; the other cards are not affected).
 - `BepInEx\LogOutput.log` — everything BepInEx logged this launch (overwritten per launch).
 - Set `Verbose = true` in the config to also log every raw field of every card and survivor
   (`[raw]` lines) when a verdict looks wrong.
@@ -749,7 +835,7 @@ Check `ApiVersion` (a static property: `_companion.GetProperty("ApiVersion").Get
 | `builds[].name`, `summary` | the card's title, and the footer text while the card has the focus |
 | `builds[].glyph` | card art, one of `crosshair bullets blast flame bolt snow flask blade turret shield cross paw gear magnet chevrons clock skull link coin heart hash radio eye diamond up` |
 | `builds[].style` | `Weapon` (every weapon level first), `Balanced` or `Ability` (abilities first) |
-| `builds[].branch` | the tier-2 weapon to take, by its English name; `""` = decided live |
+| `builds[].branch` | the weapon branch - any of the survivor's three tier-3 weapons, by its English name; `""` = decided live |
 | `builds[].abilities` | priority order, the first is the ability to focus; abilities left out come after these |
 | `builds[].skip` | abilities the build does not want |
 | `builds[].evolution` | ability -> the evolution to take when both are offered (`"Kunai Dance: Microbombs"`, or just `"Microbombs"`); an ability left out is decided live |
@@ -757,8 +843,8 @@ Check `ApiVersion` (a static property: `_companion.GetProperty("ApiVersion").Get
 
 Names are the game's English names, as in `Builds.Kits` (`Builds.cs`); they are checked against the survivor's kit
 when the file is read, and what does not fit is dropped and named in the log - a misspelt name would otherwise
-silently never match. For Ghost (weapon line Katana, Katana Splash, then Thousand Cuts OR Windcutter, then Soul
-Reaper; abilities Pulsar, Shuriken, Holo-bait, Kunai Dance):
+silently never match. For Ghost (weapon line Katana, Katana Splash, then Thousand Cuts, Windcutter OR Soul Reaper;
+abilities Pulsar, Shuriken, Holo-bait, Kunai Dance):
 
 ```json
 {
@@ -806,7 +892,8 @@ The game code is not obfuscated. The selection screens are `UIGameplayLevelUp`, 
 (SOS), all deriving from `UIGameplayUpgradeSelection`. Each overrides `AssignGeneratedElements()`, which fills
 the `powerupButtons` array; the mod post-fixes each override, reads `attachedPowerup` / `attachedItem` /
 `attachedHashtagEvent` from every active button, ranks, and draws. The base `Hide(clicked)` runs once per screen
-for every type and is the pick event. Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game
+for every type and is the pick event. The rescue screen's `SetActionButtonsInteractivity(numRerolls, numBanishes)`
+is post-fixed too: the reroll count the game hands it is the one the reroll hint trusts first. Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game
 stores every survivor's powerups on the leader's player object; they are regrouped by
 `targetClassProperties.characterType`), the Training Yard from the nodes reachable through each powerup
 (`skillTreeRequirement`, `skillTreeAbilityBoost`) and each class's `skillTreeSynergies`, the run clock from
@@ -836,7 +923,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     GameState.cs                  live squad / clock / Training Yard / damage-tag readers over the IL2CPP objects
     Ranker.cs                     the ranking rules: the build, the squad, the clock, the mode
     Context.cs                    the run context (mode, clock, pace, health), the player's doctrine, the timing curves (pure)
-    Synergy.cs                    tag value of a level, team-passive boosts, evolution and branch fit (pure)
+    Synergy.cs                    tag value of a level, team-passive boosts, evolution and branch fit, the recruit order, the reroll call (pure)
     Builds.cs / BuildPresets.cs   the build model, the nine kits, builds.json, build packs lent by other mods; the presets and where each comes from (pure)
     Knowledge.cs                  guide-derived tiers, item pairs, scaling items, stat weights; knowledge.json
     ItemRules.cs                  the pure item score: exact squad fit, the clock, live tag points, pairs, build leanings
@@ -851,6 +938,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
+    RerollHint.cs                 the reroll hint on the rescue screen: who could still come, the game's reroll count, frame + line (0.12.2)
     Plan.cs                       the run plan, Compact or Full (keyed rows with label / value / group; sample plans for the preview)
     Panel.cs                      the PLAN readout during play (soft backing, corner placement, text-hugging width, fade, idle dimming, highlight)
     TreePlan.cs                   Training Yard advice, pure: node model, the General order, the survivor rules, simulate / advise
@@ -879,3 +967,12 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
 7. 0.12.1's display names have only been driven outside the game: see them with a second plugin that lends names -
    the readout's rows and a label longer than HUNTRESS (the label column widens), the card reasons, the BUILDS tab,
    the Training Yard strip, a switch of names mid-run (`InvalidateDisplayNames`), and `[card]` lines unchanged.
+8. 0.12.2: see a rescue offer with `[Debug] Screenshots = true` - the ribbon and the reason line on the new SOS card
+   class (its root size and the new synergy row under the portrait were never measured: ribbon centre at -48, reason
+   at -134 below the card), a reroll and a banish (`replaced (reroll)` / `replaced (banish)`), and one Training Yard
+   tab per survivor with a build on each kind of branch.
+9. 0.12.2's reroll hint was built and replayed offline (the bench) but not seen in the game: on a rescue screen with a
+   better survivor off the cards, check the frame on the Reroll button, the line in the band over it (or under it -
+   the `drawn ...` line says which and how tall the band was), that it never covers a card's text, that it is judged
+   again after a reroll and gone after the pick, and which reroll count the log names (`the screen's count` = the
+   game's own hook answered).

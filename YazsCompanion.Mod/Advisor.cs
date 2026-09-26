@@ -11,6 +11,37 @@ namespace YazsCompanion
         static List<Card> _lastCards;
         static Screen _lastScreen;
         static string _lastClock = "";
+        static float _lastT = -1f;           // the run clock (CurrentModePlayTime) of the last offer: a selection screen pauses it
+
+        /// <summary>The HUD went away (the run ended or the scene changed): no offer is open any more.</summary>
+        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); }
+
+        // 0.12.2 (F13): a reroll or a banish fills the SAME screen again - AssignGeneratedElements runs a second time with no
+        // Hide in between (every close clears _lastCards), on the clock the screen holds still. The game's isReroll flag was
+        // never seen true (0 of hundreds of offers on the PC and the Deck), so a replaced level-up was counted twice by the
+        // pace estimate ('~87' then '~91 level-ups to come' in the same second). Not "same clock = same level-up": chained
+        // level-ups share the paused clock too, but each one closes the screen before the next opens.
+        static bool Replaced(Screen screen, float t) { return _lastCards != null && _lastScreen == screen && _lastT >= 0f && Math.Abs(t - _lastT) < 1f; }
+
+        // what replaced the cards, from the game's own flags when it sets them: a banish swaps one card, a reroll the lot
+        static string ReplacedBy(UIGameplayUpgradeSelection sel, int gone)
+        {
+            bool reroll = false, banish = false;
+            try { reroll = sel._didUseRerollThisEvent || sel.isReroll; } catch { }
+            try { banish = sel._didUseBanishThisChoice; } catch { }
+            if (banish && (gone <= 1 || !reroll)) return "banish";
+            if (reroll) return "reroll";
+            return null;
+        }
+
+        static string ReplacedText(UIGameplayUpgradeSelection sel, List<Card> before, List<Card> now)
+        {
+            var gone = new List<string>(); var added = new List<string>();
+            foreach (var c in before) if (!now.Exists(x => x.Name == c.Name)) gone.Add(c.Name);
+            foreach (var c in now) if (!before.Exists(x => x.Name == c.Name)) added.Add(c.Name);
+            string by = ReplacedBy(sel, gone.Count);
+            return " replaced" + (by != null ? " (" + by + ")" : "") + ": gone " + (gone.Count > 0 ? string.Join(", ", gone) : "none") + "; new " + (added.Count > 0 ? string.Join(", ", added) : "none");
+        }
 
         public static void OnOffer(UIGameplayUpgradeSelection sel, Screen screen)
         {
@@ -24,10 +55,13 @@ namespace YazsCompanion
             try
             {
                 Panel.ScreenOpened(sel);
-                if (screen == Screen.LevelUp)
+                float t = 0f; try { var gm = GameplayMaster.s_instance.currentGameMode; if (gm != null) t = gm.CurrentModePlayTime; } catch { }
+                bool replaced = Replaced(screen, t);
+                var before = replaced ? _lastCards : null;
+                if (screen == Screen.LevelUp && !replaced)
                 {
-                    // the pace of the run: how many level-ups are still to come decides what is worth starting now
-                    float t = 0f; try { var gm = GameplayMaster.s_instance.currentGameMode; if (gm != null) t = gm.CurrentModePlayTime; } catch { }
+                    // the pace of the run: how many level-ups are still to come decides what is worth starting now; a
+                    // replaced offer is the same level-up again
                     bool reroll0 = false; try { reroll0 = sel.isReroll; } catch { }
                     if (!reroll0) G.Pace.LevelUp(t);
                 }
@@ -55,8 +89,8 @@ namespace YazsCompanion
 
                 var sb = new StringBuilder();
                 sb.Append("[offer] ").Append(screen).Append(' ').Append(snap.Clock).Append(" (").Append(snap.Mode).Append(" horde ").Append(snap.Horde).Append(")");
-                bool reroll = false; try { reroll = sel.isReroll; } catch { }
-                if (reroll) sb.Append(" reroll");
+                if (before != null) sb.Append(ReplacedText(sel, before, cards));
+                else { bool reroll = false; try { reroll = sel.isReroll; } catch { } if (reroll) sb.Append(" reroll"); }
                 Plugin.Logger.LogInfo(sb.ToString());
                 Plugin.Logger.LogInfo("[ctx] " + snap.Ctx + BuildsText(snap) + (snap.Boosts.Count > 0 ? " | boosts: " + string.Join(", ", snap.Boosts.ConvertAll(b => b.Name + " (" + b.Tag + ")")) : ""));
                 if (Plugin.LogSquad.Value) Plugin.Logger.LogInfo("[squad] " + snap.SquadText());
@@ -71,8 +105,10 @@ namespace YazsCompanion
                     line.Append(") ").Append(c.Score.ToString("0.00")).Append(" - ").Append(string.Join("; ", c.Why));
                     Plugin.Logger.LogInfo(line.ToString());
                 }
+                // 0.12.2: the rescue screen - is a reroll worth it? (judged again after a reroll: the replaced offer)
+                if (screen == Screen.SOS) RerollHint.OnOffer(sel, cards, snap, before != null);
                 if (Plugin.Verbose.Value) Describe.Offer(sel, screen.ToString());
-                _lastCards = cards; _lastScreen = screen; _lastClock = snap.Clock;
+                _lastCards = cards; _lastScreen = screen; _lastClock = snap.Clock; _lastT = t;
                 _debugScreen = sel; _debugOfferAt = UnityEngine.Time.realtimeSinceStartup;
             }
             catch (Exception e) { Plugin.Logger.LogError("[offer] " + screen + " failed: " + e); }
@@ -83,6 +119,7 @@ namespace YazsCompanion
             try
             {
                 Panel.ScreenClosed();
+                RerollHint.Close();
                 string what = "skip / nothing";
                 Card picked = null;
                 if (clicked != null && _lastCards != null)
@@ -97,10 +134,12 @@ namespace YazsCompanion
                 }
                 string screen = "?"; try { screen = sel.GetIl2CppType().Name.Replace("UIGameplay", ""); } catch { }
                 Plugin.Logger.LogInfo("[pick] " + screen + " " + _lastClock + ": " + what);
-                _lastCards = null;
                 Shots.Later(1.2f, "pick");
             }
             catch (Exception e) { Plugin.Logger.LogError("[pick] failed: " + e); }
+            // F13 counts a level-up as replaced while _lastCards is set: EVERY close must clear it, even one whose panel or pick lookup threw -
+            // else the next chained level-up (same paused clock) would pass for a reroll and skip the pace count
+            finally { _lastCards = null; }
         }
 
         static string Best(List<Card> cards) { foreach (var c in cards) if (c.Rank == 1) return c.Name; return "?"; }
@@ -158,7 +197,7 @@ namespace YazsCompanion
         static void Postfix(UIGameplay __instance) { long t = Perf.Begin(); Fx.Tick(); Panel.Tick(__instance); Perf.End("tick.hud", t); }
     }
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.OnDestroy))]
-    static class P_HudGone { static void Postfix() { Panel.Reset(); } }
+    static class P_HudGone { static void Postfix() { Panel.Reset(); Advisor.Forget(); } }
 
     // the Training Yard: advice on the tab that is open, and the node under the cursor for its WHY row
     [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.Update))]
@@ -178,7 +217,7 @@ namespace YazsCompanion
         static void Postfix()
         {
             long t = Perf.Begin();
-            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick();
+            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick(); RerollHint.Tick();
             Perf.End("tick.master", t);
             Perf.Frame();
         }

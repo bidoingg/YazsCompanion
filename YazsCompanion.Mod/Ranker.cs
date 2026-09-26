@@ -37,6 +37,7 @@ namespace YazsCompanion
         public string Name = "?";
         public string Kind = "?";
         public Survivor Owner;
+        public Recruit Recruit;          // SOS: what orders two survivors that score the same (null for Liberate)
         public double Score;
         public int Rank;
         public readonly List<string> Why = new List<string>();   // Why[0] is the short headline shown on the card
@@ -52,15 +53,21 @@ namespace YazsCompanion
         {
             foreach (var c in cards)
             {
-                try { Score(screen, c, s); }
+                try { Score(screen, c, s, cards); }
                 catch (Exception e) { c.Score = 0; c.Why.Insert(0, "not ranked (" + e.GetType().Name + ")"); Plugin.Logger.LogWarning("rank " + c.Name + ": " + e); }
                 c.Score = Math.Round(c.Score, 2);
             }
-            var order = cards.OrderByDescending(c => c.Score).ThenBy(c => c.Index).ToList();
+            // an exact tie goes to the card further left - except between two recruits, which the PLAN readout's SOS row
+            // ranks too: there both follow Recruit.Ties (0.12.2, F12), so the card framed is the survivor the row names first
+            var order = screen == Screen.SOS
+                ? cards.OrderByDescending(c => c.Score).ThenBy(c => c, RecruitTies).ThenBy(c => c.Index).ToList()
+                : cards.OrderByDescending(c => c.Score).ThenBy(c => c.Index).ToList();
             for (int i = 0; i < order.Count; i++) order[i].Rank = i + 1;
         }
 
-        static void Score(Screen screen, Card c, Snapshot s)
+        static readonly IComparer<Card> RecruitTies = Comparer<Card>.Create((a, b) => Recruit.Ties(a.Recruit, b.Recruit));
+
+        static void Score(Screen screen, Card c, Snapshot s, List<Card> offer)
         {
             if (c.Item != null) { ScoreItem(c, s); return; }
             if (c.Hashtag != null) { ScoreHashtag(c, s); return; }
@@ -83,7 +90,7 @@ namespace YazsCompanion
             }
             c.Owner = owner;
 
-            if (evoBase != null) { c.Kind = "evolution"; ScoreEvolution(c, p, evoBase, owner, s); }
+            if (evoBase != null) { c.Kind = "evolution"; ScoreEvolution(c, p, evoBase, owner, s, offer); }
             else if (w != null) { c.Kind = "weapon"; ScoreWeapon(c, w, owner, s); }
             else if (isAbility) { c.Kind = "ability"; ScoreAbility(c, p, owner, s); }
             else { c.Kind = "other"; c.Score = 1; c.Why.Add("powerup outside the tree"); }
@@ -125,6 +132,10 @@ namespace YazsCompanion
         // what decided a fork when no damage type sets the branches apart
         static string ForkFallback(WStep x) { return x.GuidePick ? "the guides' branch" : x.Tree > 0 ? "your Training Yard investment" : null; }
 
+        /// <summary>Where a weapon sits in its line: 0 = the starting weapon, 1 = its upgrade, 2 = one of the three tier-3
+        /// weapons of the fork; -1 = no weapon. The Training Yard plan sorts its weapon nodes by this (TreeState).</summary>
+        internal static int WeaponDepth(WeaponUpgradePowerup w) { if (w == null) return -1; try { return Depth(w); } catch { return -1; } }
+
         static int Depth(WeaponUpgradePowerup w)
         {
             int d = 0; PowerupBase cur = w;
@@ -134,8 +145,11 @@ namespace YazsCompanion
                 if (prev == null) break;
                 d++; cur = prev;
             }
+            // every weapon names the one before it: the fifth weapon of a line follows the tier-2 weapon just like the two
+            // other tier-3 weapons (probe.json: previousWeapon, weaponTier Tier3) - a third branch of the fork, not a "final
+            // weapon" (0.12.2, F05). Should a link ever be missing, the weapon's own tier says where it sits.
             Weapon.WeaponTier tier = Weapon.WeaponTier.Tier1; try { tier = w.weaponTier; } catch { }
-            if (d == 0 && tier != Weapon.WeaponTier.Tier1) d = 3;   // the final weapon has no predecessor link
+            if (d == 0 && tier != Weapon.WeaponTier.Tier1) d = tier == Weapon.WeaponTier.Tier2 ? 1 : 2;
             return d;
         }
 
@@ -163,9 +177,9 @@ namespace YazsCompanion
             {
                 if (g.Key == 2)
                 {
-                    // the fork: a branch already taken wins; else the build's branch; else what the rest of the squad deals,
-                    // the Training Yard investment and the guides, among the branches the tree unlocked (the game only
-                    // offers those: a locked pick must not demote the branch that can be offered)
+                    // the fork, the three tier-3 weapons: a branch already taken wins; else the build's branch; else what
+                    // the rest of the squad deals, the Training Yard investment and the guides, among the branches the tree
+                    // unlocked (the game only offers those: a locked pick must not demote the branch that can be offered)
                     var pool = g.Where(x => x.Level >= 1).ToList();
                     if (pool.Count == 0) pool = g.Where(x => x.Available).ToList();
                     if (pool.Count == 0) pool = g.ToList();
@@ -229,7 +243,6 @@ namespace YazsCompanion
                 c.Why.Add("style: " + StyleName(style) + (reach < 0.6 ? "; little time left to finish it (" + s.Ctx.ClockText + ")" : ""));
             }
             else if (me != null && me.Depth == 0) { c.Score = 7.2; c.Why.Add("first weapon for " + owner.Name + ": without it the recruit does nothing"); }
-            else if (me != null && me.Depth >= 3 && (next == null || me == next)) { c.Score = 6.9 + syn; c.Why.Add("final weapon of the line"); }
             else if (next != null && me == next)
             {
                 c.Score = 6.6 + syn;
@@ -240,8 +253,8 @@ namespace YazsCompanion
                 var pref = path.FirstOrDefault(x => x.Depth == me.Depth && x.Recommended);
                 bool chosen = pref != null && pref.BuildPick;
                 bool prefOffered = pref != null && pref.Available;
-                // the branches exclude each other. The player's own build: hold out for it. Auto: a tier-2 weapon of the
-                // other branch is still a big step up, so it ranks above the weak abilities, below the good ones
+                // the branches exclude each other. The player's own build: hold out for it. Auto: a tier-3 weapon of
+                // another branch is still a big step up, so it ranks above the weak abilities, below the good ones
                 c.Score = chosen ? 2.0 : prefOffered ? 3.6 + syn : 6.2 + syn;
                 // "shares Kinetic with Bow" speaks for the favoured branch against a rocket launcher, not against this card
                 // when it deals Kinetic too: there the tree investment or the guides decided (or nothing: card order)
@@ -424,7 +437,7 @@ namespace YazsCompanion
         }
 
         // ---------------------------------------------------------------- evolutions
-        static void ScoreEvolution(Card c, PowerupBase evo, PowerupBase baseAbility, Survivor owner, Snapshot s)
+        static void ScoreEvolution(Card c, PowerupBase evo, PowerupBase baseAbility, Survivor owner, Snapshot s, List<Card> offer)
         {
             var parent = AbilityScore(baseAbility, owner, s);
             string baseName = G.Name(baseAbility), evoName = G.Name(evo);
@@ -437,10 +450,24 @@ namespace YazsCompanion
             {
                 bool mine = SameName(pick, evoName);
                 c.Score += mine ? 1.0 : -0.5;
-                c.Why.Add(mine ? "evolution of " + baseName + ": your " + build.Name + " build's pick" : "evolution of " + baseName + "; your build takes " + pick);
+                // 0.12.2 (F12): with the build's pick not on the table this card still comes first (an evolution outranks
+                // a tier-up) and says so, instead of "your build takes <the other one>" under a card marked PICK
+                c.Why.Add(Synergy.EvolutionHead(baseName, evoName, pick, build.Name, mine, mine || offer == null || EvolutionOffered(offer, c, baseAbility, pick)));
             }
             else c.Why.Add("evolution of " + baseName + (fitWhy.Count > 0 ? ": " + fitWhy[0] : ""));
             c.Why.AddRange(pick != null ? fitWhy : fitWhy.Skip(1));
+        }
+
+        // the named evolution of this base ability is on another card of the same offer
+        static bool EvolutionOffered(List<Card> offer, Card self, PowerupBase baseAbility, string evoName)
+        {
+            foreach (var o in offer)
+            {
+                if (o == self || o.Powerup == null) continue;
+                PowerupBase ob = null; try { ob = o.Powerup.evolutionBaseAbility; } catch { }
+                if (ob != null && G.Same(ob, baseAbility) && SameName(G.Name(o.Powerup), evoName)) return true;
+            }
+            return false;
         }
 
         // ---------------------------------------------------------------- items (chests)
@@ -537,13 +564,15 @@ namespace YazsCompanion
             if (props == null) { c.Score = 0.5; c.Why.Add("unknown survivor"); return; }
             CT cls = props.characterType; c.Name = G.ClassName(cls);
             if (s.OnSquad(cls)) { c.Score = 0; c.Why.Add("already on the squad"); return; }
-            c.Score = RecruitScore(cls, props, s, c.Why);
+            c.Recruit = new Recruit();
+            c.Score = c.Recruit.Score = RecruitScore(cls, props, s, c.Why, c.Recruit);
         }
 
         /// <summary>What a recruit brings to THIS squad: bought synergy nodes (an unbought node does nothing in a run), damage
         /// types shared with the squad, team passives either way, the guides' rescue tier, how trained the recruit is - all
-        /// scaled by the time left for them to grow. Shared by the SOS cards and the plan panel.</summary>
-        internal static double RecruitScore(CT cls, ClassProperties props, Snapshot s, List<string> why)
+        /// scaled by the time left for them to grow. Shared by the SOS cards and the plan panel; <paramref name="tie"/>, when
+        /// given, gets what settles a tie between two recruits (Recruit.Ties).</summary>
+        internal static double RecruitScore(CT cls, ClassProperties props, Snapshot s, List<string> why, Recruit tie = null)
         {
             string name = G.ClassName(cls);
             double fixedPart = 2.0, fit = 0;         // a third gun and +20 % XP for the rest of the run: never worth less than this early
@@ -570,6 +599,7 @@ namespace YazsCompanion
                 if (o > 0) partners.Add(o + " with " + sv.Name);
             }
             fit += 1.1 * owned;
+            if (tie != null) { tie.Name = name; tie.Class = (int)cls; tie.Tier = tier ?? ""; tie.Bought = owned; }
             if (owned > 0) why.Add((owned == 1 ? "1 bought synergy: " : owned + " bought synergies: ") + string.Join(", ", partners));
             else if (unowned > 0) why.Add(unowned + " synergy node" + (unowned > 1 ? "s" : "") + " with this squad, none bought yet");
 
@@ -601,7 +631,7 @@ namespace YazsCompanion
                     continue;
                 }
                 string d = G.NodeDesc(n);
-                if (d.IndexOf("on the team", StringComparison.OrdinalIgnoreCase) >= 0) { fit += 0.5; why.Add(ShortDesc(d)); }
+                if (d.IndexOf("on the team", StringComparison.OrdinalIgnoreCase) >= 0) { fit += 0.5; why.Add(TeamPassive(n, d)); }
             }
 
             int lvl = props != null ? G.TreeLevel(props) : 0;
@@ -616,6 +646,25 @@ namespace YazsCompanion
             else if (tier != null && owned > 0) why.Insert(0, tier + "-tier rescue, " + (owned == 1 ? "1 bought synergy" : owned + " bought synergies") + " with the squad");
             if (why.Count == 0) why.Add("L" + lvl + ", no synergy with this squad");
             return fixedPart * left + fit * (0.35 + 0.65 * left);
+        }
+
+        /// <summary>Every survivor the squad could still be joined by - unlocked in the profile, not on the squad, not
+        /// <paramref name="skip"/>ped - scored by the SOS cards' rules, in the game's class order; each Recruit carries the
+        /// game's class name. The readout's SOS row and the reroll hint on the rescue screen (0.12.2) both ask here.</summary>
+        internal static List<Recruit> Recruitable(Snapshot s, Func<CT, bool> skip = null)
+        {
+            var list = new List<Recruit>();
+            foreach (CT cls in Enum.GetValues(typeof(CT)))
+            {
+                if (cls == CT.None || cls == CT.NumCharacters || s.OnSquad(cls)) continue;
+                if (skip != null && skip(cls)) continue;
+                var props = G.PropsOf(cls);
+                if (props == null || !G.Unlocked(props)) continue;
+                var r = new Recruit();
+                r.Score = RecruitScore(cls, props, s, new List<string>(), r);
+                list.Add(r);
+            }
+            return list;
         }
 
         // ---------------------------------------------------------------- military training and Endless stat cards
@@ -689,10 +738,27 @@ namespace YazsCompanion
             try { var cp = p.targetClassProperties; if (cp != null) return G.ClassName(cp.characterType); } catch { }
             return null;
         }
-        static string ShortDesc(string d)
+        // 0.12.2 (F12): a recruit's own team passive in a few words - "team passive: +Armor", from the statistic the node
+        // raises - where the game's sentence cut at 41 characters ("While Tank is on the team, Armor is incre...") said
+        // nothing. The node is asset data: its phrase is kept per node for the session.
+        static readonly Dictionary<IntPtr, string> _teamPassive = new Dictionary<IntPtr, string>();
+        static readonly System.Text.RegularExpressions.Regex TeamStat = new System.Text.RegularExpressions.Regex(@"on the team, (?:all )?(.+?) (?:is|are) increased", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        static string TeamPassive(SkillTreeUpgradeBase n, string desc)
         {
-            d = ItemRules.RichTag.Replace(d ?? "", "").Replace("\n", " ").Trim();
-            return d.Length > 44 ? d.Substring(0, 41) + "..." : d;
+            IntPtr key = IntPtr.Zero; try { key = n.Pointer; } catch { }
+            string text;
+            if (key != IntPtr.Zero && _teamPassive.TryGetValue(key, out text)) return text;
+            string stat = null;
+            try
+            {
+                var vb = n.TryCast<SkillTreeUpgradeValueBase>();
+                if (vb != null) foreach (var bonus in G.Each(vb.statisticBonuses)) { var st = bonus == null ? null : bonus.targetStatistic; if (st != null) { stat = Humanize(st.statisticType.ToString()); break; } }
+            }
+            catch { }
+            if (string.IsNullOrEmpty(stat)) { var m = TeamStat.Match(ItemRules.RichTag.Replace(desc ?? "", "")); if (m.Success) stat = m.Groups[1].Value.Trim(); }
+            text = string.IsNullOrEmpty(stat) ? "team passive" : "team passive: +" + stat;
+            if (key != IntPtr.Zero) _teamPassive[key] = text;
+            return text;
         }
         static string Humanize(string s)
         {

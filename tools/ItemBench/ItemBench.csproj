@@ -19,5 +19,6 @@
     <Compile Include="..\..\YazsCompanion.Mod\Builds.cs" Link="mod\Builds.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\BuildPresets.cs" Link="mod\BuildPresets.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Updater.cs" Link="mod\Updater.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\TreePlan.cs" Link="mod\TreePlan.cs" />
   </ItemGroup>
 </Project>

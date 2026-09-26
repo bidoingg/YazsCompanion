@@ -25,7 +25,9 @@ namespace YazsCompanion
         public bool RankOpen = true, Perm;
         public string Tier = "";          // the guides' tier of the ability this node boosts or evolves (S / A / B / C / "")
         public string BaseKey = "";       // evolution: the key of the ability node it evolves
-        public bool GuideBranch;          // weapon: the pick at the tier-2 fork (the selected build's branch, else the guides')
+        public bool GuideBranch;          // weapon: the pick at the fork (the selected build's branch, else the guides')
+        public int WeaponDepth = -1;      // weapon: 0 = the starting weapon, 1 = its upgrade, 2 = one of the three tier-3 weapons (the
+                                          // fork); -1 = not known, then the column decides (column 1 = the first two, the rest = the fork)
         public string BranchWhy = "";     // set when the pick comes from the player's build
         public object Ui;                 // the UISkillTreeNode it was read from
 
@@ -104,8 +106,15 @@ namespace YazsCompanion
             return steps;
         }
 
-        // ---- a survivor's tree: starting abilities, the cheap tier-1 weapons, evolutions, the main weapon line, rank III
+        // ---- a survivor's tree: starting abilities, the cheap first two weapons, evolutions, the main weapon branch, rank III
         // abilities, badges and synergies as their ranks open, rank V passives, then everything that is left
+        //
+        // 0.12.2 (F05): the weapon nodes are sorted by the weapon they boost, not by their column. The fifth weapon of a
+        // line sits in column 3, and the plan took it for "the final weapon of the line" and pushed it to level 3 before
+        // rank III abilities, badges and synergies - for a survivor whose build takes another branch (a Training Yard
+        // advice to buy that node 2>3 was followed on the Deck while the build, and every card in the run, said the
+        // other branch). It is the third tier-3 weapon of the fork: the main branch is chosen among all three, and the
+        // other two come last, for the runs that offer them.
         public static List<TStep> ClassSteps(List<TNode> nodes)
         {
             var steps = new List<TStep>();
@@ -115,24 +124,24 @@ namespace YazsCompanion
             Func<TNode, TNode> evoOf = a => nodes.FirstOrDefault(n => n.Kind == TKind.Evolution && (n.BaseKey == a.Key || n.Prereqs.Contains(a.Key)));
             Func<TNode, string> tierTxt = a => a.Tier.Length > 0 ? " (" + a.Tier + " tier)" : "";
 
-            var w1 = kind(1, TKind.Weapon); var a1 = byTier(kind(1, TKind.Ability)); var a3 = byTier(kind(3, TKind.Ability));
-            var fork = kind(2, TKind.Weapon);
-            var mainFork = fork.OrderByDescending(n => n.GuideBranch).ThenByDescending(n => n.Level).ThenBy(n => n.Slot).FirstOrDefault();
-            var final = kind(3, TKind.Weapon).Concat(kind(4, TKind.Weapon)).Concat(kind(5, TKind.Weapon)).ToList();
+            var a1 = byTier(kind(1, TKind.Ability)); var a3 = byTier(kind(3, TKind.Ability));
+            var weapons = nodes.Where(n => n.Kind == TKind.Weapon).ToList();
+            Func<TNode, bool> forked = n => n.WeaponDepth >= 0 ? n.WeaponDepth >= 2 : n.Rank >= 2;
+            var w1 = weapons.Where(n => !forked(n)).OrderBy(n => n.WeaponDepth).ThenBy(n => n.Rank).ThenBy(n => n.Slot).ToList();
+            var fork = weapons.Where(forked).OrderBy(n => n.Rank).ThenBy(n => n.Slot).ToList();
+            var mainFork = fork.OrderByDescending(n => n.GuideBranch).ThenByDescending(n => n.Level).ThenBy(n => n.Rank).ThenBy(n => n.Slot).FirstOrDefault();
 
             foreach (var a in a1) push(a, 2, "Cheap damage and cooldown on a starting ability" + tierTxt(a) + ".");
             if (w1.Count > 1) push(w1[1], 2, "The second starting weapon carries the early run.");
             foreach (var a in a1) push(a, 3, "");
-            foreach (var w in w1) push(w, w.Max, "Tier-1 weapon levels are cheap and speed up the start.");
+            foreach (var w in w1) push(w, w.Max, "Levels of the first two weapons are cheap and speed up the start.");
             foreach (var a in a1) push(evoOf(a), 1, "Unlocks both evolutions of " + a.Name + ": the biggest spike in the tree.");
-            if (mainFork != null) push(mainFork, 3, mainFork.BranchWhy.Length > 0 ? mainFork.BranchWhy : mainFork.GuideBranch ? "The guides' weapon branch for this survivor." : "One tier-2 weapon first: the one you levelled most.");
+            if (mainFork != null) push(mainFork, 3, mainFork.BranchWhy.Length > 0 ? mainFork.BranchWhy : mainFork.GuideBranch ? "The guides' weapon branch for this survivor." : "One tier-3 weapon first: the one you levelled most.");
             foreach (var a in a1) push(a, a.Max, "Max the starting abilities" + tierTxt(a) + ".");
             if (mainFork != null) push(mainFork, mainFork.Max, "");
-            foreach (var w in final) push(w, 3, "The final weapon of the line.");
             foreach (var a in a3) push(a, 3, "Rank III ability" + tierTxt(a) + ".");
             foreach (var b in kind(2, TKind.Badge)) push(b, 1, b.Name + ": only matters if you equip it.");
             foreach (var s in kind(2, TKind.Synergy)) push(s, 1, "Pays off when both survivors are on the squad.");
-            foreach (var w in final) push(w, w.Max, "");
             foreach (var a in a3) push(a, a.Max, "");
             foreach (var b in kind(3, TKind.Badge)) push(b, 1, b.Name + ": only matters if you equip it.");
             foreach (var s in kind(3, TKind.Synergy)) push(s, 1, "Pays off when both survivors are on the squad.");
@@ -143,7 +152,7 @@ namespace YazsCompanion
             foreach (var p in p5) push(p, 1, "Rank V passive: always on.");
             foreach (var p in p5) push(p, p.Max, "Passives scale to level " + p.Max + " (1 + 3 + 5 points).");
             foreach (var s in kind(5, TKind.Synergy)) push(s, 1, "Pays off when both survivors are on the squad.");
-            foreach (var w in fork) if (w != mainFork) push(w, w.Max, "The other tier-2 weapon, for the runs that offer it.");
+            foreach (var w in fork) if (w != mainFork) push(w, w.Max, "The other branches of the fork, for the runs that offer them.");
             Rest(nodes, steps);
             return steps;
         }

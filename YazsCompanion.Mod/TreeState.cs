@@ -63,6 +63,7 @@ namespace YazsCompanion
                 if (w != null)
                 {
                     n.Kind = TKind.Weapon;
+                    n.WeaponDepth = Ranker.WeaponDepth(w.targetWeapon);
                     string name = G.Name(w.targetWeapon);
                     n.GuideBranch = guideBranch != null && Ranker.SameName(name, guideBranch);
                     if (n.GuideBranch && _build != null && !string.IsNullOrEmpty(_build.Branch)) n.BranchWhy = "The weapon branch of your " + _build.Name + " build.";
@@ -120,7 +121,7 @@ namespace YazsCompanion
             foreach (var n in nodes)
                 sb.Append("\n    r").Append(n.Rank).Append(" #").Append(n.Slot).Append(' ').Append(n.Kind).Append(' ').Append(n.Key).Append(" '").Append(n.Name).Append("' ")
                   .Append(n.Level).Append('/').Append(n.Max).Append(" min ").Append(n.Min).Append(" costs [").Append(string.Join(",", n.Costs)).Append(']')
-                  .Append(n.RankOpen ? "" : " LOCKED").Append(n.Perm ? " perm" : "").Append(n.GuideBranch ? " guide-branch" : "").Append(n.Tier.Length > 0 ? " tier " + n.Tier : "")
+                  .Append(n.RankOpen ? "" : " LOCKED").Append(n.Perm ? " perm" : "").Append(n.Kind == TKind.Weapon && n.WeaponDepth >= 0 ? (n.WeaponDepth >= 2 ? " fork" : " line" + n.WeaponDepth) : "").Append(n.GuideBranch ? " guide-branch" : "").Append(n.Tier.Length > 0 ? " tier " + n.Tier : "")
                   .Append(n.Prereqs.Count > 0 ? " pre " + string.Join(",", n.Prereqs) : "");
             return sb.ToString();
         }

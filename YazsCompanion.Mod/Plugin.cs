@@ -23,7 +23,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.12.1";
+        public const string VERSION = "0.12.2";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -63,6 +63,7 @@ namespace YazsCompanion
         internal static ConfigEntry<CautionLevel> AdviceCaution;
         internal static ConfigEntry<TagStrategy> AdviceTags;
         internal static ConfigEntry<RecruitPolicy> AdviceRecruit;
+        internal static ConfigEntry<bool> AdviceRerollHint;
         internal static ConfigEntry<bool> MenuButton;
         internal static ConfigEntry<string> MenuKey;
 
@@ -126,6 +127,7 @@ namespace YazsCompanion
             AdviceCaution = Config.Bind("Advice", "Caution", CautionLevel.Normal, "How much survival picks (max health, armor, regeneration, healing) weigh.");
             AdviceTags = Config.Bind("Advice", "TagPlan", TagStrategy.Auto, "Damage type tags. Auto = stack the type the squad deals most; Spread = no stacking bonus; or name one type to always favour.");
             AdviceRecruit = Config.Bind("Advice", "Recruit", RecruitPolicy.ByTheClock, "SOS signals late in a timed run. ByTheClock = Liberate once a recruit no longer has the level-ups to grow; AlwaysRecruit; LiberateFromHalfway.");
+            AdviceRerollHint = Config.Bind("Advice", "RerollHint", true, "The rescue (SOS) screen: when a survivor who could still come (unlocked, not on the squad, not on the cards) rates clearly higher than the best card on offer - by 0.75 or more on the cards' own scale - and the game still has a reroll for the screen, the Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. Advice only: it never rerolls for you. false = no hint (the [squad] reroll hint line is still written to the log).");
             MenuButton = Config.Bind("Menu", "MenuButton", true, "Add a COMPANION button to the main menu and the pause menu that opens the mod menu (builds per survivor, advice settings, display settings). Mouse, keyboard and controller.");
             MenuKey = Config.Bind("Menu", "MenuKey", "F10", "Keyboard key that opens and closes the mod menu on the main menu and while paused (a UnityEngine.KeyCode name; empty = none).");
             PreviewMenu = Config.Bind("Debug", "PreviewMenu", false, "About 6 s after launch, open the mod menu on the main menu, walk its tabs and save a screenshot of each into the shots folder. For checking the menu without touching the controls; off by default.");
@@ -172,6 +174,9 @@ namespace YazsCompanion
                 + " (" + knowledge.ItemTier.Count + " items, " + knowledge.AbilityTier.Count + " abilities, " + knowledge.RescueTier.Count + " survivors)");
 
             if (AutoUpdate.Value) Updater.CheckInBackground(UpdateUrl.Value, VERSION, PluginDir);
+            // 0.12.2 (F02): a game patch that adds a card class shows in the first lines of the log - after the updater, in its own try:
+            // nothing it meets (a game build older than the interop's card classes) may stop the update check
+            try { Badge.CheckCardClasses(); } catch (Exception e) { Logger.LogWarning("[badge] card classes not checked: " + e.Message); }
         }
     }
 

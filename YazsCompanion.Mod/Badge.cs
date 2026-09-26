@@ -142,7 +142,7 @@ namespace YazsCompanion
             if (text == null)
             {
                 var template = Template(b);
-                if (template == null) { Plugin.Logger.LogWarning("[badge] no label template on " + b.GetIl2CppType().Name); return null; }
+                if (template == null) { Once("none:" + TypeName(b), "[badge] no label template on " + TypeName(b) + " (not even a label with a font under the card): no ribbon and no reason on these cards"); return null; }
                 text = CardText(template, root, ReasonName);
                 if (text == null) return null;
                 var rt0 = text.rectTransform;
@@ -178,6 +178,37 @@ namespace YazsCompanion
         }
 
         // ---- primitives ----
+        // The label the ribbon and the reason line are cloned from: the card's own short description, per card class.
+        // 0.12.2 (F02): the game's patch of 2026-09-23 gave the rescue cards a class of their own (UIPowerupButtonSOS, no
+        // longer a skill card), and the chain below did not know it - the rescue cards lost their ribbon and reason line
+        // and logged a warning per card per offer. The chain knows it now; a class it has never seen falls back to the
+        // first active label with a font under the card (said once per class and session), and CheckCardClasses at load
+        // names any card class the chain does not know, so the next such patch shows in the first log line.
+        // The rescue card class is only named inside its own small methods (SosType, SosLabel): an interop generated from a game
+        // build before that patch has no such type, and a static field naming it would fail the whole class's initializer - every
+        // badge and reason line of every screen, not just the rescue cards'. Without it, rescue cards fall back to their first label.
+        static Type[] _known;
+        static bool _noSos;
+
+        static Type[] Known()
+        {
+            if (_known != null) return _known;
+            var list = new System.Collections.Generic.List<Type> { typeof(UIPowerupButtonSkill), typeof(UIPowerupButtonItem), typeof(UIPowerupButtonMilitary), typeof(UIPowerupButtonHashtag) };
+            try { list.Add(SosType()); } catch { _noSos = true; }
+            return _known = list.ToArray();
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static Type SosType() { return typeof(UIPowerupButtonSOS); }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static TextMeshProUGUI SosLabel(UIPowerupButtonBase b)
+        {
+            var sos = b.TryCast<UIPowerupButtonSOS>();
+            if (sos == null) return null;
+            return sos.shortDescription != null ? sos.shortDescription : sos.className;
+        }
+
         static TextMeshProUGUI Template(UIPowerupButtonBase b)
         {
             var skill = b.TryCast<UIPowerupButtonSkill>(); if (skill != null && skill.shortDescription != null) return skill.shortDescription;
@@ -185,7 +216,67 @@ namespace YazsCompanion
             var mil = b.TryCast<UIPowerupButtonMilitary>(); if (mil != null && mil.militaryTrainingDescription != null) return mil.militaryTrainingDescription;
             var tag = b.TryCast<UIPowerupButtonHashtag>();
             if (tag != null) { if (tag.hashtagShortDescriptionText != null) return tag.hashtagShortDescriptionText; if (tag.hashtagDescriptionText != null) return tag.hashtagDescriptionText; }
+            if (!_noSos)
+            {
+                TextMeshProUGUI label = null;
+                try { label = SosLabel(b); }
+                catch (Exception e) { _noSos = true; Once("nosos", "[badge] the rescue card class is not in this game build's interop (" + e.GetType().Name + "): rescue cards borrow their first label"); }
+                if (label != null) return label;
+            }
+            var any = FirstLabel(b);
+            if (any != null) Once("fallback:" + TypeName(b), "[badge] " + TypeName(b) + ": no known label template, using the card's first label '" + any.name + "'");
+            return any;
+        }
+
+        // the last resort: the first active label with a font under the card, in hierarchy order - never one of our own
+        static TextMeshProUGUI FirstLabel(UIPowerupButtonBase b)
+        {
+            try
+            {
+                var all = b.GetComponentsInChildren(Il2CppInterop.Runtime.Il2CppType.Of<TextMeshProUGUI>(), false);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var t = all[i].TryCast<TextMeshProUGUI>(); if (t == null) continue;
+                    try
+                    {
+                        if (t.font == null || !t.gameObject.activeInHierarchy) continue;
+                        if (t.name.StartsWith("Yazs", StringComparison.Ordinal)) continue;
+                        var up = t.transform.parent; if (up != null && up.name.StartsWith("Yazs", StringComparison.Ordinal)) continue;
+                    }
+                    catch { continue; }
+                    return t;
+                }
+            }
+            catch { }
             return null;
+        }
+
+        static readonly System.Collections.Generic.HashSet<string> _said = new System.Collections.Generic.HashSet<string>();
+        static void Once(string key, string warning) { if (_said.Add(key)) Plugin.Logger.LogWarning(warning); }
+        static string TypeName(UIPowerupButtonBase b) { try { return b.GetIl2CppType().Name; } catch { return "a card"; } }
+
+        /// <summary>At load: the game's card classes (every UIPowerupButtonBase subclass the interop assembly has) against the
+        /// ones Template knows. One info line when all are known, one warning per class that is not - its cards would
+        /// fall back to their first label.</summary>
+        public static void CheckCardClasses()
+        {
+            try
+            {
+                Type[] types;
+                try { types = typeof(UIPowerupButtonBase).Assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; }
+                var names = new System.Collections.Generic.List<string>(); int unknown = 0;
+                foreach (var t in types)
+                {
+                    if (t == null || !t.IsSubclassOf(typeof(UIPowerupButtonBase))) continue;
+                    bool known = false; foreach (var k in Known()) if (k.IsAssignableFrom(t)) { known = true; break; }
+                    names.Add(t.Name.Replace("UIPowerupButton", ""));
+                    if (!known) { unknown++; Plugin.Logger.LogWarning("[badge] card class " + t.Name + " has no label template: its cards borrow their first label (worth a look)"); }
+                }
+                names.Sort(StringComparer.Ordinal);
+                Plugin.Logger.LogInfo("[badge] card classes: " + string.Join(", ", names) + (unknown == 0 ? " - all have a label template" : " - " + unknown + " without"));
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[badge] card classes not checked: " + e.Message); }
         }
 
         // a card label clone on one line, cut with an ellipsis if it is ever too long

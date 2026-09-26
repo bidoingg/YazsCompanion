@@ -1,5 +1,6 @@
-// The preset builds per survivor. Each follows one of the survivor's two tier-2 weapon branches (they deal
-// different damage types, so everything behind them lines up differently) or an identity the kit allows.
+// The preset builds per survivor. Each follows one of the survivor's weapon branches - the tier-3 weapons of the
+// fork, which deal different damage types, so everything behind them lines up differently - or an identity the kit
+// allows.
 // What a preset fixes is what defines it; what it leaves open (an empty branch, an ability without an evolution
 // entry) is decided live from the squad - the evolution sharing a damage type with the squad's stacked tag, or
 // carrying a tag that a team passive on the squad boosts.
@@ -12,6 +13,9 @@
 //            Turret / Trap Expertise and Cold Chain) where the guides are silent. Honest about it: Medic and Mechanic
 //            have ONE build in the guides; their alternatives say so.
 // Evolution picks are only fixed where a source names one or the build's identity depends on it.
+// 0.12.2: a build whose text names a tier-3 weapon has that weapon as its branch (Grenadier: the Grenade Launcher, Shotgunner: the
+// Super Shotgun - with an empty branch the guides' branch was pushed first), and no text promises a second tier-3 weapon after its
+// branch (the three exclude each other). The bench checks both.
 using System.Collections.Generic;
 
 namespace YazsCompanion
@@ -39,7 +43,7 @@ namespace YazsCompanion
                 B("swat-operator", "SWAT", "Operator", Guides, "turret", BuildStyle.Ability, "Sniper Rifle",
                     "Ability first (Kudesnik's guide): the helicopter once, max the turret, then Ricochet - it scales with ABILITY damage and crit. Sniper Rifle last; also the Boss Rush gun.",
                     new[] { "Automatic Turret", "Ricochet", "Helicopter Strike", "Grenade Trail" }, new[] { "abilities", "critical", "turret", "deployable" }),
-                B("swat-grenadier", "SWAT", "Grenadier", Data, "blast", BuildStyle.Balanced, "",
+                B("swat-grenadier", "SWAT", "Grenadier", Data, "blast", BuildStyle.Balanced, "Grenade Launcher",
                     "Explosives on the way to the Grenade Launcher. Grenade Expertise boosts every grenade on the squad, so take the evolutions that throw them. Chemtrails also feeds a chemical squad.",
                     new[] { "Grenade Trail", "Helicopter Strike", "Automatic Turret", "Ricochet" }, new[] { "Explosive", "abilities", "grenade" },
                     "Helicopter Strike", "Helicopter Strike: Chemtrails", "Automatic Turret", "Automatic Turret: Demolition"),
@@ -52,7 +56,7 @@ namespace YazsCompanion
                     "Ability first (Kudesnik's guide): max Sawblade Drone into Cogwheels, then the shotgun, then Minefield: Taunt for crowd control. A walking reaper next to Ghost's slashing kit.",
                     new[] { "Sawblade Drone", "Minefield", "Fury Unleashed", "Bombing Strike" }, new[] { "Slashing", "melee", "taunt", "abilities", "armor" },
                     "Sawblade Drone", "Sawblade Drone: Cogwheels", "Minefield", "Minefield: Taunt"),
-                B("tank-shotgunner", "Tank", "Shotgunner", Guides, "bullets", BuildStyle.Weapon, "",
+                B("tank-shotgunner", "Tank", "Shotgunner", Guides, "bullets", BuildStyle.Weapon, "Super Shotgun",
                     "The shotgun line to the Super Shotgun (forum: the top damage in hour-long runs). Close range: shotguns fall off sharply with distance. Fury Unleashed keeps you in the fight.",
                     new[] { "Fury Unleashed", "Sawblade Drone", "Bombing Strike", "Minefield" }, new[] { "weapons", "Kinetic", "armor", "healing" }),
 
@@ -64,7 +68,7 @@ namespace YazsCompanion
                     "Ability damage (Kudesnik's guide): max both Electrocution and the Electric Turret. Note 1.0 cut Electrocution's early ranks - it pays off from level 3.",
                     new[] { "Electrocution", "Electric Turret", "Energy Shield", "EMP Grenade" }, new[] { "Electric", "abilities", "status effects", "turret" }),
                 B("engineer-gunner", "Engineer", "Arc Gunner", Data, "crosshair", BuildStyle.Weapon, "Laser",
-                    "Weapon carry: Tesla into the Laser (the boss and crit pick; Blaster is the crowd pick) and on to Plasma. Everything electric feeds one tag.",
+                    "Weapon carry: Tesla into the Laser (the boss and crit pick; Blaster is the crowd pick, Plasma the third branch). Everything electric feeds one tag.",
                     new[] { "Energy Shield", "Electrocution", "Electric Turret", "EMP Grenade" }, new[] { "weapons", "Electric", "critical" }),
 
                 // ---------------------------------------------------------------- Huntress
@@ -93,7 +97,7 @@ namespace YazsCompanion
                     "The guides' one Medic build: support, abilities first (Experiment 21 before anything), the weapon last. Recruit early. Strongest in runs past 20 minutes.",
                     new[] { "Experiment 21", "Medical Drone", "Stimpack", "Resuscitation" }, new[] { "abilities", "healing", "status effects", "Ice" }),
                 B("medic-plague", "Medic", "Plague Doctor", Guides, "flask", BuildStyle.Balanced, "Antidote Flasks",
-                    "For chemical squads (Bioweapon, Chemtrails, Toxic Arrows): Antidote Flasks and the chemical half of Experiment 21 on one tag, up to the Syringer.",
+                    "For chemical squads (Bioweapon, Chemtrails, Toxic Arrows): Antidote Flasks and the chemical half of Experiment 21 on one tag.",
                     new[] { "Experiment 21", "Medical Drone", "Stimpack", "Resuscitation" }, new[] { "Chemical", "status effects", "abilities" },
                     "Experiment 21", "Experiment 21: 13", "Medical Drone", "Medical Drone: Offense"),
                 B("medic-lifeline", "Medic", "Lifeline", Data, "heart", BuildStyle.Ability, "",
