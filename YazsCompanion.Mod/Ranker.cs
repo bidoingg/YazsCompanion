@@ -13,10 +13,12 @@
 //  Level-ups:  evolutions first (the build's pick, else the one that fits the squad), a recruit's first weapon, the
 //              next weapon tier; then by STYLE - Weapon: every weapon level before any ability level; Balanced
 //              (default): each ability once early, then the weapon and the focus ability side by side, the rest
-//              after; Ability: the abilities first, the weapon fills in.
+//              after; Ability: the abilities first, the weapon fills in - from 0.13.0 (C2) it fills in ahead of the other
+//              survivors' ability levels once the survivor's own abilities are as good as done (WeaponLift in Synergy.cs).
 //  Chests:     guide tier, then the fit with this squad, this clock, what is held (ItemRules).
 //  SOS:        synergy nodes that are BOUGHT, shared damage types, team passives, the guides' rescue tier - scaled by
-//              the time a recruit still has to grow; Liberate once that time has run out, or when the squad is full.
+//              the time a recruit still has to grow; Liberate once that time has run out, or when the squad is full; the
+//              active quest's team rules over all of it (0.13.0, C1: QuestTeam.cs - "quest: stay solo").
 //  Military:   rarity x stat weight, the weight moved by the squad's weapon / ability split and by the clock.
 using System;
 using System.Collections.Generic;
@@ -42,6 +44,8 @@ namespace YazsCompanion
         public int Rank;
         public readonly List<string> Why = new List<string>();   // Why[0] is the short headline shown on the card
         public string Reason { get { return Why.Count > 0 ? Why[0] : ""; } }
+        internal bool LiftedWeapon;      // 0.13.0 (C2): a held weapon's level on the lifted floor - kept under the owner's own open build ability
+        internal bool OwnBuildOpen;      // an ability card the owner's build ranks (no build: any), short of its last level
     }
 
     internal static class Ranker
@@ -57,6 +61,7 @@ namespace YazsCompanion
                 catch (Exception e) { c.Score = 0; c.Why.Insert(0, "not ranked (" + e.GetType().Name + ")"); Plugin.Logger.LogWarning("rank " + c.Name + ": " + e); }
                 c.Score = Math.Round(c.Score, 2);
             }
+            try { UnderOwnAbility(cards); } catch (Exception e) { Plugin.Logger.LogWarning("rank: weapon cap - " + e.Message); }
             // an exact tie goes to the card further left - except between two recruits, which the PLAN readout's SOS row
             // ranks too: there both follow Recruit.Ties (0.12.2, F12), so the card framed is the survivor the row names first
             var order = screen == Screen.SOS
@@ -66,6 +71,24 @@ namespace YazsCompanion
         }
 
         static readonly IComparer<Card> RecruitTies = Comparer<Card>.Create((a, b) => Recruit.Ties(a.Recruit, b.Recruit));
+
+        // 0.13.0 (C2): a lifted weapon level stays just under a card of its owner's own open build ability on the same offer -
+        // "abilities first" still holds for the survivor's own abilities, only the other survivors' levels go after it
+        static void UnderOwnAbility(List<Card> cards)
+        {
+            foreach (var c in cards)
+            {
+                if (!c.LiftedWeapon || c.Owner == null) continue;
+                Card own = null;
+                foreach (var o in cards) if (o != c && o.OwnBuildOpen && o.Owner == c.Owner && (own == null || o.Score > own.Score)) own = o;
+                if (own == null) continue;
+                double capped = WeaponLift.UnderOwn(c.Score, own.Score);
+                if (capped >= c.Score) continue;
+                c.Score = capped;
+                int at = c.Why.FindIndex(w => w.StartsWith("style: ", StringComparison.Ordinal));
+                c.Why.Insert(at >= 0 ? at + 1 : Math.Min(1, c.Why.Count), WeaponLift.UnderOwnLine(own.Name));
+            }
+        }
 
         static void Score(Screen screen, Card c, Snapshot s, List<Card> offer)
         {
@@ -187,7 +210,7 @@ namespace YazsCompanion
                     if (s != null && pool.Count > 1 && !pool.Any(x => x.BuildPick)) { try { others = G.SquadProfile(s, owner); } catch { } }
                     foreach (var x in pool)
                     {
-                        if (x.BuildPick) { x.Pref += 10; x.Why = "your " + build.Name + " build"; continue; }
+                        if (x.BuildPick) { x.Pref += 10; x.Why = Builds.Your(owner.Name, build); continue; }
                         if (x.GuidePick) x.Pref += 0.9;
                         if (others != null)
                         {
@@ -214,7 +237,39 @@ namespace YazsCompanion
             return current;
         }
 
-        static double WeaponFloor(BuildStyle style) { return style == BuildStyle.Weapon ? 6.0 : style == BuildStyle.Balanced ? 4.3 : 3.3; }
+        static double WeaponFloor(BuildStyle style) { return Synergy.WeaponFloor(style); }
+        static bool _liftWarned;          // a failed LiftOf said once a session
+
+        /// <summary>How far the survivor's own abilities are (0.13.0, C2: WeaponLift): owned abilities short of their last level
+        /// (the build's skipped ones left out) and one of their names, and abilities the build ranks (no build: any) that the
+        /// game can still offer - tree node bought, class rank open (Plan.RankClosed) - while a slot is free.</summary>
+        internal static WeaponLift LiftOf(Survivor owner, Snapshot s, BuildStyle style)
+        {
+            if (style != BuildStyle.Ability) return new WeaponLift();
+            var build = owner.Build;
+            var owned = owner.Abilities();
+            int unfinished = 0, missing = 0; string left = null;
+            foreach (var kv in owned)
+            {
+                string n = G.Name(kv.Key);
+                if (build != null && build.Skips(n)) continue;
+                if (kv.Value < G.MaxLevel(kv.Key)) { unfinished++; left = n; }
+            }
+            int slots = 4 - owned.Count;
+            if (slots > 0 && unfinished <= 1 && owner.Props != null)
+                foreach (var a in G.Each(owner.Props.abilityBasePowerups))
+                {
+                    if (a == null || owner.LevelOf(a) >= 1) continue;
+                    string n = G.Name(a);
+                    if (build != null && (build.PriorityOf(n) < 0 || build.Skips(n))) continue;
+                    SkillTreeUpgradeBase node = null; try { node = a.skillTreeAbilityBoost; } catch { }
+                    if (node == null) { try { node = a.skillTreeRequirement; } catch { } }
+                    if (node != null && !G.NodeOwned(node)) continue;
+                    if (Plan.RankClosed(a, node, owner, s)) continue;
+                    missing++;
+                }
+            return WeaponLift.Judge(style, unfinished, Math.Min(missing, Math.Max(0, slots)), left);
+        }
 
         static void ScoreWeapon(Card c, WeaponUpgradePowerup w, Survivor owner, Snapshot s)
         {
@@ -234,13 +289,19 @@ namespace YazsCompanion
             if (lvl >= 1)
             {
                 // a level of the weapon in hand. Its floor depends on the style; late in a timed run a weapon that can no
-                // longer be finished falls back to the balanced floor (a level-1 bow with ninety seconds left is not a carry)
-                double floor = WeaponFloor(style), soft = WeaponFloor(BuildStyle.Balanced);
+                // longer be finished falls back to the balanced floor (a level-1 bow with ninety seconds left is not a carry).
+                // 0.13.0 (C2): "abilities first" lifts it to the balanced floor once the survivor's own abilities are as good as
+                // done (Rank keeps it under a card of the survivor's own open build ability: UnderOwnAbility)
+                // in its own try: a game member it reads failing costs the lift (the style's floor as before), not the weapon's card
+                WeaponLift lift;
+                try { lift = LiftOf(owner, s, style); }
+                catch (Exception e) { lift = new WeaponLift(); if (!_liftWarned) { _liftWarned = true; Plugin.Logger.LogWarning("rank: weapon lift not judged (" + e.GetType().Name + " " + e.Message + ") - the style's floor"); } }
+                double floor = lift.Floor(style, owner.Build != null && Builds.OnAuto(owner.Name), Doctrine.Current.Style);
                 double reach = s.Ctx.Reach(Math.Max(1, max - lvl));
-                if (floor > soft) floor = soft + (floor - soft) * reach;
-                c.Score = floor + 0.1 * lvl + syn + (lvl == max - 1 ? 0.25 : 0);
+                c.Score = Synergy.HeldWeapon(floor, reach, lvl, max, syn);
+                c.LiftedWeapon = lift.On;
                 c.Why.Add((lvl == max - 1 ? "completes the weapon: " : "weapon level: ") + lvl + " to " + (lvl + 1) + " of " + max + (lvl == max - 1 && next != null ? ", then " + G.Name(next.W) : ""));
-                c.Why.Add("style: " + StyleName(style) + (reach < 0.6 ? "; little time left to finish it (" + s.Ctx.ClockText + ")" : ""));
+                c.Why.Add("style: " + StyleName(style) + (lift.On ? " - " + lift.Note : "") + (reach < 0.6 ? "; little time left to finish it (" + s.Ctx.ClockText + ")" : ""));
             }
             else if (me != null && me.Depth == 0) { c.Score = 7.2; c.Why.Add("first weapon for " + owner.Name + ": without it the recruit does nothing"); }
             else if (next != null && me == next)
@@ -251,16 +312,24 @@ namespace YazsCompanion
             else if (me != null && me.Alt)
             {
                 var pref = path.FirstOrDefault(x => x.Depth == me.Depth && x.Recommended);
-                bool chosen = pref != null && pref.BuildPick;
+                bool byBuild = pref != null && pref.BuildPick;
+                // 0.13.0 (F02): only a build the PLAYER chose holds out for its branch; a lent build Auto follows is Auto
+                bool chosen = byBuild && !Builds.OnAuto(owner.Name);
                 bool prefOffered = pref != null && pref.Available;
-                // the branches exclude each other. The player's own build: hold out for it. Auto: a tier-3 weapon of
-                // another branch is still a big step up, so it ranks above the weak abilities, below the good ones
-                c.Score = chosen ? 2.0 : prefOffered ? 3.6 + syn : 6.2 + syn;
                 // "shares Kinetic with Bow" speaks for the favoured branch against a rocket launcher, not against this card
                 // when it deals Kinetic too: there the tree investment or the guides decided (or nothing: card order)
-                string prefWhy = pref == null || chosen ? null : pref.WhyType != null && facts.Damage.Contains(pref.WhyType, StringComparer.OrdinalIgnoreCase) ? ForkFallback(pref) : pref.Why;
-                c.Why.Add(pref != null ? "other branch; " + (chosen ? "your build takes " : "the squad favours ") + G.Name(pref.W) + (prefWhy != null ? " (" + prefWhy + ")" : "") : "the other branch");
-                if (!chosen && prefOffered) c.Why.Add("taking it locks " + G.Name(pref.W) + " out");
+                string prefWhy = pref == null || byBuild ? null : pref.WhyType != null && facts.Damage.Contains(pref.WhyType, StringComparer.OrdinalIgnoreCase) ? ForkFallback(pref) : pref.Why;
+                // on Auto with a lent build: what Auto would follow once this branch is taken (Builds.AutoFor - asked directly, so
+                // that a branch merely offered is not logged as followed)
+                string then = null;
+                if (byBuild && !chosen)
+                {
+                    var kit = Builds.KitOf(owner.Name); string mine = G.Name(w);
+                    if (kit != null) foreach (var br in kit.Branches) if (SameName(br, mine)) { mine = br; break; }
+                    var t = Builds.AutoFor(Builds.PacksOf(owner.Name), mine);
+                    if (t != null && t != owner.Build) then = t.Name;
+                }
+                c.Score = Synergy.OtherBranch(pref == null ? null : G.Name(pref.W), prefWhy, prefOffered, syn, chosen, byBuild && !chosen ? owner.Build.Name : null, then, c.Why);
             }
             else if (me == null) { c.Score = 2; c.Why.Add("weapon outside " + owner.Name + "'s line"); }
             else { c.Score = 2; c.Why.Add("weapon tier-up"); }
@@ -291,12 +360,12 @@ namespace YazsCompanion
             if (build != null)
             {
                 v.Priority = build.PriorityOf(name); v.Skipped = build.Skips(name);
-                if (v.Skipped) { v.Score -= 2.0; v.Why.Add("your " + build.Name + " build skips it"); v.Mark(6, build.Name + " skips it", v.Why[v.Why.Count - 1]); }
+                if (v.Skipped) { v.Score -= 2.0; v.Why.Add(Builds.Your(owner.Name, build) + " skips it"); v.Mark(6, build.Name + " skips it", v.Why[v.Why.Count - 1]); }
                 else if (v.Priority >= 0)
                 {
                     double[] bonus = { 1.6, 1.0, 0.5, 0.1 };
                     v.Score += bonus[Math.Min(v.Priority, bonus.Length - 1)];
-                    v.Why.Add("#" + (v.Priority + 1) + " in your " + build.Name + " build");
+                    v.Why.Add("#" + (v.Priority + 1) + " in " + Builds.Your(owner.Name, build));
                     v.Mark(v.Priority <= 1 ? 4 : 1, "#" + (v.Priority + 1) + " in " + build.Name, v.Why[v.Why.Count - 1]);
                 }
             }
@@ -332,18 +401,9 @@ namespace YazsCompanion
 
             double tagValue = Synergy.TagValue(facts, s.Tags, s.Ctx, v.Why), boostValue = Synergy.BoostValue(facts, s.Boosts, s.Ctx, v.Why);
             v.Score += tagValue + boostValue;
-            if (v.Why.Count > 0 && v.Why[0].StartsWith("this level unlocks the ", StringComparison.Ordinal))
-            {   // Synergy puts a special within one level first: "this level unlocks the Kinetic special (10 tags)"
-                string t = v.Why[0].Substring("this level unlocks the ".Length); int sp = t.IndexOf(' ');
-                v.Mark(5, "unlocks the " + (sp > 0 ? t.Substring(0, sp) : t) + " special");
-            }
-            if (boostValue > 0) foreach (var b in s.Boosts) if (b.Covers(facts)) { v.Mark(3, b.Name + " boosts it"); break; }
-            if (tagValue >= 0.45 && facts.Damage.Count > 0)
-            {
-                string best = null; double share = 0;
-                foreach (var t in facts.Damage) { double sh = s.Tags.Share(t); if (sh > share) { share = sh; best = t; } }
-                if (best != null && share >= 0.4) v.Mark(1, best + ": " + (int)Math.Round(share * 100) + "% of the squad");
-            }
+            // "unlocks the Kinetic special", "Trap Expertise boosts it", "Kinetic: 79% of the squad" - each with the line it sums up
+            // (0.13.0, C3: the last two were marked without it and the card said them twice)
+            foreach (var h in Synergy.AbilityHeads(facts, s.Tags, s.Boosts, tagValue, boostValue, v.Why)) v.Mark(h.Rank, h.Text, h.From);
             if (facts.Healing && s.Ctx.Survival <= 0) { v.Score -= 1.5; v.Why.Add("healing means nothing in One Hit"); }
             else if (facts.Healing && s.Ctx.Survival >= 1.3) { v.Score += 0.4; v.Why.Add("healing: survival matters now"); }
             return v;
@@ -390,6 +450,7 @@ namespace YazsCompanion
             int lvl = owner.LevelOf(p);
             int max = G.MaxLevel(p);
             var owned = owner.Abilities();
+            c.OwnBuildOpen = lvl < max && !a.Skipped && (owner.Build == null || a.Priority >= 0);
             var ctx = s.Ctx;
             double score, once = 0;
             if (lvl == 0)
@@ -433,7 +494,7 @@ namespace YazsCompanion
             c.Score = SoftCap(score);
             // the lift, squeezed above 5.6 so that two new abilities keep their order and none reaches a tier-up's 6.2
             if (once > 0) { double lifted = c.Score + once; c.Score = Math.Max(c.Score, lifted <= 5.6 ? lifted : 5.6 + (lifted - 5.6) * 0.25); }
-            foreach (var line in a.Why) if (a.Head == null || line != a.HeadFrom) c.Why.Add(line);      // the head already says that one
+            c.Why.AddRange(Synergy.ReasonsUnder(a.Head, a.HeadFrom, a.Why));      // the head already says the line it was cut from
         }
 
         // ---------------------------------------------------------------- evolutions
@@ -452,7 +513,7 @@ namespace YazsCompanion
                 c.Score += mine ? 1.0 : -0.5;
                 // 0.12.2 (F12): with the build's pick not on the table this card still comes first (an evolution outranks
                 // a tier-up) and says so, instead of "your build takes <the other one>" under a card marked PICK
-                c.Why.Add(Synergy.EvolutionHead(baseName, evoName, pick, build.Name, mine, mine || offer == null || EvolutionOffered(offer, c, baseAbility, pick)));
+                c.Why.Add(Synergy.EvolutionHead(baseName, evoName, pick, build.Name, mine, mine || offer == null || EvolutionOffered(offer, c, baseAbility, pick), Builds.OnAuto(owner.Name)));
             }
             else c.Why.Add("evolution of " + baseName + (fitWhy.Count > 0 ? ": " + fitWhy[0] : ""));
             c.Why.AddRange(pick != null ? fitWhy : fitWhy.Skip(1));
@@ -511,7 +572,7 @@ namespace YazsCompanion
                     catch { }
                 }
                 var b = sv.Build;
-                if (b != null) foreach (var want in b.Wants) c.Wants.Add(new KeyValuePair<string, string>(b.Name, want));
+                if (b != null) { string whose = Builds.Your(sv.Name, b); foreach (var want in b.Wants) c.Wants.Add(new KeyValuePair<string, string>(whose, want)); }
             }
             if (weapons > 0) { c.CloseShare = close / (double)weapons; c.LongShare = far / (double)weapons; c.ClipShare = clips / (double)weapons; }
             if (weaponLevels + abilityLevels > 0) c.AbilityLean = abilityLevels / (weaponLevels + abilityLevels);
@@ -557,6 +618,7 @@ namespace YazsCompanion
                     c.Score = 1.0 + 3.2 * (1 - left) + 0.4 * farming;
                     c.Why.Add(left < 0.45 ? "a recruit no longer has time to grow (" + s.Ctx.ClockText + "): take the level-up and cash" : "level-up and cash instead of a recruit");
                 }
+                var lq = s.Quest; if (lq != null) c.Score = lq.Card(null, c.Score, c.Why);       // 0.13.0 (C1): the active quest's team rule
                 return;
             }
             c.Kind = "survivor";
@@ -565,7 +627,9 @@ namespace YazsCompanion
             CT cls = props.characterType; c.Name = G.ClassName(cls);
             if (s.OnSquad(cls)) { c.Score = 0; c.Why.Add("already on the squad"); return; }
             c.Recruit = new Recruit();
-            c.Score = c.Recruit.Score = RecruitScore(cls, props, s, c.Why, c.Recruit);
+            c.Score = RecruitScore(cls, props, s, c.Why, c.Recruit);
+            var q = s.Quest; if (q != null) c.Score = q.Card(c.Name, c.Score, c.Why);      // 0.13.0 (C1): the active quest's team rule
+            c.Recruit.Score = c.Score;
         }
 
         /// <summary>What a recruit brings to THIS squad: bought synergy nodes (an unbought node does nothing in a run), damage
@@ -577,9 +641,9 @@ namespace YazsCompanion
             string name = G.ClassName(cls);
             double fixedPart = 2.0, fit = 0;         // a third gun and +20 % XP for the rest of the run: never worth less than this early
             string tier; K.RescueTier.TryGetValue(name, out tier);
-            if (tier != null) { fit += Knowledge.Tier(tier, 1.6, 1.1, 0.6, 0.1); why.Add(tier + "-tier rescue in the guides"); }
+            if (tier != null) { fit += Knowledge.Tier(tier, 1.6, 1.1, 0.6, 0.1); why.Add(Recruit.TierLine(tier)); }
 
-            int owned = 0, unowned = 0; var partners = new List<string>();
+            int owned = 0, unowned = 0; var partners = new List<KeyValuePair<string, int>>();
             foreach (var sv in s.Squad)
             {
                 int o = 0;
@@ -596,11 +660,11 @@ namespace YazsCompanion
                     if (G.NodeOwned(syn)) o++; else unowned++;
                 }
                 owned += o;
-                if (o > 0) partners.Add(o + " with " + sv.Name);
+                if (o > 0) partners.Add(new KeyValuePair<string, int>(sv.Name, o));
             }
             fit += 1.1 * owned;
             if (tie != null) { tie.Name = name; tie.Class = (int)cls; tie.Tier = tier ?? ""; tie.Bought = owned; }
-            if (owned > 0) why.Add((owned == 1 ? "1 bought synergy: " : owned + " bought synergies: ") + string.Join(", ", partners));
+            if (owned > 0) why.Add(Recruit.BoughtLine(owned, partners));
             else if (unowned > 0) why.Add(unowned + " synergy node" + (unowned > 1 ? "s" : "") + " with this squad, none bought yet");
 
             // shared damage types: the recruit's weapon line and abilities feed the tags the squad already stacks
@@ -642,8 +706,8 @@ namespace YazsCompanion
                 if (nextThr > 0 && nextThr - lvl <= 5) { fit += 0.3; why.Add((nextThr - lvl) + " level" + (nextThr - lvl > 1 ? "s" : "") + " from rank " + (Array.IndexOf(RankLevels, nextThr) + 1)); }
             }
             double left = s.Ctx.RecruitValue;
-            if (left < 0.45) why.Insert(0, "little time left for a recruit to grow (" + s.Ctx.ClockText + ")");
-            else if (tier != null && owned > 0) why.Insert(0, tier + "-tier rescue, " + (owned == 1 ? "1 bought synergy" : owned + " bought synergies") + " with the squad");
+            // the headline the card shows; it takes the tier and bought lines it summarises along (0.13.0, F12: each said once)
+            Recruit.Headline(why, tier, owned, partners, left < 0.45 ? "little time left for a recruit to grow (" + s.Ctx.ClockText + ")" : null);
             if (why.Count == 0) why.Add("L" + lvl + ", no synergy with this squad");
             return fixedPart * left + fit * (0.35 + 0.65 * left);
         }
@@ -708,7 +772,7 @@ namespace YazsCompanion
                     || (stat.StartsWith("Ability", StringComparison.OrdinalIgnoreCase) && build.Wants.Contains("abilities", StringComparer.OrdinalIgnoreCase))
                     || (stat.IndexOf("Crit", StringComparison.OrdinalIgnoreCase) >= 0 && build.Wants.Contains("critical", StringComparer.OrdinalIgnoreCase))
                     || ((stat == "Armor" || stat == "MaxHealth" || stat == "HPRegen") && (build.Wants.Contains("armor", StringComparer.OrdinalIgnoreCase) || build.Wants.Contains("healing", StringComparer.OrdinalIgnoreCase)));
-                if (wants) { w *= 1.2; note = "your " + build.Name + " build wants it"; break; }
+                if (wants) { w *= 1.2; note = Builds.Your(sv.Name, build) + " wants it"; break; }
             }
             c.Score = 1.0 + r * w * 2.0 + (team ? 0.2 : 0);
             c.Why.Add(rarity + (team ? ", team-wide" : "") + ": " + Humanize(stat) + (note != null ? " - " + note : ""));

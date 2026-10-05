@@ -41,12 +41,18 @@ namespace YazsCompanion
         public List<string> Skip = new List<string>();              // abilities this build does not want
         public Dictionary<string, string> Evolution = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // ability -> evolution name; missing = decided live
         public List<string> Wants = new List<string>();             // item leanings: ItemRules tags ("critical", "turret", "abilities", ...) and damage types
+        // 0.13.0 badge advice (Loadout.cs): badges the build pins, in order (they take the slots first, after a quest's forced
+        // badges), and badges it never wants advised. Each entry: a badgeBaseId, the short name ("Gunner"), the English name
+        // ("Gunner Badge") or the asset name ("Badge_SWAT3_Gunner"). Written to builds.json only when not empty.
+        public List<string> Badges = new List<string>();
+        public List<string> SkipBadges = new List<string>();
         public bool Custom;
 
         public Build Clone()
         {
             var b = new Build { Id = Id, Survivor = Survivor, Name = Name, Summary = Summary, Glyph = Glyph, Source = Source, Pack = Pack, Branch = Branch, Style = Style, Custom = Custom };
             b.Abilities.AddRange(Abilities); b.Skip.AddRange(Skip); b.Wants.AddRange(Wants);
+            b.Badges.AddRange(Badges); b.SkipBadges.AddRange(SkipBadges);
             foreach (var kv in Evolution) b.Evolution[kv.Key] = kv.Value;
             return b;
         }
@@ -179,8 +185,70 @@ namespace YazsCompanion
             return null;
         }
 
-        /// <summary>The build the advice follows for this survivor; null = Auto (read the squad, the tree and the guides).</summary>
+        /// <summary>The build the advice follows for this survivor; null = Auto (read the squad, the tree and the guides).
+        /// Between runs (the menu, the Training Yard, the run setup screen): nothing is owned, so Auto is the pack default.</summary>
         public static Build For(string survivor) { return Chosen(survivor) ?? AutoOf(survivor); }
+
+        /// <summary>In a run: the build the advice follows for a survivor who owns the tier-3 weapon <paramref name="ownedBranch"/>
+        /// (null = none yet). A build the player chose stays whatever is owned; Auto follows the branch taken (AutoFor).</summary>
+        public static Build For(string survivor, string ownedBranch)
+        {
+            var chosen = Chosen(survivor);
+            if (chosen != null) return chosen;
+            var packs = PacksOf(survivor);
+            if (packs.Count == 0) return null;
+            var b = AutoFor(packs, ownedBranch);
+            SayAuto(survivor, packs, b, ownedBranch);
+            return b;
+        }
+
+        // one [builds] line whenever what Auto follows in a run changes with the branch taken (not for the pack default at
+        // first: the pack's own line says "Auto follows ..." when it is read)
+        static readonly Dictionary<string, string> _autoSaid = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static void SayAuto(string survivor, List<BuildPack> packs, Build b, string ownedBranch)
+        {
+            var d = AutoFor(packs, null);
+            if (d == null) return;
+            string key = b == null ? "-" : b.Id, last;
+            bool known = _autoSaid.TryGetValue(survivor, out last);
+            if (known && last == key) return;
+            _autoSaid[survivor] = key;
+            if (!known && b == d) return;
+            string owned = string.IsNullOrWhiteSpace(ownedBranch) ? "no tier-3 weapon owned" : ownedBranch + " owned";
+            if (b == d) Log(survivor + " on Auto follows " + d.Name + " again (the pack default; " + owned + ")");
+            else Log(survivor + " on Auto follows " + (b != null ? b.Name + (b.Pack.Length > 0 ? " of " + b.Pack : "") : "the squad (no lent build for that branch)")
+                + " - " + owned + ", the pack default " + d.Name + " takes " + d.Branch);
+        }
+
+        /// <summary>What Auto follows once a tier-3 weapon is owned, when build packs lend builds for the survivor. 0.13.0 (F02):
+        /// the pack default stood in for Auto whatever the survivor owned, so after the player took the OTHER branch the cards
+        /// still followed the default's abilities, focus and item leanings - and held the taken branch out as "your build takes
+        /// the default's weapon" for a build the player never chose. Auto follows the branch actually taken now, as plain Auto
+        /// does: the default while its branch (or none) is owned or it names no branch; else the first lent build (in the
+        /// order the mods registered) whose branch is the one owned; else the first lent build that decides its branch live;
+        /// else plain Auto (null). With no pack default, Auto stays plain Auto.</summary>
+        public static Build AutoFor(List<BuildPack> packs, string ownedBranch)
+        {
+            if (packs == null) return null;
+            Build d = null;
+            foreach (var p in packs) if (p != null && p.Default != null) { d = p.Default; break; }
+            if (d == null) return null;
+            if (string.IsNullOrWhiteSpace(ownedBranch) || string.IsNullOrWhiteSpace(d.Branch) || Same(d.Branch, ownedBranch)) return d;
+            foreach (var p in packs) if (p != null) foreach (var b in p.Builds) if (!string.IsNullOrWhiteSpace(b.Branch) && Same(b.Branch, ownedBranch)) return b;
+            foreach (var p in packs) if (p != null) foreach (var b in p.Builds) if (string.IsNullOrWhiteSpace(b.Branch)) return b;
+            return null;
+        }
+
+        /// <summary>How a reason names the build the advice follows: "your Rifleman build" for one the player chose, "Rifleman
+        /// (Auto)" for a lent build Auto follows (0.13.0, F02: "your ... build" for a build the player never chose read as theirs).</summary>
+        public static string Your(string survivor, Build b)
+        {
+            if (b == null) return "Auto";
+            // the build followed is the player's exactly when the selection names it (a selection whose pack is away reads as
+            // Auto, and then Auto's build has another id) - no list of choices built per reason
+            string id = SelectedId(survivor);
+            return id != AutoId && string.Equals(id, b.Id, StringComparison.OrdinalIgnoreCase) ? "your " + b.Name + " build" : b.Name + " (Auto)";
+        }
 
         public static void Select(string survivor, string id) { _selected[survivor] = id ?? AutoId; Save(); }
 
@@ -336,6 +404,8 @@ namespace YazsCompanion
         // name ("Microbombs" for "Kunai Dance: Microbombs")
         static void Fit(Build b, Kit kit, Action<string> say)
         {
+            // badge references: syntax only here (the badges themselves are known on the run setup screen, Loadout.Resolve)
+            FitBadges(b.Badges, "badges", say); FitBadges(b.SkipBadges, "skipBadges", say);
             if (kit == null) return;
             if (b.Branch.Length > 0)
             {
@@ -368,6 +438,21 @@ namespace YazsCompanion
             }
         }
         static bool Same(string a, string b) { return string.Equals((a ?? "").Trim(), (b ?? "").Trim(), StringComparison.OrdinalIgnoreCase); }
+
+        public const int MaxBadgeRefs = 8;
+        static void FitBadges(List<string> refs, string what, Action<string> say)
+        {
+            var keep = new List<string>();
+            foreach (var r in refs)
+            {
+                string t = (r ?? "").Trim();
+                if (t.Length == 0) { say("an empty entry in '" + what + "' dropped"); continue; }
+                if (keep.Any(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase))) continue;
+                if (keep.Count >= MaxBadgeRefs) { say("'" + what + "' holds more than " + MaxBadgeRefs + " entries: '" + t + "' and later dropped"); break; }
+                keep.Add(t);
+            }
+            refs.Clear(); refs.AddRange(keep);
+        }
 
         static string Slug(string s)
         {
@@ -421,8 +506,12 @@ namespace YazsCompanion
             if (o.TryGetProperty("skip", out v)) foreach (var a in v.EnumerateArray()) b.Skip.Add(a.GetString());
             if (o.TryGetProperty("wants", out v)) foreach (var a in v.EnumerateArray()) b.Wants.Add(a.GetString());
             if (o.TryGetProperty("evolution", out v)) foreach (var p in v.EnumerateObject()) b.Evolution[p.Name] = p.Value.GetString();
+            // a badge may be given by its id: a JSON number must not throw (that would drop the whole pack)
+            if (o.TryGetProperty("badges", out v) && v.ValueKind == JsonValueKind.Array) foreach (var a in v.EnumerateArray()) b.Badges.Add(BadgeRef(a));
+            if (o.TryGetProperty("skipBadges", out v) && v.ValueKind == JsonValueKind.Array) foreach (var a in v.EnumerateArray()) b.SkipBadges.Add(BadgeRef(a));
             return b;
         }
+        static string BadgeRef(JsonElement a) { return a.ValueKind == JsonValueKind.Number ? a.GetRawText() : a.ValueKind == JsonValueKind.String ? a.GetString() ?? "" : ""; }
 
         public static string ToJson()
         {
@@ -445,6 +534,9 @@ namespace YazsCompanion
                         w.WriteStartArray("skip"); foreach (var a in b.Skip) w.WriteStringValue(a); w.WriteEndArray();
                         w.WriteStartArray("wants"); foreach (var a in b.Wants) w.WriteStringValue(a); w.WriteEndArray();
                         w.WriteStartObject("evolution"); foreach (var ev in b.Evolution) w.WriteString(ev.Key, ev.Value); w.WriteEndObject();
+                        // only when set: a builds.json without badge pins stays byte-identical to the one 0.12 wrote
+                        if (b.Badges.Count > 0) { w.WriteStartArray("badges"); foreach (var a in b.Badges) w.WriteStringValue(a); w.WriteEndArray(); }
+                        if (b.SkipBadges.Count > 0) { w.WriteStartArray("skipBadges"); foreach (var a in b.SkipBadges) w.WriteStringValue(a); w.WriteEndArray(); }
                         w.WriteEndObject();
                     }
                     w.WriteEndObject();

@@ -34,8 +34,40 @@ namespace YazsCompanion
         }
         public bool Owns(PowerupBase p) { return LevelOf(p) >= 1; }
 
-        /// <summary>The build the advice follows for this survivor (mod menu); null = Auto.</summary>
-        public Build Build { get { return Builds.For(Name); } }
+        /// <summary>The build the advice follows for this survivor (mod menu); null = Auto. On Auto with a build pack lent, the
+        /// lent build of the tier-3 branch this survivor owns (0.13.0, F02: Builds.AutoFor).</summary>
+        public Build Build { get { return Builds.PacksOf(Name).Count == 0 ? Builds.For(Name) : Builds.For(Name, OwnedBranch); } }
+
+        /// <summary>The tier-3 weapon (a branch of the fork) this survivor owns, in the kit's spelling; null = none yet. Read
+        /// from the powerups by name - not through Ranker.WeaponPath, which asks for the build - and kept while the powerup list
+        /// is the same length (Build is asked for dozens of times per card).</summary>
+        public string OwnedBranch
+        {
+            get
+            {
+                if (_branchAt == Powerups.Count) return _branch;
+                string found = null;
+                var kit = Builds.KitOf(Name);
+                foreach (var kv in Powerups)
+                {
+                    if (kv.Value < 1 || kv.Key == null) continue;
+                    if (kit != null)
+                    {
+                        string n = G.Name(kv.Key);
+                        foreach (var br in kit.Branches) if (Ranker.SameName(n, br)) { found = br; break; }
+                    }
+                    else
+                    {   // a class the kits do not know (a later game build): the weapon's own place in its line
+                        WeaponUpgradePowerup w = null; try { w = kv.Key.TryCast<WeaponUpgradePowerup>(); } catch { }
+                        if (w != null && Ranker.WeaponDepth(w) == 2) found = G.Name(w);
+                    }
+                    if (found != null) break;
+                }
+                _branch = found; _branchAt = Powerups.Count;
+                return found;
+            }
+        }
+        string _branch; int _branchAt = -1;
 
         /// <summary>Owned base abilities with their levels. An evolution is its own level-1 powerup next to the maxed base
         /// ability, so it is left out here: it is not a fifth ability.</summary>
@@ -86,6 +118,10 @@ namespace YazsCompanion
                 return _quests;
             }
         }
+
+        // 0.13.0 (C1): the active quest's team rule on this squad - asked once per snapshot (Quest.cs reads the quest once a run)
+        QuestSos _quest;
+        public QuestSos Quest { get { if (_quest == null) { try { _quest = YazsCompanion.Quest.Judge(this); } catch { } if (_quest == null) _quest = new QuestSos { Size = Squad.Count }; } return _quest; } }
 
         public string SquadText()
         {

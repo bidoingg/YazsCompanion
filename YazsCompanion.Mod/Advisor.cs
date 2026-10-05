@@ -14,7 +14,7 @@ namespace YazsCompanion
         static float _lastT = -1f;           // the run clock (CurrentModePlayTime) of the last offer: a selection screen pauses it
 
         /// <summary>The HUD went away (the run ended or the scene changed): no offer is open any more.</summary>
-        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); }
+        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); Quest.Forget(); }
 
         // 0.12.2 (F13): a reroll or a banish fills the SAME screen again - AssignGeneratedElements runs a second time with no
         // Hide in between (every close clears _lastCards), on the clock the screen holds still. The game's isReroll flag was
@@ -92,7 +92,7 @@ namespace YazsCompanion
                 if (before != null) sb.Append(ReplacedText(sel, before, cards));
                 else { bool reroll = false; try { reroll = sel.isReroll; } catch { } if (reroll) sb.Append(" reroll"); }
                 Plugin.Logger.LogInfo(sb.ToString());
-                Plugin.Logger.LogInfo("[ctx] " + snap.Ctx + BuildsText(snap) + (snap.Boosts.Count > 0 ? " | boosts: " + string.Join(", ", snap.Boosts.ConvertAll(b => b.Name + " (" + b.Tag + ")")) : ""));
+                Plugin.Logger.LogInfo("[ctx] " + snap.Ctx + BuildsText(snap) + (snap.Boosts.Count > 0 ? " | boosts: " + string.Join(", ", snap.Boosts.ConvertAll(b => b.Name + " (" + b.Tag + ")")) : "") + LoadoutUi.CtxSuffix());
                 if (Plugin.LogSquad.Value) Plugin.Logger.LogInfo("[squad] " + snap.SquadText());
                 if (Plugin.LogSquad.Value && (snap.Tags.Known || snap.Tags.Points.Count > 0))
                     Plugin.Logger.LogInfo("[tags] points: " + (snap.Tags.PointsText().Length > 0 ? snap.Tags.PointsText() : "none") + (snap.Tags.SpecialAt > 0 ? " (special at " + snap.Tags.SpecialAt + ")" : "")
@@ -168,7 +168,8 @@ namespace YazsCompanion
         static string BuildsText(Snapshot s)
         {
             var parts = new List<string>();
-            foreach (var sv in s.Squad) { var b = sv.Build; parts.Add(sv.Name + " " + (b != null ? b.Name + " (" + b.Style + ")" : "Auto (" + Doctrine.Current.Style + ")")); }
+            // a lent build Auto follows says so (0.13.0, F02: it follows the tier-3 branch taken - "Tank Pellets (Weapon, Auto)")
+            foreach (var sv in s.Squad) { var b = sv.Build; parts.Add(sv.Name + " " + (b != null ? b.Name + " (" + b.Style + (Builds.OnAuto(sv.Name) ? ", Auto" : "") + ")" : "Auto (" + Doctrine.Current.Style + ")")); }
             return parts.Count > 0 ? " | builds: " + string.Join(", ", parts) : "";
         }
     }
@@ -197,7 +198,7 @@ namespace YazsCompanion
         static void Postfix(UIGameplay __instance) { long t = Perf.Begin(); Fx.Tick(); Panel.Tick(__instance); Perf.End("tick.hud", t); }
     }
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.OnDestroy))]
-    static class P_HudGone { static void Postfix() { Panel.Reset(); Advisor.Forget(); } }
+    static class P_HudGone { static void Postfix() { Panel.Reset(); Advisor.Forget(); LoadoutUi.RunGone(); } }
 
     // the Training Yard: advice on the tab that is open, and the node under the cursor for its WHY row
     [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.Update))]
@@ -217,7 +218,7 @@ namespace YazsCompanion
         static void Postfix()
         {
             long t = Perf.Begin();
-            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick(); RerollHint.Tick();
+            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick(); RerollHint.Tick(); LoadoutUi.FallbackTick(); Plugin.CheckKeysOnce();
             Perf.End("tick.master", t);
             Perf.Frame();
         }

@@ -65,7 +65,7 @@ namespace YazsCompanion
         public bool Healing;                     // the game flags it as a healing item
         public double CloseShare = -1, LongShare = -1, ClipShare = -1;   // share of the squad's weapons that favour close / long range, reload a magazine; -1 = unknown
         public double AbilityLean = 0.5;         // 0 = a weapon squad .. 1 = an ability squad (owned levels)
-        public readonly List<KeyValuePair<string, string>> Wants = new List<KeyValuePair<string, string>>();   // (build name, leaning) of the selected builds on the squad
+        public readonly List<KeyValuePair<string, string>> Wants = new List<KeyValuePair<string, string>>();   // (how a reason names the build: "your Rifleman build", or "Rifleman (Auto)" for a lent build Auto follows; a leaning) of the builds the squad follows
         public bool ShieldOwned;                 // Energy Shield is up (Glass Cannon)
         public bool CritSquad;
     }
@@ -306,8 +306,10 @@ namespace YazsCompanion
                 if (kw.Survival > 0 && ctx != null)
                 {
                     score += kw.Survival * (ctx.Survival - 0.4);       // a squad that is fine gains little from more health; one that is hurting, late, a lot
-                    if (ctx.Survival <= 0) why.Add("health means nothing in One Hit");
-                    else if (ctx.Survival >= 1.3) why.Add("survival matters now" + (ctx.Health < 0.5 ? " (the squad is hurting)" : ""));
+                    // the clause once per card (0.13.0, F12): an item that both armors and heals matches two survival rules - both
+                    // still count in the score, but "survival matters now (the squad is hurting)" stood twice under Frozen Heart
+                    string clause = ctx.Survival <= 0 ? "health means nothing in One Hit" : ctx.Survival >= 1.3 ? "survival matters now" + (ctx.Health < 0.5 ? " (the squad is hurting)" : "") : null;
+                    if (clause != null) { if (!why.Contains(clause)) why.Add(clause); }
                     // say what it is scored for when no survivor is named for it: a MedKit read "no squad-specific value"
                     else if (!named && !incidental && !why.Contains("survival")) why.Add("survival");
                 }
@@ -315,7 +317,7 @@ namespace YazsCompanion
                 if (kw.Weapon > 0) score += kw.Weapon * (0.5 - c.AbilityLean) * 2 * 0.5;
                 if (!wanted)
                     foreach (var w in c.Wants)
-                        if (Is(w.Value, kw.Tag) || (kw.Type != null && Is(w.Value, kw.Type))) { score += 0.5; why.Add("your " + w.Key + " build wants " + kw.Tag); wanted = true; break; }
+                        if (Is(w.Value, kw.Tag) || (kw.Type != null && Is(w.Value, kw.Type))) { score += 0.5; why.Add(w.Key + " wants " + kw.Tag); wanted = true; break; }
             }
             if (c.Healing && ctx != null && ctx.Survival <= 0) { score -= 1.0; }
             economic = economyRules > 0 && otherRules == 0;

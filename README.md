@@ -6,9 +6,72 @@ The mod version of the companion: it runs inside *Yet Another Zombie Survivors*,
 selection screen, the squad and the run clock straight from the game's objects, ranks the offered
 cards with a C# port of the PC app's rules (`lib/engine.js` → `Ranker.cs`) and draws the verdict
 above each card. No OCR, no overlay, no save-file polling. It never writes to the game's saves
-and never picks for you.
+and never picks for you - the one exception is yours to switch on: the one-click EQUIP ADVICE button of the run setup
+screen (0.13.0, off by default) presses the game's own badge buttons when you click it, as your own clicks would.
 
-Status (2026-09-25): **0.12.2 — fixes from a round of Steam Deck logs** (not released yet):
+Status (2026-10-04): **0.13.0 — badge advice on the run setup screen** (not released yet):
+- NEW: **badge advice on the SELECT LOADOUT screen** (difficulty and badges). The badges worth equipping for the team
+  leader, the build, the mode, the difficulty and the standing orders you picked are numbered on the game's own badge
+  buttons (gold diamonds, 1 = most worth it), equipped badges the advice would swap out are marked, a WHY line explains
+  the badge under the cursor (mouse and pad), and a summary under CHOSEN BADGES lists what to equip and what to swap
+  out. A **BADGES page** in the mod menu (BUILDS tab) previews it for every survivor, mode and difficulty, lets your own
+  build pin or never-advise badges, and holds the settings (`[Advice] LoadoutHint`, `[General] LoadoutSize`). An
+  optional one-click **EQUIP ADVICE** button presses the game's own badge buttons along the advice (removes first, then
+  adds, never a quest's or a locked badge; UNDO until the screen closes) - **off by default** (`[Advice] LoadoutEquip`;
+  mouse / touch, no key unless you set `[Advice] LoadoutEquipKey`): unless you switch it on and click it, the mod still
+  never touches your loadout. Build packs may carry `badges` / `skipBadges` (extension API 3). See "Badge advice on the
+  run setup screen";
+- NEW: **the active quest's team rules on the rescue screen**. A quest can limit the team - "Team Size" of the
+  Huntress's *Readjust* wants the leader alone (survivors == 1), the Ghost's third quest exactly Ghost + Huntress, two
+  others a full team - and up to now the rescue cards knew none of it: in a logged run the cards ranked a survivor first
+  on six of seven rescue screens and the reroll hint invited three rerolls, while the quest wanted no recruit at all.
+  The quest's objectives are read once a run (`[quest] ...` in the log); at the quest's limit Liberate comes first
+  (`quest: stay solo - take the level-up and cash`) and every recruit last (`quest: stay solo - Tank would fail it`),
+  the reroll hint stays away and the readout's row reads `SOS  quest: stay solo`; a class the quest needs comes first
+  (`quest: needs Huntress`; the reroll hint speaks for it alone, `REROLL - the quest needs Huntress`) while Liberate
+  keeps its slot; a quest that wants a full team keeps Liberate under every recruit (late in a run the row then reads
+  `SOS  Tank, SWAT · quest: full team`). Other objectives (survive, kills, weapons at the end ...) are logged and leave
+  the advice as it was;
+- **"abilities first" lets the weapon in**: its weapon levels sat on a floor (3.3) under every other survivor's ability
+  levels, so once recruits had joined the weapon never "filled in" - in a logged run the leader's weapon (a lent
+  Ability-style build on Auto) ranked last all run and was taken against the advice nine times. Now, once the
+  survivor's own abilities are as good as done (every ability its build ranks owned, at most one short of its last
+  level), a level of the weapon in hand scores on the balanced floor (4.3) and goes ahead of the recruits' ability
+  levels - but stays just under a card of the survivor's own open build ability (`abilities first: after EMP Grenade,
+  ahead of the rest`), so "abilities first" still holds for its own abilities;
+- the reroll hint on the rescue screen judges with the right reroll count from the start. The game fills the cards
+  before it refreshes the Reroll button, so the button still showed its previous number when the hint first read it: 0
+  on the first rescue screen of every session (a first verdict of "no reroll left" with 8 in hand, put right a few
+  milliseconds later when the game handed over its count), or a stale 8 after the rerolls were spent on other screens.
+  The team's `Rerolls available` comes first now - the very number the game is about to hand over - and the button's
+  number last; when the game's count for the screen still differs, the hint is judged again once (`[squad] reroll hint:
+  (re-judged with rerolls 8 - ...)`);
+- a build pack another mod lends: **Auto follows the tier-3 branch you actually take**. Up to 0.12.2 the pack's default
+  stood in for Auto all run - after you took the other branch the cards still followed the default's abilities, focus,
+  evolutions and item leanings, and the other branch was held out (2.00) as `your build takes Rocket Launcher` for a
+  build you never chose. Now, once you own a tier-3 weapon that is not the default's branch, Auto follows the pack's
+  build for that branch (else its build that decides the branch live, else plain Auto); the other branch is scored as on
+  Auto (`other branch; Auto follows <build>, which takes <weapon>`), the reasons and the `[ctx]` line name such a build
+  `(Auto)` instead of "your build", and `[builds] Tank on Auto follows ...` says when it changes. A build you choose
+  yourself stays whatever you take, and between runs (the menu, the Training Yard, the run setup screen) Auto is the
+  pack's default as before;
+- each reason is said once: an item that both armors and heals listed `survival matters now (the squad is hurting)`
+  twice, and a rescue card repeated its guides' tier and its bought synergies under the headline that sums them up
+  (`A-tier rescue, 1 bought synergy with the squad; A-tier rescue in the guides; 1 bought synergy: 1 with Huntress`) -
+  the headline now names the partners and the two lines go (`A-tier rescue, 1 bought synergy with Huntress`). An
+  ability card's damage-type and team-passive headlines left their source line standing as well (`new ability -
+  Trap Expertise boosts it; ...; Trap Expertise (Huntress) boosts it: taunt`, the same with `unlocks the Electric
+  special` / `this level unlocks the Electric special (10 tags)` and `Kinetic: 100% of the squad` / `+1 Kinetic tag:
+  100% of the squad's damage`): the line a headline sums up now goes, for all three;
+- the EQUIP ADVICE button has **no key by default** (it was F9, another plugin's key on the team leader screen just
+  before); a key you set is checked once the plugins are loaded, and a clash with another plugin's key, the game's
+  (F8 feedback form, BackQuote console), Steam's F12 or the mod menu's own key is noted in the log (`[config]
+  Advice.LoadoutEquipKey = F9 is also ...`). A config written by an earlier 0.13.0 build keeps the F9 it has - clear
+  `LoadoutEquipKey` there by hand.
+Nothing else in the ranking changed: only a survivor on Auto with a lent build pack (the card of the other tier-3
+branch, and every card once that branch is taken), the rescue cards under a quest's team rule, and the weapon of an
+"abilities first" survivor whose own abilities are as good as done score differently.
+**0.12.2 — fixes from a round of Steam Deck logs** (2026-09-25):
 - the rescue (SOS) cards have their RECOMMENDED ribbon and reason line back. The game's patch of 2026-09-23 gave them
   a card class of their own (`UIPowerupButtonSOS`), which the badges did not know: only the gold frame was drawn, and
   every rescue card logged a warning. A card class the mod has never seen now borrows the card's first label (said
@@ -212,7 +275,8 @@ unlocked them; earlier the names only made the line wrap), and the next ability 
 highest tag point counts. A full squad is nine lines.
 
 In both: `SOS` is the two best rescues by the SOS-card rules, exact ties settled as on the cards (hidden with a
-full squad); `GRAB` the two best items worth a chest slot (S/A tier or quest target, not held). When a rebuild changes a line (a pick, a recruit, a
+full squad), or what the active quest's team rule says (0.13.0: `quest: stay solo`, `quest: Huntress`, the recruits
+with `quest: full team` late in a run - see "How it ranks", SOS); `GRAB` the two best items worth a chest slot (S/A tier or quest target, not held). When a rebuild changes a line (a pick, a recruit, a
 Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
 0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.plan]`).
 The `›` and `·` glyphs are checked against the HUD font at creation and replaced by `>` and `|` when missing
@@ -345,21 +409,109 @@ REROLL  -  Tank would rate higher (5.9 vs 4.6)
   on the squad, not on the cards, and not held back after a reroll (the cards shown before one); where the game's
   own availability check of a survivor's unlock card can be read, it must agree.
 - **The reroll count is the game's own** for that screen: the number it hands the screen's action buttons, else the
-  number on the Reroll button, else the team's `Rerolls available`; a FREE reroll counts too.
+  team's `Rerolls available` (the very number the game is about to hand over - it fills the cards before it refreshes
+  the buttons), else the number on the Reroll button (until that refresh it still shows what it showed last time);
+  a FREE reroll counts too. When the game's own count comes and differs from the one the hint was judged with (or
+  the FREE label changed with it), the hint is judged again once (`[squad] reroll hint: (re-judged with rerolls 8 -
+  ...) SHOWN - ...`).
 - **Where.** The Reroll button gets the recommended card's gold frame, and the line stands over the button in the
   band between the cards' reason lines and the button - measured on screen 0.6 s after the cards came, never over
   a card's text; when that band is too low it goes under the button, and without room for either only the frame
   shows. Motion only when it appears (the frame settles, the line unfolds from its left tip and types on); nothing
   loops.
+- **The active quest first** (0.13.0): at the quest's team limit no hint (`not shown - quest: stay solo - no recruit
+  wanted (Liberate)`); while the quest needs a class the squad lacks, the hint speaks for that class alone, whatever
+  the margin or the clock: `REROLL - the quest needs Huntress` when she could still come and a reroll is left, nothing
+  when she is on the cards already.
 - **After a reroll** the screen is judged again (the replaced offer); the pick takes the hint away. It never rerolls
   for you.
 - **Off:** the ADVICE tab's "Reroll hint on the rescue screen" (`[Advice] RerollHint = false`).
 - **The log**, one line per judgement with the scores:
-  `[squad] reroll hint: SHOWN - Tank would rate higher (5.93 vs Huntress 4.64, +1.29) | rerolls 3 (the Reroll
-  button's count) | on the cards: Huntress 4.64, Ghost 2.98, Liberate 1.00 | could still come: Tank 5.93, Engineer
+  `[squad] reroll hint: SHOWN - Tank would rate higher (5.93 vs Huntress 4.64, +1.29) | rerolls 3 (the team's
+  Rerolls available) | on the cards: Huntress 4.64, Ghost 2.98, Liberate 1.00 | could still come: Tank 5.93, Engineer
   4.03, Ranger 3.78 | margin 0.75, recruit value 1.00`, or `not shown - the best survivor is on the cards ...` /
   `... only 0.60 above the cards - under the 0.75 margin` / `no reroll left (0 ...)`; then where it was drawn
   (`[squad] reroll hint: drawn over the Reroll button - ... band N units ...`).
+
+## Badge advice on the run setup screen (0.13.0)
+
+The game's run setup screen ("SELECT LOADOUT": difficulty and badges) had no advice. Now it says which of your unlocked
+badges to equip for the team leader, the build, the mode, the difficulty and the standing orders you picked, in
+priority order, and why - in the game's own look, on the game's own buttons:
+
+```
+ BADGES COLLECTION                                         CHOSEN BADGES
+ [Lev o][Gun 1][Cri 2][Tou 4][Bom ][Pow 3][Cov ][Thu o]    [Lev o][Spe o][Gro o][Thu o]
+ ...                                                       EQUIP  1 Gunner · 2 Critical · 3 Power · 4 Tough
+ [ L ][ L ][ L ]  <> #1 EQUIP  Kinetic is 92% of your      SWAP OUT  Thunder · Leveling · Growth · Speed
+                  damage · L2, in for Thunder (+17.15)     DIFFICULTY LEVEL
+ n = numbered gold diamond (top-right)   o = small hollow rust diamond   L = locked (nothing drawn)
+```
+
+- **The diamonds** sit on the top-right corner of a badge (the game's own green "selected" diamond hangs under the
+  bottom centre). A numbered gold diamond = advised (1 = keep it even with fewer slots; numbers are priority, not slot
+  positions - the game applies every slot the same); plus a gold frame when it is not equipped yet; a small hollow rust
+  diamond = equipped, but the advice would swap it out; a hollow numbered diamond = equipped and kept, because the swap
+  would gain too little (`KEEP · close`: a swap is shown only when it gains at least 1.0 point and at least 15 % of the
+  kept badge's points); `Q` = forced by a quest;
+  a pin tick = pinned on your build. The CHOSEN BADGES slots carry the same diamonds. Shape and number carry the
+  meaning, so colour is never the only cue. Locked badges get nothing.
+- **The WHY line** explains the badge the game's info panel shows - it follows the cursor (mouse and pad) through the
+  game's own highlight: `#1 EQUIP  Kinetic is 92% of your damage` and, dim, `L2 · in for Thunder (+17.15)`, `close call:
+  Tough 5.90`, `pinned on your build`, `L2 · never advised (0.00 points)`. It goes into the first free
+  band the screen has (measured: the empty cells after the last grid row, then under the info text, then over the
+  badge's name; on the measured 3440x1440 frame the grid gap, and by the offline mock on the 1280x800 Deck too), else one
+  line appended to the game's bonus text.
+- **The summary** under CHOSEN BADGES: `EQUIP 1 Gunner · 2 Critical ...` (equipped names white, missing ones gold),
+  `SWAP OUT ...` / `YOUR BADGES MATCH THE ADVICE` / `THE QUEST FIXES EVERY BADGE`, and with Full detail `YARD Gunner
+  2>3: +8.3 for 3 SWAT points` or `UNLOCK <badge> (<class> tree) would be #k`. Text follows the readout's rule (1.9 %
+  of the screen's height, never under 15 px) times `[General] LoadoutSize`; it shrinks to 0.87x at most, never under
+  15 px, then drops the YARD row, then SWAP OUT.
+- **How it values a badge.** Points = "% more squad damage over the whole run, or its equivalent", from the game's own
+  badge values (read live: 1.0.2 changed 24 of them) times the weights in knowledge.json (`badgeStats`, `badgeModes`,
+  `badgeRules`, with `why` texts; the ones not measured in the game say so) and what the run will deal: the build's
+  weapon line, abilities and evolutions (Auto: the guides' branch), its weapon / ability split, crit and healing leans,
+  the tag points it reaches on its own (a badge that takes a type to its special gets a pull), the mode's elite / boss
+  share and its pointless stats (One Hit: no health; Extermination: no XP or luck), survival by difficulty and
+  `[Advice] Caution`, and cash / survivor-XP badges by `[Advice] RunGoal` (x0.3 win the run / x0.6 balanced / x1.2
+  farm progress). The team leader alone is scored (the one survivor known before the run starts;
+  `badgeRules.recruitWeight` 0.3 would blend in the two likely recruits). The fill is greedy - quest badges first, then your build's pins in order, then the best
+  score each round - so the advice for 3 slots is the first 3 of the advice for 4. Ties: the score in whole
+  centi-points, then the higher level, then the game's grid order, then the badge id.
+- **Detail** (`[Advice] LoadoutHint`, the ADVICE tab's tenth row): Off (nothing drawn, still logged) / Numbers / Numbers
+  + reason (default) / Full (close calls and the YARD / UNLOCK row).
+- **The BADGES page** (BUILDS tab, `BADGES`, or your build editor's `Badges` row): the 27 badges in the game's 8 x 4
+  grid with their icons, levels and the same diamonds at the screen's size, a legend, the summary rows and the WHY of
+  the badge in focus; "Preview for" every mode and difficulty (session only); the screen's detail, the size (70 - 200
+  %) and the EQUIP ADVICE switch, each saved at once (SAVED in the header). On your own build a press on a badge cycles
+  PIN (it takes a slot first) -> NEVER -> back to the advice; presets and Auto offer MAKE MY OWN BUILD; a build pack's
+  pins are read-only (packs may carry `badges` / `skipBadges`: extension API 3). Over the pause menu the page shows the
+  run being played (`THIS RUN: 3 of 4 as advised`). The BUILDS cards' description gains one sentence: `Badges as leader
+  (Normal II): 1 Gunner L2 · 2 Critical L2 · 3 Power L2 · 4 Tough L2.`
+- **EQUIP ADVICE** (off by default; `[Advice] LoadoutEquip`; no key unless `[Advice] LoadoutEquipKey` names one - 0.13.0
+  dropped the F9 default, another plugin's key; a clash is noted in the log): a plate next to the
+  slots; a click or the key presses the game's own badge button along the plan - removes first, then adds, one press
+  every 0.12 s, never a quest's badge, never a locked one, never past the slots, every guard checked again against the
+  screen before each press, each press logged - exactly what your own clicks would do (the game saves the selection).
+  Afterwards it offers UNDO until the screen closes or you click a badge by hand.
+- **During play nothing new appears** (badges cannot change in a run); the `[ctx]` lines gain `| badges: Gunner L2, ...
+  (advice #7: 4 of 4)`.
+- **Robust to game patches:** every game member is read through its own small accessor, each capability has a fallback
+  (the grid buttons instead of the registry, the slot buttons instead of the selection list ...), every `drawn` line
+  names its level (A everything / B no WHY line / C summary only / D log only / E nothing), and 3 errors in one visit
+  switch the feature off for the session with one line. At load: `[loadout] hooks: ...`, `[loadout] game members: n of n
+  readable`, `[loadout] badge classes: ... - all readable`.
+- **The log**: per session `[loadout] inventory 27 badges, hash 237c6a7f = the 1.0.2 reference` and the inventory as
+  JSON; per change `[loadout] visit N ...`, `shape #N`, `advise #N: SWAT 'Rifleman' Normal d2 WinTheRun | 4 slots ... |
+  EQUIP 1 Gunner L2 17.15, ...`, `why #N ...`, the replayable `input #N {json}`, `hint #N`, `equipped #N: ... | swap
+  Thunder>Gunner +17.15, ... | 8 clicks to match`, `drawn #N level A (...)`; once per resolution `[loadout] layout ...`;
+  per run `[loadout] run start: SWAT Normal d2 | badges ... (advice #N: k of m)`. `ItemBench --replay-loadout
+  <companion.log>` recomputes every logged advice and checks every drawn set against it.
+- `[Debug] PreviewSetup` walks the start flow to the screen (Play, team leader, arena, mode), photographs it
+  (`fxsetup0..3`, `setup0_loadout`), moves the game's cursor over the first advised badge, an equipped one the advice
+  would swap out and a locked one (`setup1_why`, `setup2_why_swap`, `setup3_why_locked`) - it never clicks a badge -
+  then presses the difficulty and START and logs `[loadout] measure: ...` 3 s into the run (`PreviewSetupRun = false`
+  backs out of the start flow instead). `[Debug] PreviewMenu` photographs the BADGES page (`menu_badges0..2`).
 
 ## How it ranks (0.10.0: the build, the squad, the clock, the mode)
 
@@ -381,10 +533,19 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   picks the evolution (+1.0 / -0.5, so its pick is on top when both are offered; offered alone, the other one still
   outranks any tier-up and its card says `only X is offered - your build prefers Y`) and sets the level-up style.
   On Auto: the guides' ability tiers (S +1.2, A +0.6, C -0.8), and the branch that shares damage types with the REST of the squad, then your
-  Training Yard investment (+0.5 a paid level), then the guides' branch (+0.9).
+  Training Yard investment (+0.5 a paid level), then the guides' branch (+0.9). A build another mod lends that Auto
+  follows (a pack's `default`) ranks abilities, branch and evolution like a selected one, but it is Auto, not yours
+  (0.13.0): the other branches score as on Auto (3.6 while its branch can be offered, 6.2 when it cannot), the reasons
+  say `#1 in <build> (Auto)`, and once a tier-3 weapon of another branch is owned Auto follows the pack's build of that
+  branch.
 - **Level-up styles.** Evolutions (7.6 and up), a recruit's first weapon (7.2) and the next weapon tier (6.6) are
   always on top. Below them a weapon level scores `floor + 0.1 x level`: floor 6.0 *weapon
-  first* (every weapon level before any ability level), 4.3 *balanced* (default), 3.3 *abilities first*. Abilities:
+  first* (every weapon level before any ability level), 4.3 *balanced* (default), 3.3 *abilities first* - lifted to 4.3
+  (0.13.0) once the survivor's own abilities are as good as done (every ability its build ranks - without a build,
+  every free slot's worth - owned and at most one short of its last level; on Auto with a lent build the floor of your
+  own level-up style if that is higher), then kept 0.01 under a card of its own open build ability on the same offer
+  (`style: abilities first - only EMP Grenade left: ...`, `abilities first: after EMP Grenade, ahead of the rest`): the
+  3.3 floor sat under every recruit's ability level, so the weapon never filled in. Abilities:
   a new one 3.6 / 3.1 / 2.4 (fewer than two / up to four / after) - "take each ability once" early beats another
   level of an old one - a level 2.6, +1.0 for the focus ability (the build's highest-ranked open one, else the one
   furthest along), +0.5 for the level that completes it, up to +0.9 toward an unlocked evolution; all soft-capped
@@ -444,7 +605,17 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   full squad, else 1.0 rising to 4.2 as that time runs out. Two recruits that score the same (an A-tier rescue with
   a team passive ties an S-tier one once both are fully trained) go by the guides' tier, then bought synergies, then
   the class order - on the cards and in the readout's SOS row alike (0.12.2; the cards used to take the one further
-  left, the row the class order).
+  left, the row the class order). **The active quest's team rule goes over all of it** (0.13.0, `QuestTeam.cs`): the
+  quest's objectives are read once a run - `InternalNumSurvivors` thresholds give the team size (the leader counts;
+  "Team Size" == 1 = stay solo), a `FinishSpecificTeamSetup` the classes the team must hold, the full-team objectives
+  (`FullTeamTier3Weapons`, `TimedPowerupsFullTeam`) a team of `requiredTeamSize`. At the limit: Liberate 5.0 with
+  `quest: <rule> - take the level-up and cash`, every recruit 0.3 with `quest: <rule> - <class> would fail it`. A class
+  the quest needs and the squad lacks: that recruit 8.0+ (`quest: needs <class>`), a recruit that would take its slot
+  0.3, Liberate 4.0 (`keep the slot for <class>`). More survivors wanted than the squad has: Liberate 0.2 (`Liberate
+  leaves a slot empty`), a recruit at least 0.3. A quest whose objectives match *Any*, one the game counts as failed,
+  a run that does not fit the quest's conditions (arena, mode, difficulty or leader - the game shows the quest box in
+  every run but completes the quest only in one that fits) or a team that has broken the rule already leaves the cards
+  as they are (the log says why).
 - **Military training**: `1 + rarity x weight x 2` (Common 1, Rare 2, Endless 2.6, Legendary 3 - the cards' own
   numbers go about 1 : 2 : 3 by rarity; up to 0.10.2 it was 1 / 1.6 / 2 / 2.3, and both times a logged run's player
   overrode the mod it was a Legendary or Rare the mod had under a Common: rarity multiplies the stat instead of
@@ -467,7 +638,16 @@ also checks every survivor's weapon fork against the game's data (three tier-3 w
 accepted in a build), walks the Training Yard plan of every survivor over the tree in `gamedata.json` (Auto, and a
 build on the fifth weapon), and replays the recruit ties and evolution headlines of a round of Steam Deck logs, and
 the reroll hint on that round's rescue screens (the four the player rerolled must speak, the offers after the reroll
-must not) and on made-up screens for its edges (the margin, ties, no reroll left, late, Liberate on top). It
+must not) and on made-up screens for its edges (the margin, ties, no reroll left, late, Liberate on top). Since
+0.13.0 it checks what Auto follows when a build pack is lent (a made-up Tank pack, through a provider as another mod
+registers one: before and after the other tier-3 branch is taken, a build the player chose, the `[builds]` line), the
+words and scores of the other-branch and evolution cards on a lent build, and that each reason is said once (Frozen
+Heart's survival clause, the rescue card's headline) - `AdviceFixCases.cs` - and the badge advice (`LoadoutCases.cs`), and
+replays the review of a 10-04 match (`MatchFixCases.cs`, compiling `QuestTeam.cs` too): the quest's team rules on that
+run's seven rescue screens and three reroll hints plus made-up screens for the class rule and the full team, the logged
+hands of the "abilities first" weapon (the lift and the cap under the survivor's own build ability), that no ability,
+item or Research Pod card's headline is said again by one of its reasons (every ability of the probe on swept squads),
+and that the EQUIP ADVICE key has no default. It
 also scores every item of the game for a few squads, listing the top picks, any item that reaches the `GRAB` threshold (3.0) on keywords alone, the bottom of
 the list, and how a Research Pod screen would rank. It reads the PC app's extracted `data\gamedata.json`
 (from `tools\extract_gamedata.py` in the project root, outside this repository); pass the path if it lives
@@ -557,6 +737,16 @@ build that fails to load leaves every auto-updated install without the mod until
   from the game's own flags when it sets them; a replaced level-up is not counted again by the pace estimate).
   A rescue screen adds `[squad] reroll hint: SHOWN - ...` or `not shown - <why>` with the scores on the cards and of
   everyone who could still come (see "The reroll hint on the rescue screen").
+  Once a run (0.13.0), with the first plan: `[quest] GameHubQuest_Huntress_4 "Readjust" - 2 objectives (objectives),
+  all must hold: 1. StatisticThreshold (LiveAndOnRunFinished) InternalNumSurvivors -> survivors == 1 (the leader
+  counts); 2. Survive (LiveAndOnRunFinished) advice unchanged; the run fits the quest's conditions (arena, mode,
+  difficulty, leader Huntress); | team rule: stay solo`
+  (or `[quest] no active quest this run ...`), then a line whenever what the rule does changes (`[quest]
+  GameHubQuest_Huntress_4 (stay solo, team of 1): Liberate first on rescue screens ...`). A key of ours that another
+  plugin, the game or Steam uses as well: `[config] Advice.LoadoutEquipKey = F9 is also <plugin>'s [Section] Key ...`
+  (a warning, once per value).
+  The run setup screen (0.13.0) adds `[loadout] ...` lines (see "Badge advice on the run setup screen"); replay them
+  offline with `ItemBench --replay-loadout <companion.log>`.
   At load, `[badge] card classes: Hashtag, Item, Military, SOS, Skill - all have a label template`; a card class
   the badges do not know is named in a warning (a game build older than the rescue card class says so once, and its
   rescue cards borrow their first label; the other cards are not affected).
@@ -830,7 +1020,7 @@ Check `ApiVersion` (a static property: `_companion.GetProperty("ApiVersion").Get
 | key | |
 | --- | --- |
 | `title` | shown on the cards of these builds (where a preset says GUIDE PICK / ALTERNATIVE) and in the header over them; default: the owner |
-| `default` | the `id` or `name` of the build that **Auto** follows for this survivor while the pack is lent; without it Auto stays Auto |
+| `default` | the `id` or `name` of the build that **Auto** follows for this survivor while the pack is lent; without it Auto stays Auto. In a run (0.13.0), once the survivor owns a tier-3 weapon that is not the default's `branch`, Auto follows the first lent build whose `branch` is that weapon instead, else the first with `"branch": ""`, else plain Auto; a default with `"branch": ""` stays. A build the player selected is never swapped |
 | `builds[].id` | your own id, used for `default` and kept in `builds.json` as `ext:<owner>:<id>` when the player selects the build |
 | `builds[].name`, `summary` | the card's title, and the footer text while the card has the focus |
 | `builds[].glyph` | card art, one of `crosshair bullets blast flame bolt snow flask blade turret shield cross paw gear magnet chevrons clock skull link coin heart hash radio eye diamond up` |
@@ -893,7 +1083,14 @@ The game code is not obfuscated. The selection screens are `UIGameplayLevelUp`, 
 the `powerupButtons` array; the mod post-fixes each override, reads `attachedPowerup` / `attachedItem` /
 `attachedHashtagEvent` from every active button, ranks, and draws. The base `Hide(clicked)` runs once per screen
 for every type and is the pick event. The rescue screen's `SetActionButtonsInteractivity(numRerolls, numBanishes)`
-is post-fixed too: the reroll count the game hands it is the one the reroll hint trusts first. Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game
+is post-fixed too: the reroll count the game hands it is the one the reroll hint trusts first. The run setup screen
+(0.13.0): post-fixes on `UIViewRunSetup.Update` (the tick), `OnBadgeHighlight` and `UIViewRunSetupBadgeButton.OnHighlight`
+(the cursor), `RefreshSelectedBadgeButtons` (a selection changed) and `OnDisable` (the screen closed), each skipped
+when its target is missing (`Prepare`), plus a fallback tick from `GameMaster.Update` that reads the main menu's run
+setup field; the badges from `PowerupReferences.badges` (`GameplayBadgeStatBoost` / `...HashtagBoost` / `...Physical` /
+`...ElementalBoost`: `bonusesPerLevel`, `hashtagsOnLevel` / `hashtagsPerLevel`), their levels from each badge's tree node,
+the selection from `_selectedBadges` / `_forcedBadges`, the leader / mode / difficulty from `UIStartGameBar`. Since
+0.13.0 the patch classes are applied one by one, so a target a game patch took away fails alone. Squad state comes from `GameplayMaster.s_instance.gamePlayers` (the game
 stores every survivor's powerups on the leader's player object; they are regrouped by
 `targetClassProperties.characterType`), the Training Yard from the nodes reachable through each powerup
 (`skillTreeRequirement`, `skillTreeAbilityBoost`) and each class's `skillTreeSynergies`, the run clock from
@@ -939,6 +1136,15 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Ui.cs                         the shared look (Theme: the game's gold, panel body, hairlines) and uGUI primitives
     Badge.cs                      gold frame on the game's selection rect, RECOMMENDED ribbon, reason line
     RerollHint.cs                 the reroll hint on the rescue screen: who could still come, the game's reroll count, frame + line (0.12.2)
+    QuestTeam.cs                  the active quest's team rules and what they mean on a rescue screen, the SOS row and the reroll hint (pure, 0.13.0)
+    Quest.cs                      reads the active quest's objectives once a run (one accessor per member) and logs them
+    Loadout.cs                    badge advice, pure: badge facts, the run shape, the score, the greedy fill, reasons, the replayable input (0.13.0)
+    LoadoutView.cs                badge advice, pure: the diamonds per badge, swaps and the keep margin, summary rows, WHY texts, the EQUIP plan
+    LoadoutLayout.cs              badge advice, pure: where the WHY line and the summary go on the measured screen, text and diamond sizes
+    LoadoutState.cs               badge advice: the game reader (one accessor per member, a fallback per capability, the load-time checks)
+    LoadoutUi.cs                  badge advice on the run setup screen: diamonds, frames, WHY line, summary, motion, logs, hooks, the debug stage
+    LoadoutEquip.cs               the optional one-click EQUIP ADVICE button (off by default): guarded presses of the game's badge button, UNDO
+    Menu.Badges.cs                the mod menu's BADGES page, the BUILDS cards' badge sentence, the editor's Badges row
     Plan.cs                       the run plan, Compact or Full (keyed rows with label / value / group; sample plans for the preview)
     Panel.cs                      the PLAN readout during play (soft backing, corner placement, text-hugging width, fade, idle dimming, highlight)
     TreePlan.cs                   Training Yard advice, pure: node model, the General order, the survivor rules, simulate / advise
@@ -976,3 +1182,18 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
    the `drawn ...` line says which and how tall the band was), that it never covers a card's text, that it is judged
    again after a reroll and gone after the pick, and which reroll count the log names (`the screen's count` = the
    game's own hook answered).
+10. 0.13.0's badge advice was built and checked offline (the bench: the Python reference model line for line, the
+   view, the layout of the PC and the Deck, the safety scan, the replay) but not seen in the game: run `[Debug]
+   PreviewSetup` at 3440x1440 and with `PreviewResolution = 1280x800`, read the `[loadout]` lines (hooks, members,
+   inventory hash, `drawn ... level A`, `layout`, `cursor sources`, `run start`, `measure`) and the screenshots, and
+   replay the log. Then the unmeasured weights (U1 tag points vs the Hashtag stat, U2 player stats on recruits, U3 the
+   crit pools) from the `measure` line, the EQUIP ADVICE button by hand (mouse and Deck touch), and whether the game's
+   hover popup covers the WHY line.
+11. 0.13.0's quest rules were built from the 1.0.2 interop and the decoded quest assets, and replayed offline, but not
+   seen in the game: start a run with a team-size quest active and read the `[quest]` line (which list held the
+   objectives on the runtime copy - `objectives` or `_objectiveDefinitions` -, the rule, whether the run fits the
+   quest's conditions), then a rescue screen (Liberate first, `quest: ...` on the cards, no reroll hint, `SOS  quest:
+   stay solo`); and once a run that does not fit (another leader or mode): `does NOT fit` and the usual cards. The
+   Ghost's third quest (Ghost + Huntress) is a good test of the class rule. Also see the "abilities first" weapon lift in a run
+   with an Ability-style build (`style: abilities first - only ... left`), and `[config] ... is also ...` with a key set
+   to F9 while another plugin uses it.

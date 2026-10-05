@@ -25,8 +25,10 @@ namespace YazsCompanion.Api
     {
         /// <summary>Raised when a signature here changes or one is added; check it before relying on a newer call.
         /// 1 = RegisterOption, RegisterBuildProvider, Unregister (0.12.0); 2 = RegisterDisplayNames, InvalidateDisplayNames
-        /// (0.12.1). The calls of an older version stay as they were.</summary>
-        public static int ApiVersion => 2;
+        /// (0.12.1); 3 = a build in a build pack may carry "badges" (ordered pins: they take the badge slots first, after a
+        /// quest's forced badges) and "skipBadges" (never advised); no new call (0.13.0). The calls of an older version stay as
+        /// they were; an older Companion ignores the two fields.</summary>
+        public static int ApiVersion => 3;
 
         /// <summary>Add a choice option to the mod menu's MODS tab: a row with <paramref name="label"/> and a left / right value
         /// selector. <paramref name="owner"/> is the registering mod's display name (the section header),

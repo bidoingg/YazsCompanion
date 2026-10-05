@@ -35,6 +35,47 @@ namespace YazsCompanion
         }
     }
 
+    /// <summary>One badge advice diamond (Ui.Marker): solid gold with the number (KEEP / EQUIP / PINNED), hollow with the number
+    /// (KEEP · close), hollow gold with Q (QUEST), hollow gold alone (CLOSE CALL), a small hollow rust diamond (SWAP OUT).
+    /// Shape and number carry the meaning, so colour is never the only cue.</summary>
+    internal sealed class UiMarker
+    {
+        public RectTransform Root, Turn, Fill, Ring, Pin;
+        public CanvasGroup Group, RingGroup;
+        public Image Gold;
+        public TextMeshProUGUI Text;
+        public float Size;
+        public MarkKind Kind = MarkKind.None;
+        public int Number = -1;
+        public bool Pinned;
+
+        public bool Alive { get { try { return Root != null && Root.gameObject != null; } catch { return false; } } }
+        /// <summary>The look it shows now, as text: a changed one stamps again.</summary>
+        public string State { get { return Kind + ":" + Number + (Pinned ? "p" : ""); } }
+
+        public void Set(MarkKind kind, int number, bool pin)
+        {
+            Kind = kind; Number = number; Pinned = pin;
+            bool hollow = kind == MarkKind.KeepClose || kind == MarkKind.Forced || kind == MarkKind.Close || kind == MarkKind.SwapOut;
+            try
+            {
+                Root.gameObject.SetActive(kind != MarkKind.None);
+                if (kind == MarkKind.None) return;
+                Fill.gameObject.SetActive(hollow);
+                if (Gold != null) Gold.color = kind == MarkKind.SwapOut ? Theme.Rust : Theme.Gold;
+                float s = kind == MarkKind.SwapOut ? 0.7f : 1f;
+                Turn.localScale = new Vector3(s, s, 1f);
+                if (Pin != null) Pin.gameObject.SetActive(pin);
+                if (Text != null)
+                {
+                    Text.text = kind == MarkKind.Forced ? "Q" : number > 0 ? number.ToString() : "";
+                    Text.color = hollow ? Theme.GoldText : new Color(0.07f, 0.055f, 0.03f, 1f);
+                }
+            }
+            catch { }
+        }
+    }
+
     internal static class Ui
     {
         public static RectTransform NewRect(string name, Transform parent)
@@ -216,6 +257,43 @@ namespace YazsCompanion
         public static RectTransform FadeRule(RectTransform parent, string name, Color color)
         {
             return FadeImage(parent, name, color, 0);
+        }
+
+        /// <summary>The badge advice's diamond (0.13.0; TreeUi's Training Yard marker, copied - TreeUi keeps its own): a dark
+        /// rim, a gold diamond, a hollow fill, the number cloned from <paramref name="template"/>, a ping ring and a small pin
+        /// tick. Anchored on the top-right corner of <paramref name="parent"/> (inset 0.18 x its size), out of every layout,
+        /// takes no clicks. <see cref="UiMarker.Set"/> gives it its look; the menu's BADGES page draws the same thing.</summary>
+        public static UiMarker Marker(RectTransform parent, string name, float size, TextMeshProUGUI template)
+        {
+            var root = NewRect(name, parent);
+            root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(0.5f, 0.5f);
+            root.anchoredPosition = new Vector2(-size * 0.18f, -size * 0.18f); root.sizeDelta = new Vector2(size, size);
+            try { var le = root.gameObject.AddComponent(Il2CppType.Of<LayoutElement>()).TryCast<LayoutElement>(); if (le != null) le.ignoreLayout = true; } catch { }
+            var m = new UiMarker { Root = root, Size = size };
+            try { m.Group = root.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); m.Group.blocksRaycasts = false; m.Group.interactable = false; } catch { }
+            try { CanvasGroup rg; m.Ring = Fx.Ring(root, size, 4f, Theme.Gold, true, out rg); m.RingGroup = rg; } catch { }
+            m.Turn = NewRect("Turn", root); Stretch(m.Turn, 0, 0, 0, 0);                                   // the diamonds turn, the number stays upright
+            Diamond(m.Turn, "Edge", 0.5f, 0.5f, size + 8f, new Color(0.04f, 0.035f, 0.03f, 0.95f));      // a dark rim keeps it readable on bright icons
+            var gold = Diamond(m.Turn, "Gold", 0.5f, 0.5f, size, Theme.Gold);
+            m.Gold = gold.GetComponent<Image>();
+            m.Fill = Diamond(m.Turn, "Hollow", 0.5f, 0.5f, size - 12f, new Color(0.05f, 0.045f, 0.04f, 1f));
+            m.Pin = Diamond(root, "Pin", 0f, 0f, size * 0.42f, Theme.GoldText);                         // "pinned on your build": a small tick bottom-left
+            m.Pin.gameObject.SetActive(false);
+            if (template != null)
+            {
+                try
+                {
+                    m.Text = CloneText(template, root, "N");
+                    if (m.Text != null)
+                    {
+                        Stretch(m.Text.rectTransform, -10, -10, -10, -10);
+                        m.Text.alignment = TextAlignmentOptions.Center; m.Text.fontSize = size * 0.52f; m.Text.fontStyle = FontStyles.Bold;
+                        m.Text.color = new Color(0.07f, 0.055f, 0.03f, 1f);
+                    }
+                }
+                catch { m.Text = null; }
+            }
+            return m;       // every piece came from Image / CloneText: raycastTarget is off on all of them
         }
 
         /// <summary>Clone one of the game's labels to inherit its font, material and canvas settings; strip everything but

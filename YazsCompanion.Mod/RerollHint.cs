@@ -10,10 +10,16 @@
 // unlocked in the profile that is not on the squad, not on the cards and not held back after a reroll, scored like the
 // SOS cards (Ranker.Recruitable, shared with the readout's SOS row); where the class's own unlock card can be found its
 // IsAvailable() must agree (a check that refuses every class is not trusted, and the log says so). The reroll count is
-// the game's own for that screen: what it hands SetActionButtonsInteractivity (hooked below), else the number on the
-// Reroll button, else the team's "Rerolls available" statistic; a FREE reroll counts too. A reroll fills the screen
-// again (Advisor's replaced offer): the hint is judged again; the pick takes it away. One '[squad] reroll hint: ...'
-// line per evaluation, with the scores. The drawn names go through Names (another mod's names); the log keeps the game's.
+// the game's own for that screen: what it hands SetActionButtonsInteractivity (hooked below), else the team's "Rerolls
+// available" statistic (the very number the game hands over - the cards are filled before the buttons are refreshed),
+// else the number on the Reroll button (stale until that refresh: "0" on a session's first rescue screen); a FREE reroll
+// counts too. When the game's count comes and differs from the one judged with (or its refresh changed the FREE label or
+// the Reroll button with it), the hint is judged again once, on the next frame ('re-judged with rerolls N'; RerollCount
+// in Synergy.cs). A reroll fills the screen again (Advisor's
+// replaced offer): the hint is judged again; the pick takes it away. One '[squad] reroll hint: ...' line per
+// evaluation, with the scores. The drawn names go through Names (another mod's names); the log keeps the game's.
+// 0.13.0 (C1): the active quest's team rule goes first (RerollCall's quest argument, QuestTeam.cs): at the quest's limit no
+// hint; while it needs a class the squad lacks, the hint speaks for that class alone ("REROLL - the quest needs Huntress").
 // Placed 0.6 s after the cards came (the screen has flown in by then), measured from what is on screen: over the Reroll
 // button when the band up to the lowest card line is tall enough, else under it, else the frame alone. Nothing here
 // takes clicks. Motion only on appear: the frame settles, the line unfolds from its left tip and types on, the tip pings.
@@ -39,7 +45,7 @@ namespace YazsCompanion
         const float MinTextPx = 16f, MaxScale = 1.3f;
 
         sealed class Avail { public bool Button, Interactable, Free; public int Label = -1, Stat = -1; }
-        sealed class Inputs { public List<Recruit> Offered, Possible; public double Liberate = -1, RecruitValue; public Avail Rr; public string Pool = ""; }
+        sealed class Inputs { public List<Recruit> Offered, Possible; public double Liberate = -1, RecruitValue; public Avail Rr; public string Pool = ""; public QuestSos Quest; }
 
         static UIGameplayUpgradeSelection _sel;          // the rescue screen being advised (null: none)
         static IntPtr _selPtr;
@@ -49,7 +55,8 @@ namespace YazsCompanion
         static string _text;                             // the line while the hint is wanted, null = hidden
         static float _placeAt = -1f;
         static bool _shown;
-        static int _gameCount = -1;                      // the count the game handed the screen for this offer, -1 = not seen
+        static readonly RerollCount _count = new RerollCount();     // the count the verdict uses, the game's for this offer, a re-judge due
+        static bool _rejudge;                            // the game's count differs from the one judged with: judge again on the next Tick
         static IntPtr _hookPtr; static int _hookFrame = -9, _hookCount = -1; static bool _hookSaid;
 
         static bool On { get { try { return Plugin.AdviceRerollHint.Value; } catch { return true; } } }
@@ -63,16 +70,19 @@ namespace YazsCompanion
             try
             {
                 var p = Ptr(sel);
-                // the game may hand the screen its count just before it fills the cards: keep that one, else wait for the next
-                _gameCount = _hookPtr == p && Time.frameCount - _hookFrame <= 1 ? _hookCount : -1;
-                _sel = sel; _selPtr = p; _cards = cards; _call = null;
+                // the game may hand the screen its count just before it fills the cards (a reroll refreshes the buttons
+                // first): keep that one, else the count comes right after the cards (the screen opening) - see RerollCount
+                int hook = _hookPtr == p && Time.frameCount - _hookFrame <= 1 ? _hookCount : -1;
+                _sel = sel; _selPtr = p; _cards = cards; _call = null; _rejudge = false;
                 if (!On)
                 {
+                    _in = null; _count.Reset();
                     Hide();
                     Plugin.Logger.LogInfo("[squad] reroll hint: not shown - off ([Advice] RerollHint = false)");
                     return;
                 }
-                var inp = new Inputs { Offered = new List<Recruit>(), RecruitValue = s.Ctx.RecruitValue, Rr = Read(sel) };
+                var inp = new Inputs { Offered = new List<Recruit>(), RecruitValue = s.Ctx.RecruitValue, Rr = Read(sel), Quest = s.Quest };
+                _count.Offer(hook, inp.Rr.Stat, inp.Rr.Label);
                 foreach (var c in cards)
                 {
                     if (c.Recruit != null) inp.Offered.Add(c.Recruit);
@@ -82,37 +92,70 @@ namespace YazsCompanion
                 _in = inp;
                 Decide(replaced ? "the cards were replaced" : null, true);
             }
-            catch (Exception e) { Plugin.Logger.LogWarning("[squad] reroll hint: not judged - " + e.Message); Hide(); }
+            catch (Exception e) { Plugin.Logger.LogWarning("[squad] reroll hint: not judged - " + e.Message); _in = null; _count.Reset(); Hide(); }
         }
 
-        /// <summary>From the SetActionButtonsInteractivity post-fix: the game's reroll count for the screen. Decided again when
-        /// it changes; logged when that turns the hint on or off.</summary>
+        /// <summary>From the SetActionButtonsInteractivity post-fix: the game's reroll count for the screen. When it differs from
+        /// the count the hint was judged with, the hint is judged again once on the next Tick (logged 're-judged with rerolls N');
+        /// the same count only becomes the game's. The pointer test is all a call costs while no rescue screen is advised.</summary>
         public static void OnButtons(UIGameplayUpgradeSelection sel, int numRerolls)
         {
             var p = Ptr(sel);
             _hookPtr = p; _hookFrame = Time.frameCount; _hookCount = numRerolls;
-            if (p != _selPtr || _in == null || numRerolls == _gameCount) return;
-            _gameCount = numRerolls;
+            if (p != _selPtr || _in == null || _count.Seen(numRerolls)) return;
             try
             {
-                if (!_hookSaid) { _hookSaid = true; Plugin.Logger.LogInfo("[squad] reroll hint: the rescue screen hands its reroll count to SetActionButtonsInteractivity (" + numRerolls + ") - that count comes first from here on"); }
-                if (On) Decide("the game's count for the screen is " + numRerolls, false);
+                int was = _count.Judged; string wasFrom = _count.From;
+                // what the game just left on the buttons (its count on the label, the FREE label): the verdict read them before
+                var now = Read(sel); var before = _in.Rr;
+                var changed = new List<string>();
+                if (now.Free != before.Free) changed.Add(now.Free ? "a FREE reroll now" : "no FREE reroll now");
+                if (now.Button != before.Button) changed.Add(now.Button ? "the Reroll button shown now" : "no Reroll button now");
+                _in.Rr = now;
+                bool again = _count.Buttons(numRerolls, changed.Count > 0);
+                _againWhy = Count(was) + " (" + wasFrom + ")" + (changed.Count > 0 ? "; " + string.Join(", ", changed) : "");
+                if (!_hookSaid)
+                {
+                    _hookSaid = true;
+                    Plugin.Logger.LogInfo("[squad] reroll hint: the rescue screen hands its reroll count to SetActionButtonsInteractivity (" + numRerolls + ") - that count comes first from here on; "
+                        + (again ? "the hint was judged with " + _againWhy + " - judged again" : "the same count the hint was judged with (" + wasFrom + ")"));
+                }
+                _rejudge = again && On;
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[squad] reroll hint: " + e.Message); }
         }
 
+        static string _againWhy = "";                    // what the re-judge's log line says the cards were judged with before
+        static string Count(int n) { return n >= 0 ? n.ToString(CultureInfo.InvariantCulture) : "?"; }
+
         /// <summary>From Advisor: a selection screen closed (the pick, a skip) - the hint goes with it.</summary>
-        public static void Close() { Hide(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _call = null; _gameCount = -1; }
+        public static void Close() { Hide(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _call = null; _count.Reset(); _rejudge = false; }
 
         /// <summary>The HUD went away with the scene: nothing of ours is left to hide (the unlock cards are looked up again next run).</summary>
-        public static void Forget() { _placeAt = -1f; _text = null; _shown = false; _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _call = null; _gameCount = -1; _hookPtr = IntPtr.Zero; _unlockCards = null; }
+        public static void Forget() { _placeAt = -1f; _text = null; _shown = false; _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _call = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; }
 
-        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): one float compare a frame.</summary>
+        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and a float compare a frame.</summary>
         public static void Tick()
         {
+            if (_rejudge) Rejudge();
             if (_placeAt < 0f || Time.realtimeSinceStartup < _placeAt) return;
             _placeAt = -1f;
             Place();
+        }
+
+        // the game's count differed from the one the cards were judged with: judge them again, once, with what the game left on
+        // the buttons (its count, the FREE label; read in OnButtons) - unless new cards came first (they took that count) or the
+        // screen closed
+        static void Rejudge()
+        {
+            _rejudge = false;
+            try
+            {
+                int n = _count.Due();
+                if (n < 0 || _in == null || _sel == null || !On) return;
+                Decide("re-judged with rerolls " + n + " - " + RerollCount.FromGame + "; judged before with " + _againWhy, true);
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[squad] reroll hint: not re-judged - " + e.Message); }
         }
 
         // what the game says about rerolls on this screen right now
@@ -132,20 +175,22 @@ namespace YazsCompanion
             try { var f = sel.rerollFreeLabel; a.Free = f != null && f.activeInHierarchy; } catch { }
             try
             {
+                // truncated like the game's RefreshActionButtons does before it hands the count to the buttons
                 var gm = GameplayMaster.s_instance; var ts = gm == null ? null : gm.teamStatistics;
-                if (ts != null) a.Stat = (int)Math.Round(ts.GetStatisticValue(PlayerStatistic.EType.TeamNumRerolls));
+                if (ts != null) { float v = ts.GetStatisticValue(PlayerStatistic.EType.TeamNumRerolls); if (!float.IsNaN(v)) a.Stat = Math.Max(0, (int)v); }
             }
             catch { }
             return a;
         }
 
-        static bool CanReroll(Avail a, int game, out string text)
+        // the count of the verdict (RerollCount: the game's, else the statistic, else the button's number) and how the log words it
+        static bool CanReroll(Avail a, out string text)
         {
-            int n = game >= 0 ? game : a.Label >= 0 ? a.Label : a.Stat;
-            string from = game >= 0 ? "the screen's count" : a.Label >= 0 ? "the Reroll button's count" : a.Stat >= 0 ? "the team's Rerolls available" : "no count readable";
-            text = (n >= 0 ? n + " (" + from : "? (" + from) + (a.Free ? ", a FREE reroll" : "") + (a.Button ? "" : ", no Reroll button shown")
-                + (a.Stat >= 0 && game < 0 && a.Label >= 0 && a.Stat != a.Label ? ", team statistic " + a.Stat : "") + ")";
-            return a.Button && (n > 0 || a.Free || (n < 0 && a.Interactable));
+            int n = _count.Judged; string from = _count.From;
+            text = Count(n) + " (" + from + (a.Free ? ", a FREE reroll" : "") + (a.Button ? "" : ", no Reroll button shown")
+                + (from != RerollCount.FromLabel && a.Label >= 0 && a.Label != n ? ", the Reroll button still shows " + a.Label : "")
+                + (from == RerollCount.FromLabel && a.Stat >= 0 && a.Stat != n ? ", team statistic " + a.Stat : "") + ")";
+            return RerollCount.Can(a.Button, a.Interactable, a.Free, n);
         }
 
         // who could still come: unlocked, not on the squad, not on the cards, not held back after a reroll, and - where the
@@ -211,8 +256,8 @@ namespace YazsCompanion
         static void Decide(string when, bool always)
         {
             if (_in == null) return;
-            string rr; bool can = CanReroll(_in.Rr, _gameCount, out rr);
-            var call = RerollCall.Decide(_in.Offered, _in.Liberate, _in.Possible, can, rr, _in.RecruitValue);
+            string rr; bool can = CanReroll(_in.Rr, out rr);
+            var call = RerollCall.Decide(_in.Offered, _in.Liberate, _in.Possible, can, rr, _in.RecruitValue, _in.Quest);     // 0.13.0 (C1): the quest's team rule first
             bool flipped = _call == null || _call.Show != call.Show;
             _call = call;
             if (always || flipped) Log(call, rr, when);
@@ -238,11 +283,14 @@ namespace YazsCompanion
             Plugin.Logger.LogInfo(sb.ToString());
         }
 
-        // REROLL - Tank would rate higher (5.9 vs 4.6); a second survivor that clears the margin too: "Tank or SWAT"
+        // REROLL - Tank would rate higher (5.9 vs 4.6); a second survivor that clears the margin too: "Tank or SWAT";
+        // for a class the active quest needs (0.13.0, C1): REROLL - the quest needs Huntress
         static string LineText(RerollCall c)
         {
             var who = c.Better.Take(2).Select(r => Names.Class((CT)r.Class)).ToList();
             string names = who.Count > 1 ? who[0] + " or " + who[1] : who.Count == 1 ? who[0] : Names.Class((CT)c.Best.Class);
+            if (c.ForQuest)
+                return "<b><color=" + Theme.GoldHex + ">REROLL</color></b><color=" + Theme.DimHex + ">  -  </color>the quest needs " + names.Replace("<", "").Replace(">", "");
             string nums = Math.Round(c.Best.Score, 1).ToString("0.0", CultureInfo.InvariantCulture) + " vs " + Math.Round(c.Offered, 1).ToString("0.0", CultureInfo.InvariantCulture);
             return "<b><color=" + Theme.GoldHex + ">REROLL</color></b><color=" + Theme.DimHex + ">  -  </color>" + names.Replace("<", "").Replace(">", "")
                 + " would rate higher <color=" + Theme.DimHex + ">(" + nums + ")</color>";

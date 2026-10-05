@@ -3,7 +3,7 @@
 //   - the top items per squad (what GRAB would list, and what a chest verdict would prefer),
 //   - items that reach the GRAB threshold (3.0) on keywords alone, without a guide tier,
 //   - the Research Pod cards a squad would see and how they rank.
-// Usage: ItemBench [gamedata.json] [--all]   (default path: <project root>\data\gamedata.json, i.e. six levels
+// Usage: ItemBench [gamedata.json] [--all]   |   ItemBench --replay-loadout <companion log>   (default path: <project root>\data\gamedata.json, i.e. six levels
 //        up from the exe in tools\ItemBench\bin\Release\net8.0; --all prints every item's score for every squad)
 using System;
 using System.Collections.Generic;
@@ -27,6 +27,9 @@ namespace YazsCompanion.Bench
     {
         static int Main(string[] args)
         {
+            // 0.13.0: replay the badge advice of a log (no game data needed, so before any path handling)
+            int ri = Array.IndexOf(args, "--replay-loadout");
+            if (ri >= 0) return Loadouts.ReplayFile(ri + 1 < args.Length ? args[ri + 1] : null);
             string path = args.FirstOrDefault(a => !a.StartsWith("--")) ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "data", "gamedata.json"));
             bool all = args.Contains("--all");
             int pi = Array.IndexOf(args, "--probe");

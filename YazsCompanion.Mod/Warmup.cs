@@ -4,7 +4,8 @@
 // None of that needs a run. So it is done once on the main menu, a few seconds after the menu is up, in two steps on
 // separate frames: the plan of an empty squad (its GRAB row scores every item in the game), then the plan of a
 // stand-in survivor made from the game's class data (weapon line, abilities, recruits - the survivor side of the
-// code). The results are thrown away; what stays is the parsed text, the item facts and the compiled code.
+// code), then (0.13.0) one badge advice for the run setup screen. The results are thrown away; what stays is the parsed text,
+// the item and badge facts and the compiled code.
 // Never during a run; everything here may fail without consequence (the first run then pays, as it used to).
 using System;
 using UnityEngine;
@@ -44,11 +45,22 @@ namespace YazsCompanion
                         _stage = 1; _at = now + 0.5f;
                         return;
                     }
-                    string who = StandIn(snap);
-                    if (who != null) { Plan.Build(snap, true); Plan.Build(snap, false); }
+                    if (_stage == 1)
+                    {
+                        string who = StandIn(snap);
+                        if (who != null) { Plan.Build(snap, true); Plan.Build(snap, false); }
+                        Perf.End("warmup", perf);
+                        Plugin.Logger.LogInfo("[warmup] squad pass on the main menu: " + (who == null ? "no unlocked class found, skipped" : sw.Elapsed.TotalMilliseconds.ToString("0") + " ms (stand-in " + who + ")"));
+                        _stage = 2; _at = now + 0.5f;
+                        return;
+                    }
+                    // 0.13.0: one badge advice with a stand-in leader - the badge facts, the kits and the code are warm before the
+                    // first visit of the run setup screen (its own try: the first visit then pays, as it used to)
+                    string loadout;
+                    try { loadout = LoadoutState.Warm(); } catch (Exception e) { loadout = "skipped (" + e.Message + ")"; }
                     Perf.End("warmup", perf);
                     _done = true;
-                    Plugin.Logger.LogInfo("[warmup] squad pass on the main menu: " + (who == null ? "no unlocked class found, skipped" : sw.Elapsed.TotalMilliseconds.ToString("0") + " ms (stand-in " + who + ")"));
+                    Plugin.Logger.LogInfo("[warmup] badge advice on the main menu: " + loadout);
                 }
             }
             catch (Exception e) { _done = true; Plugin.Logger.LogInfo("[warmup] skipped: " + e.Message); }
@@ -56,7 +68,7 @@ namespace YazsCompanion
 
         // a survivor with nothing picked yet, from the first unlocked class: enough to walk the weapon line, the abilities
         // and the recruits once
-        static string StandIn(Snapshot snap)
+        internal static string StandIn(Snapshot snap)
         {
             foreach (CT cls in Enum.GetValues(typeof(CT)))
             {

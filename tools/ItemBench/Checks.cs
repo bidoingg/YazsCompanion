@@ -10,6 +10,10 @@
 //   6. (0.12.2) replays the reroll hint (RerollCall) on the rescue screens of those logs - the four the player rerolled
 //      must speak, the offers after the reroll must not - and on made-up screens for its edges (the margin, ties, no reroll
 //      left, late in the run, Liberate on top, a full squad).
+//   7. (0.13.0) the badge advice of the run setup screen: LoadoutCases.cs (parity with the reference model, the model's rules,
+//      drift, the view, the placement, safety, the replay of logged advices).
+//   8. (0.13.0) two findings from the user's 1.0.2 sessions: a lent build pack follows the tier-3 branch taken (F02), each
+//      reason said once (F12) - AdviceFixCases.cs (run before 7, which points builds.json at a temp file).
 // Usage: ItemBench [gamedata.json] --probe path\to\probe.json
 using System;
 using System.Collections.Generic;
@@ -86,6 +90,9 @@ namespace YazsCompanion.Bench
             Logged();
             Deck0924();
             bad += RerollHints();
+            bad += AdviceFixes.Run(Items);                     // 0.13.0 F02 / F12 from the 10-03 / 10-04 sessions (AdviceFixCases.cs)
+            bad += Loadouts.Run(probePath, gamedataPath);       // 0.13.0 badge advice (LoadoutCases.cs)
+            bad += MatchFixes.Run(Find, Items);                        // 0.13.0 C1 / C2 / C3 / C5 from the 10-04 match (MatchFixCases.cs)
             return bad == 0 ? 0 : 3;
         }
 
@@ -447,7 +454,111 @@ namespace YazsCompanion.Bench
             check("Liberate on top (3.40), Tank 4.50 could come", new[] { r("Ghost", 2.10), r("Mechanic", 2.30) }, 3.40, new[] { r("Tank", 4.50) }, true, 0.8, true);
             check("full squad: Liberate alone", none, 5.00, none, true, 1, false);
             check("nobody else could come (all on the cards)", new[] { r("Ranger", 3.94), r("Pyro", 3.70) }, 1.00, none, true, 1, false);
+            bad += RerollCounts(r);
             Console.WriteLine("  " + (bad == 0 ? "all as wanted" : bad + " BAD"));
+            return bad;
+        }
+
+        // ---- the count the hint is judged with (RerollCount, the 10-04 fix). The game's order, read in GameAssembly.dll of 1.0.2
+        // and seen in every log: a rescue screen fills its cards (AssignGeneratedElements = the hint's first verdict), THEN
+        // RefreshActionButtons truncates the team statistic TeamNumRerolls, writes it on the Reroll button and hands it to
+        // SetActionButtonsInteractivity. A reroll refreshes the buttons under the old cards first, then fills new ones. A re-judge
+        // that is due runs on the next frame. Each case: what the first verdict says, whether the game's count makes the hint judge
+        // again, and the verdict that stands - with what the 0.12.2 rule (the button's number before the statistic) said first.
+        static int RerollCounts(Func<string, double, Recruit> r)
+        {
+            Console.WriteLine("\n  the reroll count (the game's, else the team statistic, else the Reroll button's number; a different game count = judged again once):");
+            int bad = 0;
+            Func<RerollCount, Recruit[], Recruit[], bool, bool> verdict = (rc, on, could, free) =>
+                RerollCall.Decide(on, 1.00, could, RerollCount.Can(true, true, free, rc.Judged), rc.Judged + " (" + rc.From + ")", 1).Show;
+            Func<bool, string> say = b => b ? "SHOWN" : "not shown";
+            Action<string, bool, bool> want = (what, got, wanted) => { if (got != wanted) { bad++; Console.WriteLine("      BAD: " + what + " gave " + got + ", wanted " + wanted); } };
+            // a screen opening: the cards with the statistic and the button's number, then the game hands its count
+            Action<string, Recruit[], Recruit[], int, int, int, bool, bool, bool> open = (label, on, could, stat, button, handed, wantFirst, wantAgain, wantFinal) =>
+            {
+                var rc = new RerollCount();
+                rc.Offer(-1, stat, button);
+                bool first = verdict(rc, on, could, false);
+                string firstText = rc.Judged + " (" + rc.From + ") -> " + say(first);
+                var old = new RerollCount(); old.Offer(-1, button, -1);       // 0.12.2: the button's number came before the statistic
+                if (button < 0) old.Offer(-1, stat, -1);
+                bool oldFirst = verdict(old, on, could, false);
+                bool again = rc.Buttons(handed);
+                int n = rc.Due();
+                bool final = verdict(rc, on, could, false);
+                Console.WriteLine("    " + label);
+                Console.WriteLine("      judged with " + firstText + " | the game hands " + handed + ": " + (again ? "re-judged with rerolls " + n + " -> " + say(final) : "the same count, nothing to judge again")
+                    + " | the 0.12.2 rule judged first with " + old.Judged + " -> " + say(oldFirst));
+                want("first verdict", first, wantFirst); want("re-judge", again, wantAgain); want("final verdict", final, wantFinal);
+            };
+            Recruit[] cards1004 = { r("Huntress", 4.47), r("SWAT", 4.20) }, could1004 = { r("Ranger", 4.34), r("Tank", 4.20), r("Ghost", 4.18), r("Medic", 3.28), r("Pyro", 2.91), r("Mechanic", 2.77) };
+            Recruit[] cards1003 = { r("Medic", 4.27), r("Ranger", 4.13) }, could1003 = { r("Tank", 6.29), r("SWAT", 5.49), r("Engineer", 4.04), r("Pyro", 3.90), r("Mechanic", 3.76), r("Ghost", 2.98) };
+            Recruit[] cards0926 = { r("Mechanic", 3.96), r("Medic", 3.28) }, could0926 = { r("Tank", 6.50), r("SWAT", 5.30), r("Huntress", 5.21), r("Ranger", 4.34), r("Ghost", 4.18), r("Engineer", 4.03) };
+            open("10-04 10:05:06 first rescue of the session, the best on the cards (button 0, statistic 8, game 8)", cards1004, could1004, 8, 0, 8, false, false, false);
+            open("10-03 12:07:08 first rescue of the session, Tank / SWAT could come (button 0, statistic 8, game 8)", cards1003, could1003, 8, 0, 8, true, false, true);
+            open("09-26 10:28:26 first rescue of the session, Tank / SWAT / Huntress could come (button 0, statistic 8, game 8)", cards0926, could0926, 8, 0, 8, true, false, true);
+            open("statistic unreadable: the button's stale 0, then the game's 8", cards1003, could1003, -1, 0, 8, false, true, true);
+            open("10-04 after 8 rerolls on Military / Hashtag screens: the rescue button still shows 8, statistic 0, game 0", cards1003, could1003, 0, 8, 0, false, false, false);
+            open("nothing readable before the game's count (no statistic, no number on the button), game 3", cards1003, could1003, -1, -1, 3, true, true, true);
+
+            // a reroll (10-03 12:07:15): the old cards were judged with the game's 8; ClickReroll's refresh hands 7 under them, then
+            // the new cards come with that 7 (the hook a frame before) and Reroll's own refresh hands 7 again
+            {
+                var rc = new RerollCount();
+                rc.Offer(-1, 8, 0); rc.Buttons(8); rc.Due();
+                bool oldCards = verdict(rc, cards1003, could1003, false);
+                bool pending = rc.Buttons(7);
+                rc.Offer(7, 7, 7);
+                int due = rc.Due();
+                Recruit[] after = { r("Engineer", 4.04), r("Pyro", 3.90) }, couldAfter = { r("Tank", 6.29), r("SWAT", 5.49), r("Mechanic", 3.76), r("Ghost", 2.98) };
+                bool newCards = verdict(rc, after, couldAfter, false);
+                bool again = rc.Seen(7) ? false : rc.Buttons(7);          // OnButtons returns at once on a count already handed
+                Console.WriteLine("    10-03 12:07:15 a reroll: old cards " + say(oldCards) + " with 8 | 7 handed under the old cards: " + (pending ? "a re-judge pending" : "nothing")
+                    + " | the new cards come with 7: " + (due < 0 ? "the pending re-judge dropped (no verdict on cards that are gone)" : "re-judged the gone cards with " + due)
+                    + " | new cards judged with " + rc.Judged + " (" + rc.From + ") -> " + say(newCards) + " | Reroll's own refresh (7): " + (again ? "judged again" : "the same count"));
+                want("old cards", oldCards, true); want("pending under the old cards", pending, true); want("re-judge of gone cards", due >= 0, false);
+                want("new cards from the screen's count", rc.From == RerollCount.FromGame && rc.Judged == 7, true); want("new cards", newCards, true); want("second refresh", again, false);
+            }
+            // the last reroll: 0 handed under the old cards, the new cards come with 0 - no reroll left
+            {
+                var rc = new RerollCount();
+                rc.Offer(1, 1, 1);
+                bool oldCards = verdict(rc, cards1003, could1003, false);
+                rc.Buttons(0); rc.Offer(0, 0, 0);
+                int due = rc.Due();
+                bool newCards = verdict(rc, cards0926, could0926, false);
+                Console.WriteLine("    the last reroll: old cards " + say(oldCards) + " with 1 | the new cards come with 0: " + (due < 0 ? "no verdict on the gone cards" : "re-judged the gone cards") + " -> " + say(newCards) + " (no reroll left)");
+                want("old cards", oldCards, true); want("re-judge of gone cards", due >= 0, false); want("new cards", newCards, false);
+            }
+            // a FREE reroll the game shows only with its refresh: the same count (0), but the FREE label came - judged again
+            {
+                var rc = new RerollCount();
+                rc.Offer(-1, 0, 0);
+                bool first = verdict(rc, cards1003, could1003, false);
+                bool again = rc.Buttons(0, true);
+                int n = rc.Due();
+                bool final = verdict(rc, cards1003, could1003, true);
+                Console.WriteLine("    a FREE reroll shown with the refresh: judged with 0 -> " + say(first) + " | the game hands 0 and the FREE label: " + (again ? "re-judged with rerolls " + n + " -> " + say(final) : "nothing"));
+                want("first", first, false); want("re-judge", again, true); want("final", final, true);
+                // the FREE reroll spent (it costs no count; the game's _didUseRerollThisEvent takes the FREE label away): ClickReroll's
+                // refresh hands the same 0 under the old cards (already handed - nothing pending), the new cards come with 0, no FREE
+                bool seen = rc.Seen(0); bool pending = !seen && rc.Buttons(0);
+                rc.Offer(0, 0, 0);
+                int due = rc.Due();
+                bool after = verdict(rc, cards0926, could0926, false);
+                Console.WriteLine("    the FREE reroll spent with 0 left: the refresh under the old cards " + (seen ? "hands the count already handed" : "hands a new count")
+                    + " | the new cards judged with " + rc.Judged + " (" + rc.From + ") -> " + say(after) + " (no reroll left, the FREE one used)");
+                want("FREE refresh already handed", seen, true); want("nothing pending", pending || due >= 0, false); want("after the FREE reroll", after, false);
+            }
+            // the same count again after the re-judge ran (a second refresh of the same screen): nothing more
+            {
+                var rc = new RerollCount();
+                rc.Offer(-1, -1, 0); rc.Buttons(8); rc.Due();
+                bool twice = rc.Seen(8) ? false : rc.Buttons(8);
+                int due = rc.Due();
+                Console.WriteLine("    a second refresh with the same count after a re-judge: " + (twice || due >= 0 ? "judged again" : "nothing (judged once)"));
+                want("judged once", twice || due >= 0, false);
+            }
             return bad;
         }
 

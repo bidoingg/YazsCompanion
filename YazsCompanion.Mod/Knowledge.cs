@@ -20,6 +20,12 @@ namespace YazsCompanion
         public readonly List<string> CritSquad = new List<string>();      // survivors that make crit items shine
         public readonly List<KeyValuePair<string, string>> ItemPairs = new List<KeyValuePair<string, string>>();   // items that name each other: worth more once the other is held
         public readonly HashSet<string> ScalingItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);        // items that grow over the run: early or not at all
+        // 0.13.0 badge advice (Loadout.cs). Every key starts at its code default, so a knowledge.json from an older build (or one
+        // that leaves a key out) falls back to the default, never to 0.
+        public readonly Dictionary<string, BadgeStat> BadgeStats = BadgeStat.Defaults();                       // stat asset name minus Team_ / GamePlayer_ / Internal_
+        public readonly Dictionary<string, BadgeMode> BadgeModes = BadgeMode.Defaults();                       // game mode enum name -> elite / boss shares, goal, zero list
+        public readonly BadgeRules BadgeRules = new BadgeRules();
+        public readonly Dictionary<string, BadgeNote> BadgeNotes = new Dictionary<string, BadgeNote>(StringComparer.OrdinalIgnoreCase);   // by short name, asset or id
         public string Source = "defaults";
 
         public static Knowledge Current = new Knowledge();
@@ -117,7 +123,51 @@ namespace YazsCompanion
                         var two = new List<string>(); foreach (var v in pair.EnumerateArray()) two.Add(v.GetString());
                         if (two.Count == 2) ItemPairs.Add(new KeyValuePair<string, string>(two[0], two[1]));
                     }
+                if (root.TryGetProperty("badgeStats", out e) && e.ValueKind == JsonValueKind.Object)
+                    foreach (var p in e.EnumerateObject())
+                    {
+                        if (p.Value.ValueKind != JsonValueKind.Object) continue;
+                        BadgeStat s; if (!BadgeStats.TryGetValue(p.Name, out s)) BadgeStats[p.Name] = s = new BadgeStat();
+                        s.Read(p.Value);
+                    }
+                if (root.TryGetProperty("badgeModes", out e) && e.ValueKind == JsonValueKind.Object)
+                    foreach (var p in e.EnumerateObject())
+                    {
+                        if (p.Value.ValueKind != JsonValueKind.Object) continue;
+                        BadgeMode m; if (!BadgeModes.TryGetValue(p.Name, out m)) BadgeModes[p.Name] = m = new BadgeMode();
+                        m.Read(p.Value);
+                    }
+                if (root.TryGetProperty("badgeRules", out e) && e.ValueKind == JsonValueKind.Object) BadgeRules.Read(e);
+                if (root.TryGetProperty("badges", out e) && e.ValueKind == JsonValueKind.Object)
+                    foreach (var p in e.EnumerateObject())
+                    {
+                        if (p.Value.ValueKind != JsonValueKind.Object) continue;
+                        var n = new BadgeNote(); n.Read(p.Value); BadgeNotes[p.Name] = n;
+                    }
             }
+        }
+
+        internal static double Num(JsonElement o, string name, double fallback)
+        {
+            JsonElement v;
+            if (!o.TryGetProperty(name, out v)) return fallback;
+            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble();
+            double d;
+            if (v.ValueKind == JsonValueKind.String && double.TryParse(v.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d)) return d;
+            return fallback;
+        }
+        internal static string Str(JsonElement o, string name, string fallback)
+        {
+            JsonElement v;
+            if (!o.TryGetProperty(name, out v)) return fallback;
+            if (v.ValueKind == JsonValueKind.Null) return null;
+            return v.ValueKind == JsonValueKind.String ? v.GetString() : fallback;
+        }
+        internal static bool Flag(JsonElement o, string name, bool fallback)
+        {
+            JsonElement v;
+            if (!o.TryGetProperty(name, out v)) return fallback;
+            return v.ValueKind == JsonValueKind.True ? true : v.ValueKind == JsonValueKind.False ? false : fallback;
         }
 
         // Keep this valid JSON with comments (the reader skips them). Class names are the game's display names.
@@ -229,7 +279,239 @@ namespace YazsCompanion
     ""XPModifierMod"": 0.8, ""Luck"": 0.7, ""MagnetRange"": 0.6,
     ""MaxHealth"": 0.6, ""Armor"": 0.55, ""DodgeChance"": 0.5, ""HPRegen"": 0.45,
     ""MovementSpeedMod"": 0.45
+  },
+  // ---- badge advice on the run setup screen (0.13.0). POINTS = % more squad damage over the whole run, or its equivalent.
+  // A badge bonus is worth: value per level x level x w x relevance x axis. Keys = the game's PlayerStatistic asset name
+  // minus Team_ / GamePlayer_ / Internal_. w = points per unit (1 % for a fraction, else the raw unit: HP, points, seconds,
+  // counts). on = what it needs (weapon / ability share of the build, elite / boss share of the mode, clip weapons, healing),
+  // axis = the run curve that multiplies it (economy, cash = [Advice] RunGoal, survival, dodge / move, consistency).
+  // raw = counts in its own unit; decay = each further count is worth x decay; dur = scaled by the build's deployables;
+  // crit = chance / damage (scaled by how much the build leans on crits). 'estimate (unmeasured)' = not measured in the game yet.
+  ""badgeStats"": {
+    ""WeaponDamage"": { ""w"": 0.70, ""on"": ""weapon"", ""why"": ""weapon damage pool ~1.4 (tree +20 %, cards): 1 % = 0.7 % of weapon damage - estimate (unmeasured, U3)"" },
+    ""AbilityDamage"": { ""w"": 0.70, ""on"": ""ability"", ""why"": ""ability damage pool ~1.4 - estimate (unmeasured, U3)"" },
+    ""Hashtag"": { ""w"": 0.75, ""on"": ""type"", ""why"": ""Team_Hashtag<Type> multiplier, base 1.0 + ~0.3 from tag points mid-run: 1 % = 0.75 % of that type's damage - estimate (unmeasured, U1)"" },
+    ""TagPoint"": { ""w"": 1.50, ""on"": ""type"", ""why"": ""+2 % damage per tag point (guides) in the same ~1.3 pool - estimate (unmeasured, U1)"" },
+    ""WeaponFireRate"": { ""w"": 0.60, ""on"": ""weapon"", ""why"": ""fire-rate pool ~1.35, and cooldown-driven weapons gain less"" },
+    ""WeaponCooldownReduction"": { ""w"": 0.75, ""on"": ""weapon"", ""why"": ""at ~20 % CDR, +1 % = +1.25 % cycles on cooldown weapons, ~60 % of weapons"" },
+    ""AbilityCooldownReduction"": { ""w"": 1.00, ""on"": ""ability"", ""why"": ""every ability is cooldown-bound: +1 % CDR ~ +1.0-1.25 % casts"" },
+    ""AbilitySize"": { ""w"": 0.40, ""on"": ""ability"", ""why"": ""more area = more targets, about half of a damage %"" },
+    ""AbilityDuration"": { ""w"": 0.40, ""on"": ""ability"", ""dur"": true, ""why"": ""turrets, drones, fields, shields: x0.5..1 by the build's deployable share"" },
+    ""WeaponCriticalChance"": { ""w"": 0.80, ""on"": ""weapon"", ""crit"": ""chance"", ""why"": ""crit x2 (statBase 2.0), chance ~25 %: +1 % = 1/1.25 = 0.8 % - estimate (unmeasured, U3)"" },
+    ""AbilityCriticalChance"": { ""w"": 0.80, ""on"": ""ability"", ""crit"": ""chance"", ""why"": ""as weapon crit chance - estimate (unmeasured, U3)"" },
+    ""WeaponCriticalDamage"": { ""w"": 0.20, ""on"": ""weapon"", ""crit"": ""damage"", ""why"": ""chance ~25 %: +1 % crit damage = 0.25/1.25 = 0.2 % - estimate (unmeasured, U3)"" },
+    ""AbilityCriticalDamage"": { ""w"": 0.20, ""on"": ""ability"", ""crit"": ""damage"", ""why"": ""as weapon crit damage - estimate (unmeasured, U3)"" },
+    ""DamageToElites"": { ""w"": 0.85, ""on"": ""elite"", ""why"": ""own multiplier (tree +20 %), times the share of damage that hits elites (mode table) - estimate (unmeasured, U6)"" },
+    ""DamageToBosses"": { ""w"": 0.85, ""on"": ""boss"", ""why"": ""own multiplier, times the share of damage that hits bosses (mode table) - estimate (unmeasured, U6)"" },
+    ""InstantWeaponReloadChance"": { ""w"": 0.30, ""on"": ""clip"", ""why"": ""a skipped reload on clip weapons: reloading is ~30 % of the cycle"" },
+    ""InstantAbilityReloadChance"": { ""w"": 1.00, ""on"": ""ability"", ""why"": ""an instant refresh = a free cast: +1 % chance = +1 % casts"" },
+    ""InternalMilitaryTrainingRarityBonus"": { ""w"": 0.12, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""a Rare military card is 2x a Common; military cards ~15 % of run power"" },
+    ""XPMultiplier"": { ""w"": 0.50, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""+4 % XP = ~2 more level-ups in a 20:00 run"" },
+    ""Luck"": { ""w"": 0.25, ""on"": ""all"", ""axis"": ""economy"", ""raw"": true, ""why"": ""rarer cards and drops; 4 luck < a Common luck card (5) - estimate (unmeasured, U4)"" },
+    ""MagnetRange"": { ""w"": 0.06, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""pickup comfort; XP is collected anyway"" },
+    ""XPGemRarity"": { ""w"": 0.20, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""rarer gems = more XP per kill - estimate (unmeasured, U4)"" },
+    ""PowerupDurationExtension"": { ""w"": 0.03, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""timed field power-ups last longer: minor"" },
+    ""NumRerolls"": { ""w"": 1.00, ""on"": ""all"", ""axis"": ""consistency"", ""raw"": true, ""decay"": 0.90, ""why"": ""one bad offer dodged ~ +1 % of run power (base 3); each further reroll x0.9"" },
+    ""NumBanishes"": { ""w"": 0.70, ""on"": ""all"", ""axis"": ""consistency"", ""raw"": true, ""decay"": 0.90, ""why"": ""an unwanted powerup out of the pool (base 2); each further banish x0.9"" },
+    ""MoneyMultiplier"": { ""w"": 0.50, ""on"": ""all"", ""axis"": ""cash"", ""why"": ""cash only buys Training Yard levels: RunGoal decides (x0.3 Win / x0.6 Balanced / x1.2 Farm)"" },
+    ""SpecializationPointsMod"": { ""w"": 0.50, ""on"": ""all"", ""axis"": ""cash"", ""why"": ""survivor XP = class tree points: RunGoal decides"" },
+    ""MaxHealth"": { ""w"": 0.02, ""on"": ""all"", ""axis"": ""survival"", ""raw"": true, ""why"": ""80 HP on ~1000 = +8 % effective health"" },
+    ""Armor"": { ""w"": 0.25, ""on"": ""all"", ""axis"": ""survival"", ""raw"": true, ""why"": ""~1 % less damage taken per point - estimate (unmeasured, U4)"" },
+    ""DodgeChance"": { ""w"": 0.35, ""on"": ""all"", ""axis"": ""dodge"", ""why"": ""+3 % dodge = +3.1 % effective health; the game removes dodge cards in One Hit - estimate (unmeasured, U7)"" },
+    ""InviFrames"": { ""w"": 25.0, ""on"": ""all"", ""axis"": ""survival"", ""raw"": true, ""why"": ""+0.05 s on 0.3 s = +17 % grace in a crowd"" },
+    ""HealthRegen"": { ""w"": 1.00, ""on"": ""all"", ""axis"": ""survival"", ""raw"": true, ""why"": ""1 HP/s = 60 HP a minute"" },
+    ""HealthBonusesMod"": { ""w"": 0.15, ""on"": ""heal"", ""axis"": ""survival"", ""why"": ""+% to all healing received: needs healing on the squad"" },
+    ""MovementSpeed"": { ""w"": 0.20, ""on"": ""all"", ""axis"": ""move"", ""raw"": true, ""why"": ""+6 on base 100 = +6 % speed: kiting and pickups"" }
+  },
+  // per game mode: the share of the squad's damage that hits elites and bosses (estimate, unmeasured: U6), the seconds a timed
+  // run lasts (0 = open-ended) and the stats worth nothing there (only with [Advice] ModeAware)
+  ""badgeModes"": {
+    ""Normal"": { ""elites"": 0.15, ""bosses"": 0.06, ""goal"": 1200 },
+    ""Hardcore"": { ""elites"": 0.15, ""bosses"": 0.06, ""goal"": 600 },
+    ""OneHit"": { ""elites"": 0.15, ""bosses"": 0.03, ""goal"": 300, ""zero"": [ ""MaxHealth"", ""Armor"", ""HealthRegen"", ""HealthBonusesMod"", ""DodgeChance"", ""InviFrames"" ] },
+    ""BossRush"": { ""elites"": 0.10, ""bosses"": 0.50, ""goal"": 600 },
+    ""Extermination"": { ""elites"": 0.20, ""bosses"": 0.06, ""goal"": 1200, ""zero"": [ ""XPMultiplier"", ""Luck"", ""MagnetRange"", ""XPGemRarity"" ] },
+    ""Endless"": { ""elites"": 0.20, ""bosses"": 0.10, ""goal"": 0 },
+    ""Infinite"": { ""elites"": 0.20, ""bosses"": 0.10, ""goal"": 0 }
+  },
+  // specialAt: tag points for a type's special (the game's own number is used when it can be read); specialPull: points for a
+  // badge that completes a special the build would otherwise miss; earlySpecialPerPoint: per point on the stacked type once the
+  // special is reached anyway; recruitWeight: 0 = the team leader alone (default), 0.3 = plus the two likely recruits;
+  // swapMargin / swapMarginShare: a swap is advised only when it gains at least max(margin, share x the equipped badge's
+  // points); buildWantsBoost: a stat the build's item leanings name; selectedBuildRerollBoost: rerolls / banishes with a build
+  // selected; unknownStatPerLevel: a stat this file does not know (the badge is then marked 'estimated'); cashByRunGoal: cash
+  // and survivor-XP badges by [Advice] RunGoal (win the run / balanced / farm progress)
+  ""badgeRules"": {
+    ""specialAt"": 10, ""specialPull"": 3.0, ""earlySpecialPerPoint"": 0.25, ""recruitWeight"": 0.0,
+    ""swapMargin"": 1.0, ""swapMarginShare"": 0.15, ""buildWantsBoost"": 1.2, ""selectedBuildRerollBoost"": 1.15,
+    ""unknownStatPerLevel"": 1.0, ""cashByRunGoal"": [ 0.3, 0.6, 1.2 ]
+  },
+  // your own word on single badges, by short name (""Gunner""), asset name or id: bias = points added, note = replaces the
+  // reason shown. Example: ""Leveling"": { ""bias"": 2.0, ""note"": ""I farm the Training Yard"" }
+  ""badges"": {
   }
 }";
+    }
+
+    /// <summary>The worth of one badge stat (knowledge.json "badgeStats"; Loadout.cs reads it).</summary>
+    internal sealed class BadgeStat
+    {
+        public double W = 1.0;
+        public string On = "all";          // weapon | ability | type | all | heal | elite | boss | clip
+        public string Axis;                // null | economy | cash | survival | dodge | move | consistency
+        public string Crit;                // null | chance | damage
+        public bool Dur, Raw;
+        public double Decay;               // 0 = none
+        public string Why = "";
+
+        public BadgeStat Clone() { return (BadgeStat)MemberwiseClone(); }
+        public bool SameAs(BadgeStat o)
+        {
+            return o != null && W == o.W && On == o.On && Axis == o.Axis && Crit == o.Crit && Dur == o.Dur && Raw == o.Raw && Decay == o.Decay;
+        }
+
+        public void Read(JsonElement o)
+        {
+            W = Knowledge.Num(o, "w", W); On = Knowledge.Str(o, "on", On) ?? "all"; Axis = Knowledge.Str(o, "axis", Axis); Crit = Knowledge.Str(o, "crit", Crit);
+            Dur = Knowledge.Flag(o, "dur", Dur); Raw = Knowledge.Flag(o, "raw", Raw); Decay = Knowledge.Num(o, "decay", Decay); Why = Knowledge.Str(o, "why", Why) ?? "";
+        }
+
+        static BadgeStat S(double w, string on, string axis, string why, bool raw = false, double decay = 0, bool dur = false, string crit = null)
+        {
+            return new BadgeStat { W = w, On = on, Axis = axis, Why = why, Raw = raw, Decay = decay, Dur = dur, Crit = crit };
+        }
+
+        /// <summary>The code defaults: the same numbers as DefaultJson (the bench checks that they agree).</summary>
+        public static Dictionary<string, BadgeStat> Defaults()
+        {
+            return new Dictionary<string, BadgeStat>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "WeaponDamage", S(0.70, "weapon", null, "weapon damage pool ~1.4 (tree +20 %, cards): 1 % = 0.7 % of weapon damage - estimate (unmeasured, U3)") },
+                { "AbilityDamage", S(0.70, "ability", null, "ability damage pool ~1.4 - estimate (unmeasured, U3)") },
+                { "Hashtag", S(0.75, "type", null, "Team_Hashtag<Type> multiplier, base 1.0 + ~0.3 from tag points mid-run: 1 % = 0.75 % of that type's damage - estimate (unmeasured, U1)") },
+                { "TagPoint", S(1.50, "type", null, "+2 % damage per tag point (guides) in the same ~1.3 pool - estimate (unmeasured, U1)") },
+                { "WeaponFireRate", S(0.60, "weapon", null, "fire-rate pool ~1.35, and cooldown-driven weapons gain less") },
+                { "WeaponCooldownReduction", S(0.75, "weapon", null, "at ~20 % CDR, +1 % = +1.25 % cycles on cooldown weapons, ~60 % of weapons") },
+                { "AbilityCooldownReduction", S(1.00, "ability", null, "every ability is cooldown-bound: +1 % CDR ~ +1.0-1.25 % casts") },
+                { "AbilitySize", S(0.40, "ability", null, "more area = more targets, about half of a damage %") },
+                { "AbilityDuration", S(0.40, "ability", null, "turrets, drones, fields, shields: x0.5..1 by the build's deployable share", dur: true) },
+                { "WeaponCriticalChance", S(0.80, "weapon", null, "crit x2 (statBase 2.0), chance ~25 %: +1 % = 1/1.25 = 0.8 % - estimate (unmeasured, U3)", crit: "chance") },
+                { "AbilityCriticalChance", S(0.80, "ability", null, "as weapon crit chance - estimate (unmeasured, U3)", crit: "chance") },
+                { "WeaponCriticalDamage", S(0.20, "weapon", null, "chance ~25 %: +1 % crit damage = 0.25/1.25 = 0.2 % - estimate (unmeasured, U3)", crit: "damage") },
+                { "AbilityCriticalDamage", S(0.20, "ability", null, "as weapon crit damage - estimate (unmeasured, U3)", crit: "damage") },
+                { "DamageToElites", S(0.85, "elite", null, "own multiplier (tree +20 %), times the share of damage that hits elites (mode table) - estimate (unmeasured, U6)") },
+                { "DamageToBosses", S(0.85, "boss", null, "own multiplier, times the share of damage that hits bosses (mode table) - estimate (unmeasured, U6)") },
+                { "InstantWeaponReloadChance", S(0.30, "clip", null, "a skipped reload on clip weapons: reloading is ~30 % of the cycle") },
+                { "InstantAbilityReloadChance", S(1.00, "ability", null, "an instant refresh = a free cast: +1 % chance = +1 % casts") },
+                { "InternalMilitaryTrainingRarityBonus", S(0.12, "all", "economy", "a Rare military card is 2x a Common; military cards ~15 % of run power") },
+                { "XPMultiplier", S(0.50, "all", "economy", "+4 % XP = ~2 more level-ups in a 20:00 run") },
+                { "Luck", S(0.25, "all", "economy", "rarer cards and drops; 4 luck < a Common luck card (5) - estimate (unmeasured, U4)", raw: true) },
+                { "MagnetRange", S(0.06, "all", "economy", "pickup comfort; XP is collected anyway") },
+                { "XPGemRarity", S(0.20, "all", "economy", "rarer gems = more XP per kill - estimate (unmeasured, U4)") },
+                { "PowerupDurationExtension", S(0.03, "all", "economy", "timed field power-ups last longer: minor") },
+                { "NumRerolls", S(1.00, "all", "consistency", "one bad offer dodged ~ +1 % of run power (base 3); each further reroll x0.9", raw: true, decay: 0.90) },
+                { "NumBanishes", S(0.70, "all", "consistency", "an unwanted powerup out of the pool (base 2); each further banish x0.9", raw: true, decay: 0.90) },
+                { "MoneyMultiplier", S(0.50, "all", "cash", "cash only buys Training Yard levels: RunGoal decides (x0.3 Win / x0.6 Balanced / x1.2 Farm)") },
+                { "SpecializationPointsMod", S(0.50, "all", "cash", "survivor XP = class tree points: RunGoal decides") },
+                { "MaxHealth", S(0.02, "all", "survival", "80 HP on ~1000 = +8 % effective health", raw: true) },
+                { "Armor", S(0.25, "all", "survival", "~1 % less damage taken per point - estimate (unmeasured, U4)", raw: true) },
+                { "DodgeChance", S(0.35, "all", "dodge", "+3 % dodge = +3.1 % effective health; the game removes dodge cards in One Hit - estimate (unmeasured, U7)") },
+                { "InviFrames", S(25.0, "all", "survival", "+0.05 s on 0.3 s = +17 % grace in a crowd", raw: true) },
+                { "HealthRegen", S(1.00, "all", "survival", "1 HP/s = 60 HP a minute", raw: true) },
+                { "HealthBonusesMod", S(0.15, "heal", "survival", "+% to all healing received: needs healing on the squad") },
+                { "MovementSpeed", S(0.20, "all", "move", "+6 on base 100 = +6 % speed: kiting and pickups", raw: true) },
+            };
+        }
+    }
+
+    /// <summary>What a game mode does to badge values (knowledge.json "badgeModes").</summary>
+    internal sealed class BadgeMode
+    {
+        public double Elites = 0.15, Bosses = 0.06;
+        public double Goal = 1200;          // seconds of a timed run; 0 = open-ended
+        public readonly HashSet<string> Zero = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public bool SameAs(BadgeMode o) { return o != null && Elites == o.Elites && Bosses == o.Bosses && Goal == o.Goal && Zero.SetEquals(o.Zero); }
+
+        public void Read(JsonElement o)
+        {
+            Elites = Knowledge.Num(o, "elites", Elites); Bosses = Knowledge.Num(o, "bosses", Bosses); Goal = Knowledge.Num(o, "goal", Goal);
+            JsonElement z;
+            if (o.TryGetProperty("zero", out z) && z.ValueKind == JsonValueKind.Array)
+            {
+                Zero.Clear();
+                foreach (var v in z.EnumerateArray()) if (v.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(v.GetString())) Zero.Add(v.GetString());
+            }
+        }
+
+        static BadgeMode M(double elites, double bosses, double goal, params string[] zero)
+        {
+            var m = new BadgeMode { Elites = elites, Bosses = bosses, Goal = goal };
+            foreach (var z in zero) m.Zero.Add(z);
+            return m;
+        }
+
+        public static Dictionary<string, BadgeMode> Defaults()
+        {
+            return new Dictionary<string, BadgeMode>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Normal", M(0.15, 0.06, 1200) },
+                { "Hardcore", M(0.15, 0.06, 600) },
+                { "OneHit", M(0.15, 0.03, 300, "MaxHealth", "Armor", "HealthRegen", "HealthBonusesMod", "DodgeChance", "InviFrames") },
+                { "BossRush", M(0.10, 0.50, 600) },
+                { "Extermination", M(0.20, 0.06, 1200, "XPMultiplier", "Luck", "MagnetRange", "XPGemRarity") },
+                { "Endless", M(0.20, 0.10, 0) },
+                { "Infinite", M(0.20, 0.10, 0) },
+            };
+        }
+    }
+
+    /// <summary>The numbers that are not per stat (knowledge.json "badgeRules").</summary>
+    internal sealed class BadgeRules
+    {
+        public int SpecialAt = 10;
+        public double SpecialPull = 3.0, EarlySpecialPerPoint = 0.25, RecruitWeight = 0.0;
+        public double SwapMargin = 1.0, SwapMarginShare = 0.15, BuildWantsBoost = 1.2, SelectedBuildRerollBoost = 1.15, UnknownStatPerLevel = 1.0;
+        public double[] CashByRunGoal = { 0.3, 0.6, 1.2 };
+
+        public bool SameAs(BadgeRules o)
+        {
+            if (o == null || CashByRunGoal.Length != o.CashByRunGoal.Length) return false;
+            for (int i = 0; i < CashByRunGoal.Length; i++) if (CashByRunGoal[i] != o.CashByRunGoal[i]) return false;
+            return SpecialAt == o.SpecialAt && SpecialPull == o.SpecialPull && EarlySpecialPerPoint == o.EarlySpecialPerPoint && RecruitWeight == o.RecruitWeight
+                && SwapMargin == o.SwapMargin && SwapMarginShare == o.SwapMarginShare && BuildWantsBoost == o.BuildWantsBoost
+                && SelectedBuildRerollBoost == o.SelectedBuildRerollBoost && UnknownStatPerLevel == o.UnknownStatPerLevel;
+        }
+
+        public double CashFor(int runGoal)
+        {
+            if (CashByRunGoal == null || CashByRunGoal.Length == 0) return 0.3;
+            return CashByRunGoal[Math.Max(0, Math.Min(CashByRunGoal.Length - 1, runGoal))];
+        }
+
+        public void Read(JsonElement o)
+        {
+            SpecialAt = (int)Math.Round(Knowledge.Num(o, "specialAt", SpecialAt));
+            SpecialPull = Knowledge.Num(o, "specialPull", SpecialPull); EarlySpecialPerPoint = Knowledge.Num(o, "earlySpecialPerPoint", EarlySpecialPerPoint);
+            RecruitWeight = Knowledge.Num(o, "recruitWeight", RecruitWeight); SwapMargin = Knowledge.Num(o, "swapMargin", SwapMargin);
+            SwapMarginShare = Knowledge.Num(o, "swapMarginShare", SwapMarginShare); BuildWantsBoost = Knowledge.Num(o, "buildWantsBoost", BuildWantsBoost);
+            SelectedBuildRerollBoost = Knowledge.Num(o, "selectedBuildRerollBoost", SelectedBuildRerollBoost);
+            UnknownStatPerLevel = Knowledge.Num(o, "unknownStatPerLevel", UnknownStatPerLevel);
+            JsonElement c;
+            if (o.TryGetProperty("cashByRunGoal", out c) && c.ValueKind == JsonValueKind.Array)
+            {
+                var l = new List<double>();
+                foreach (var v in c.EnumerateArray()) if (v.ValueKind == JsonValueKind.Number) l.Add(v.GetDouble());
+                if (l.Count > 0) CashByRunGoal = l.ToArray();
+            }
+        }
+    }
+
+    /// <summary>The player's own word on one badge (knowledge.json "badges").</summary>
+    internal sealed class BadgeNote
+    {
+        public string Tier = "", Note = "";
+        public double Bias;
+        public void Read(JsonElement o) { Tier = Knowledge.Str(o, "tier", "") ?? ""; Note = Knowledge.Str(o, "note", "") ?? ""; Bias = Knowledge.Num(o, "bias", 0); }
     }
 }

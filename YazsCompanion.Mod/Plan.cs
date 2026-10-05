@@ -100,6 +100,7 @@ namespace YazsCompanion
         public static Plan Build(Snapshot s, bool compact = false)
         {
             var p = new Plan { Compact = compact };
+            try { var q = s.Quest; } catch { }          // 0.13.0 (C1): the active quest is read (and logged) with the run's first plan
             foreach (var sv in s.Squad)
             {
                 try { if (compact) p.SurvivorCompact(sv, s); else p.Survivor(sv, s); }
@@ -166,7 +167,7 @@ namespace YazsCompanion
         static readonly HashSet<string> _closed = new HashSet<string>();
         static double _closedClock = -1;
 
-        static bool RankClosed(PowerupBase a, SkillTreeUpgradeBase node, Survivor sv, Snapshot s)
+        internal static bool RankClosed(PowerupBase a, SkillTreeUpgradeBase node, Survivor sv, Snapshot s)
         {
             if (s.Ctx.Seconds < _closedClock - 5) _closed.Clear();        // the clock went back: a new run
             _closedClock = s.Ctx.Seconds;
@@ -261,12 +262,18 @@ namespace YazsCompanion
         void Recruits(Snapshot s)
         {
             if (s.SquadFull || s.Squad.Count == 0) return;
+            bool late = s.Ctx.RecruitValue < RerollCall.Late;
+            // 0.13.0 (C1): the active quest's team rule - "SOS  quest: stay solo", "SOS  quest: Huntress", or the recruits late in
+            // a run with "quest: full team" where the row would say Liberate
+            bool replace = false; string quest = null;
+            try { quest = s.Quest.PlanText(late, Names.Class, out replace); } catch { }
+            if (quest != null && replace) { Add("run", "sos", "SOS", N(quest)); return; }
             var ranked = Ranker.Recruitable(s);          // who could join, by the SOS cards' rules (shared with the reroll hint, 0.12.2)
             if (ranked.Count == 0) return;
-            if (s.Ctx.RecruitValue < RerollCall.Late) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
+            if (late && quest == null) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
             // the order the SOS cards use (0.12.2, F12): an exact tie is settled the same way here and on the card
             ranked.Sort(Recruit.Compare);
-            Add("run", "sos", "SOS", string.Join(", ", ranked.Take(2).Select(r => N(Names.Class((CT)r.Class)))));
+            Add("run", "sos", "SOS", string.Join(", ", ranked.Take(2).Select(r => N(Names.Class((CT)r.Class)))) + (quest != null ? C(Dim, Sep + quest) : ""));
         }
 
         void Items(Snapshot s)

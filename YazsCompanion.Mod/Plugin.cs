@@ -23,7 +23,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.12.2";
+        public const string VERSION = "0.13.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
@@ -64,6 +64,12 @@ namespace YazsCompanion
         internal static ConfigEntry<TagStrategy> AdviceTags;
         internal static ConfigEntry<RecruitPolicy> AdviceRecruit;
         internal static ConfigEntry<bool> AdviceRerollHint;
+        internal static ConfigEntry<LoadoutDetail> AdviceLoadout;
+        internal static ConfigEntry<bool> AdviceLoadoutEquip;
+        internal static ConfigEntry<string> AdviceLoadoutEquipKey;
+        internal static ConfigEntry<float> LoadoutSize;
+        internal static ConfigEntry<bool> PreviewSetup;
+        internal static ConfigEntry<bool> PreviewSetupRun;
         internal static ConfigEntry<bool> MenuButton;
         internal static ConfigEntry<string> MenuKey;
 
@@ -79,6 +85,60 @@ namespace YazsCompanion
             d.Caution = (int)AdviceCaution.Value;
             d.TagPlan = AdviceTags.Value.ToString();
             d.Recruit = (int)AdviceRecruit.Value;
+        }
+
+        // ---- 0.13.0 (C5): a key of ours that is also another plugin's, the game's or Steam's: noted once in the log
+        static bool _keysChecked;
+        static readonly System.Collections.Generic.HashSet<string> _keyNotes = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>From the first GameMaster tick (every plugin has loaded by then): our two keys against the others.</summary>
+        internal static void CheckKeysOnce()
+        {
+            if (_keysChecked) return;
+            _keysChecked = true;
+            try { NoteKeyClash("Advice", "LoadoutEquipKey", AdviceLoadoutEquipKey.Value); NoteKeyClash("Menu", "MenuKey", MenuKey.Value); }
+            catch (Exception e) { Logger.LogWarning("[config] key check skipped: " + e.Message); }
+        }
+
+        /// <summary>Logs once per key value when <paramref name="value"/> (a KeyCode name) is a key the game, Steam, our own other key
+        /// or another loaded plugin's "...Key" setting uses as well. Read only: nothing is changed.</summary>
+        internal static void NoteKeyClash(string section, string key, string value)
+        {
+            string k = (value ?? "").Trim();
+            if (k.Length == 0 || !_keyNotes.Add(section + "." + key + "=" + k)) return;
+            var clash = new System.Collections.Generic.List<string>();
+            switch (k.ToUpperInvariant())
+            {
+                case "F8": clash.Add("the game's feedback form key"); break;
+                case "BACKQUOTE": clash.Add("the game's debug console toggle"); break;
+                case "F12": clash.Add("Steam's screenshot key"); break;
+                case "ESCAPE": clash.Add("the game's pause / back key"); break;
+            }
+            try
+            {
+                string mine = section == "Menu" ? (AdviceLoadoutEquipKey.Value ?? "").Trim() : (MenuKey.Value ?? "").Trim();
+                if (string.Equals(mine, k, StringComparison.OrdinalIgnoreCase)) clash.Add("this mod's " + (section == "Menu" ? "[Advice] LoadoutEquipKey" : "[Menu] MenuKey"));
+            }
+            catch { }
+            try
+            {
+                foreach (var kv in IL2CPPChainloader.Instance.Plugins)
+                {
+                    var info = kv.Value; if (info == null || string.Equals(kv.Key, GUID, StringComparison.OrdinalIgnoreCase)) continue;
+                    var bp = info.Instance as BasePlugin; if (bp == null || bp.Config == null) continue;
+                    foreach (var entry in bp.Config)
+                    {
+                        var def = entry.Key; if (def == null || def.Key == null || def.Key.IndexOf("Key", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        string v = null; try { v = entry.Value == null || entry.Value.BoxedValue == null ? null : entry.Value.BoxedValue.ToString(); } catch { }
+                        if (v != null && string.Equals(v.Trim(), k, StringComparison.OrdinalIgnoreCase))
+                            clash.Add((info.Metadata != null && !string.IsNullOrEmpty(info.Metadata.Name) ? info.Metadata.Name : kv.Key) + "'s [" + def.Section + "] " + def.Key);
+                    }
+                }
+            }
+            catch (Exception e) { Logger.LogInfo("[config] " + section + "." + key + " = " + k + ": the other plugins' keys not read (" + e.GetType().Name + ")"); }
+            if (clash.Count > 0)
+                Logger.LogWarning("[config] " + section + "." + key + " = " + k + " is also " + string.Join(" and ", clash) + " - one press may do both where both listen; set another key"
+                    + (section == "Advice" ? ", or leave it empty (mouse / touch only)" : "") + " in the mod's cfg");
         }
 
         /// <summary>The folder the running DLL was loaded from (auto-updated builds live next to the original).</summary>
@@ -108,6 +168,7 @@ namespace YazsCompanion
             PanelRight = Config.Bind("General", "PanelRight", 44f, "Right position: distance from the right edge of the screen, in canvas units.");
             PanelSize = Config.Bind("General", "PanelSize", 1f, new ConfigDescription("Size of the PLAN readout relative to its automatic size (the mod menu's \"Readout size\"): 1 = automatic, 1.2 = a fifth larger, 0.8 = a fifth smaller. The automatic size follows the screen: the text is 1.9 % of the screen's height and never under 15 px (15 px on the Steam Deck, 20 px at 1080p, 27 px at 1440p, 40 px at 4K).", new AcceptableValueRange<float>(0.5f, 2.5f)));
             PanelScale = Config.Bind("General", "PanelScale", 0f, "For hand-tuning: a fixed scale of the PLAN readout in place of the automatic one (1 = a 31-unit font on the 2160-unit canvas: 10 px on the Steam Deck, 21 px at 1440p). 0 = automatic, which follows the screen. PanelSize still multiplies it.");
+            LoadoutSize = Config.Bind("General", "LoadoutSize", 1f, new ConfigDescription("Size of the badge advice on the run setup screen (the numbered diamonds, the WHY line, the summary under CHOSEN BADGES) relative to its automatic size (the BADGES page's \"Size\"): 1 = automatic - the text is 1.9 % of the screen's height, never under 15 px; the diamonds are 40 % of a badge button (more on small screens, so their number stays at 13 px or more), at most 60 %.", new AcceptableValueRange<float>(0.7f, 2f)));
             BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
             PanelHighlight = Config.Bind("General", "PanelHighlight", 3f, "Seconds the sidebar lines whose advice changed (after a pick, a recruit or a Research Pod) glow gold before fading back to white. 0 = off.");
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
@@ -128,10 +189,17 @@ namespace YazsCompanion
             AdviceTags = Config.Bind("Advice", "TagPlan", TagStrategy.Auto, "Damage type tags. Auto = stack the type the squad deals most; Spread = no stacking bonus; or name one type to always favour.");
             AdviceRecruit = Config.Bind("Advice", "Recruit", RecruitPolicy.ByTheClock, "SOS signals late in a timed run. ByTheClock = Liberate once a recruit no longer has the level-ups to grow; AlwaysRecruit; LiberateFromHalfway.");
             AdviceRerollHint = Config.Bind("Advice", "RerollHint", true, "The rescue (SOS) screen: when a survivor who could still come (unlocked, not on the squad, not on the cards) rates clearly higher than the best card on offer - by 0.75 or more on the cards' own scale - and the game still has a reroll for the screen, the Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. Advice only: it never rerolls for you. false = no hint (the [squad] reroll hint line is still written to the log).");
+            AdviceLoadout = Config.Bind("Advice", "LoadoutHint", LoadoutDetail.NumbersAndReason, "The run setup screen (difficulty and badges): number the badges worth equipping for the team leader and the run you picked (gold diamonds, 1 = most worth it), frame the ones not equipped yet, mark equipped ones that are not advised, explain the badge under the cursor and list the swaps under CHOSEN BADGES. Off / Numbers / NumbersAndReason / Full (adds close calls and a Training Yard hint). Advice only: it never equips a badge (unless you switch on LoadoutEquip). Off = nothing drawn (the [loadout] lines are still written to the log).");
+            AdviceLoadoutEquip = Config.Bind("Advice", "LoadoutEquip", false, "The one-click EQUIP ADVICE button on the run setup screen (off by default; the mod menu's BADGES page switches it). A click on it, or LoadoutEquipKey, presses the game's own badge button for you along the advice - removes first, then adds; never a forced (quest) badge, never a locked one - exactly as clicks by hand would (the game saves the selection as usual). UNDO is offered until the screen closes. Every press is logged.");
+            // 0.13.0 (C5): no key by default - F9 is another plugin's key on the screen before (and F8 / F10 / F11 / F12 / BackQuote are taken
+            // by the game, this menu, other plugins or Steam); a key set here is checked against them once the plugins are loaded
+            AdviceLoadoutEquipKey = Config.Bind("Advice", "LoadoutEquipKey", "", "Keyboard key for the EQUIP ADVICE / UNDO button while it is shown (a UnityEngine.KeyCode name; empty = mouse / touch only, the default). Avoid F8 (the game's feedback form), BackQuote (its console), F10 (this mod's menu), F12 (Steam's screenshot) and keys other plugins use: the log notes a clash.");
             MenuButton = Config.Bind("Menu", "MenuButton", true, "Add a COMPANION button to the main menu and the pause menu that opens the mod menu (builds per survivor, advice settings, display settings). Mouse, keyboard and controller.");
             MenuKey = Config.Bind("Menu", "MenuKey", "F10", "Keyboard key that opens and closes the mod menu on the main menu and while paused (a UnityEngine.KeyCode name; empty = none).");
             PreviewMenu = Config.Bind("Debug", "PreviewMenu", false, "About 6 s after launch, open the mod menu on the main menu, walk its tabs and save a screenshot of each into the shots folder. For checking the menu without touching the controls; off by default.");
             PreviewPause = Config.Bind("Debug", "PreviewPause", false, "About 7 s after launch, start a Quick Run (pressing Start on the team leader screen if it comes up), play thirty seconds taking the recommended card of every offer, pause, open the mod menu over the pause menu, close it again and log what happened (with screenshots). For checking the readout, the offers and the pause-menu button without touching the controls. Thirty seconds of play: the game writes no save; stop the game afterwards. Off by default.");
+            PreviewSetup = Config.Bind("Debug", "PreviewSetup", false, "About 7 s after launch, walk the start flow from the main menu (Play, team leader, arena, mode) to the run setup screen, photograph the badge advice, move the game's cursor over three badges (never clicking one) and log the layout; then - with PreviewSetupRun - press the difficulty and START, measure the badge statistics 3 s into the run and log '[loadout] setup walk done' (stop the game then: no save is written that early). With PreviewPause on as well, the stage runs inside that walk. Off by default.");
+            PreviewSetupRun = Config.Bind("Debug", "PreviewSetupRun", true, "PreviewSetup: true = start the run after the run setup stage (difficulty, START) for the 3 s badge measurement; false = back out of the start flow instead (CloseStartGameFlow: nothing chosen is kept, no run, no measurement).");
             PerfFlag = Config.Bind("Debug", "Perf", false, "Time the mod's own work (the per-frame ticks, the squad snapshot, a plan build, an offer) and log the sums once a minute as [perf] lines: calls, total milliseconds and the worst single call per section. For judging what the mod costs on a real run; off by default.");
             ApplyDoctrine();
             Perf.On = PerfFlag.Value;
@@ -166,9 +234,16 @@ namespace YazsCompanion
             Api.Extensions.Attach();        // another mod may have registered options or a build provider before this Load() ran
 
             var harmony = new Harmony(GUID);
-            harmony.PatchAll(typeof(Plugin).Assembly);
+            // class by class (0.13.0): a patch class whose target a game patch took away fails alone - the other hooks still take
+            int failed = 0;
+            foreach (var t in AccessTools.GetTypesFromAssembly(typeof(Plugin).Assembly))
+            {
+                try { harmony.CreateClassProcessor(t).Patch(); }
+                catch (Exception e) { failed++; Logger.LogWarning("[hooks] " + t.Name + " not patched: " + e.GetBaseException().Message); }
+            }
             int patched = 0;
             foreach (var _ in harmony.GetPatchedMethods()) patched++;
+            Logger.LogInfo("[hooks] " + patched + " methods patched (class by class; " + failed + " patch class" + (failed == 1 ? "" : "es") + " failed)");
             Logger.LogInfo(NAME + " " + VERSION + " loaded from " + PluginDir + "; " + patched + " methods patched; badges " + (ShowBadges.Value ? "on" : "off")
                 + "; panel " + (ShowPanel.Value ? "on" : "off") + "; auto-update " + (AutoUpdate.Value ? "on" : "off") + "; knowledge from " + knowledge.Source
                 + " (" + knowledge.ItemTier.Count + " items, " + knowledge.AbilityTier.Count + " abilities, " + knowledge.RescueTier.Count + " survivors)");
@@ -177,6 +252,9 @@ namespace YazsCompanion
             // 0.12.2 (F02): a game patch that adds a card class shows in the first lines of the log - after the updater, in its own try:
             // nothing it meets (a game build older than the interop's card classes) may stop the update check
             try { Badge.CheckCardClasses(); } catch (Exception e) { Logger.LogWarning("[badge] card classes not checked: " + e.Message); }
+            // 0.13.0: the badge advice's hooks, the game members it reads and the badge classes of this game build - in their own try
+            try { LoadoutUi.LogHooks(); LoadoutState.CheckMembers(); LoadoutState.CheckClasses(); }
+            catch (Exception e) { Logger.LogWarning("[loadout] load checks skipped: " + e.Message); }
         }
     }
 

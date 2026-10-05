@@ -24,7 +24,7 @@ using TMPro;
 
 namespace YazsCompanion
 {
-    internal static class Menu
+    internal static partial class Menu
     {
         const float W = 3840f, H = 2160f;
         static readonly string[] Tabs = { "BUILDS", "ADVICE", "DISPLAY", "MODS" };          // MODS only while another mod has an option registered
@@ -162,7 +162,7 @@ namespace YazsCompanion
                 ReadGameArt();
                 BuildShell();
                 Panel.Suspend();            // the DISPLAY tab borrows the readout's widget for its preview; Close brings the live one back
-                _open = true; _editing = false; _dirty = true;
+                _open = true; _editing = false; _badgesPage = false; _dirty = true;
                 _openedAt = Time.realtimeSinceStartup; _openFrame = Time.frameCount; _armed = false;
                 try { _lastMouse = UnityEngine.Input.mousePosition; } catch { }
                 Shots.Later(1.0f, "menu_open");
@@ -198,7 +198,7 @@ namespace YazsCompanion
         {
             try
             {
-                PreviewTick(); PausePreviewTick();
+                PreviewTick(); PausePreviewTick(); SetupPreviewTick();
                 if (ToggleKeyDown()) { if (_open) Close(); else Open(); return; }
                 if (!_open)
                 {
@@ -396,14 +396,15 @@ namespace YazsCompanion
 
         static void Back()
         {
+            if (_badgesPage) { CloseBadges(); return; }
             if (_editing) { _editing = false; _focusKey = "customize"; _dirty = true; return; }
             Close();
         }
 
         static void SetTab(int tab)
         {
-            if (tab == _tab && !_editing) return;
-            _tab = tab; _editing = false; _focusKey = ""; _dirty = true;
+            if (tab == _tab && !_editing && !_badgesPage) return;
+            _tab = tab; _editing = false; _badgesPage = false; _focusKey = ""; _dirty = true;
             try { if (Plugin.Verbose.Value) Plugin.Logger.LogInfo("[menu] tab " + Tabs[tab]); } catch { }
         }
 
@@ -709,8 +710,8 @@ namespace YazsCompanion
         {
             bool pad = false; try { pad = GameMaster.Get != null && GameMaster.Get.UsesPad; } catch { }
             _hints.text = pad
-                ? "<b>A</b> select    <b>B</b> " + (_editing ? "done" : "close") + "\n<b>LB / RB</b> tab\n<b>LEFT / RIGHT</b> change"
-                : "<b>ENTER</b> select    <b>ESC</b> " + (_editing ? "done" : "close") + "\n<b>Q / E</b> tab\n<b>LEFT / RIGHT</b> change";
+                ? "<b>A</b> select    <b>B</b> " + (_editing || _badgesPage ? "done" : "close") + "\n<b>LB / RB</b> tab\n<b>LEFT / RIGHT</b> change"
+                : "<b>ENTER</b> select    <b>ESC</b> " + (_editing || _badgesPage ? "done" : "close") + "\n<b>Q / E</b> tab\n<b>LEFT / RIGHT</b> change";
         }
 
         // ================================================================ the body, rebuilt whenever the state changes
@@ -725,7 +726,7 @@ namespace YazsCompanion
             for (int i = 0; i < _tabCount; i++) if (_tabLabels[i] != null) _tabLabels[i].color = i == _tab ? Theme.GoldText : Theme.Grey;
             if (_tabRule != null) { var tabRule = _tabRule; float to = TabX(_tab), from = tabRule.anchoredPosition.x; Fx.Cancel("menu.tab"); Fx.Run("menu.tab", 0f, 0.22f, k => { tabRule.anchoredPosition = new Vector2(Mathf.Lerp(from, to, Fx.OutCubic(k)), -204f); }); }
 
-            if (_tab == 0) { if (_editing) BuildEditor(); else BuildBuilds(); }
+            if (_tab == 0) { if (_badgesPage) BuildBadges(); else if (_editing) BuildEditor(); else BuildBuilds(); }
             else if (_tab == 1) BuildAdvice();
             else if (_tab == 2) BuildDisplay();
             else BuildMods();
@@ -813,6 +814,9 @@ namespace YazsCompanion
             if (custom != null)
                 Btn(_body, "delete", x0 + 790, by, 620, 116, "DELETE MY BUILD", null, () => { Builds.DropCustom(who); SettingSaved(Builds.LastSaveOk); _focusKey = "customize"; _dirty = true; },
                     () => "Remove your own " + Who(who) + " build. The presets stay; the survivor goes back to Auto if it was following it.");
+            // 0.13.0: the badges worth equipping for this survivor as team leader, previewed as the run setup screen shows them
+            Btn(_body, "lo:open", x0 + (custom != null ? 1440 : 790), by, 560, 116, "BADGES", "diamond", () => OpenBadges(false),
+                () => "The badges worth equipping for " + Who(who) + " as team leader, numbered as the run setup screen numbers them - for every game mode and difficulty, with your own build's pins. Also the size and the detail of that advice, and the one-click EQUIP ADVICE button (off by default).");
         }
 
         static bool unlocked0(string sv) { bool u; return !_unlocked.TryGetValue(sv, out u) || u; }
@@ -886,8 +890,8 @@ namespace YazsCompanion
 
             c.Desc = () => b == null
                 ? (viaAuto != null ? "AUTO - while " + viaAuto.Pack + " lends its builds, Auto follows its " + viaAuto.Name + "; select any card to follow that instead. Otherwise: no" : "AUTO. No")
-                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab."
-                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]");
+                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab." + BadgeSentence(who, viaAuto)
+                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]") + BadgeSentence(who, b);
         }
 
         // ---------------------------------------------------------------- the editor of your own build
@@ -949,6 +953,11 @@ namespace YazsCompanion
             }
             y += step + 10f;
 
+            // 0.13.0: the badges this build pins (they take the run setup screen's slots first) and never wants advised
+            Btn(_body, "ed:badges", x, y, w, rh, "Badges   <color=" + Theme.GoldHex + ">" + BadgesValue(who, b) + "</color>", "diamond", () => OpenBadges(true),
+                () => "The badges your build pins - in order, they take the badge slots first (after a quest's forced badges) - and the ones it never wants advised. Press to open the BADGES page: the advice as the run setup screen shows it; press a badge there to pin it, mark it never or leave it to the advice.");
+            y += step + 10f;
+
             var presets = Builds.PresetsOf(who);
             if (presets.Count > 0)
             {
@@ -993,7 +1002,7 @@ namespace YazsCompanion
 
         static void BuildAdvice()
         {
-            float x = 320f, w = 3200f, y = 360f, rh = 128f, step = 148f;
+            float x = 320f, w = 3200f, y = 360f, rh = 128f, step = 136f;       // 0.13.0: ten rows - the tenth ends at 1808, above the footer rule (1846)
             Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "The standing orders of the advice, saved as you change them and followed from the next offer on. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
             y += 96f;
             Cycler(_body, "ad:style", x, y, w, rh, "Level-up style (survivors on Auto)", "chevrons", () => Words(Plugin.AdviceStyle.Value.ToString()), d => Plugin.AdviceStyle.Value = Next(Plugin.AdviceStyle.Value, d),
@@ -1016,7 +1025,9 @@ namespace YazsCompanion
                 () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark."); y += step;
             // 0.12.2: the ninth row still ends above the footer rule (1640 + 128 < 1846)
             Cycler(_body, "ad:reroll", x, y, w, rh, "Reroll hint on the rescue screen", "diamond", () => Plugin.AdviceRerollHint.Value ? "On" : "Off", d => Plugin.AdviceRerollHint.Value = !Plugin.AdviceRerollHint.Value,
-                () => "ON: when a survivor who could still come - unlocked, not on the squad, not on the cards - rates clearly higher than every card on the rescue screen (0.75 or more on the cards' own scores) and you have a reroll left, the game's Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. It never rerolls for you.");
+                () => "ON: when a survivor who could still come - unlocked, not on the squad, not on the cards - rates clearly higher than every card on the rescue screen (0.75 or more on the cards' own scores) and you have a reroll left, the game's Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. It never rerolls for you."); y += step;
+            Cycler(_body, "ad:loadout", x, y, w, rh, "Badge advice on the run setup screen", "diamond", () => LoadoutText(Plugin.AdviceLoadout.Value), d => Plugin.AdviceLoadout.Value = Next(Plugin.AdviceLoadout.Value, d),
+                () => LoadoutHelp(Plugin.AdviceLoadout.Value));
         }
 
         // the steps of "Readout size": 70 % .. 200 % of the automatic size
@@ -1228,9 +1239,27 @@ namespace YazsCompanion
 
         static bool WizardStep()
         {
-            var setup = FindActive<UIViewRunSetup>();
+            var setup = WizardView(m => m.UIViewRunSetup);
             if (setup != null)
             {
+                // 0.13.0 [Debug] PreviewSetup: the badge advice's stage first (LoadoutUi.WalkTick: screenshots, the game's cursor moved
+                // over three badges - never a click), 12 s at most; without a run to follow it backs out of the start flow
+                if (SetupStageOn && !LoadoutUi.WalkDone)
+                {
+                    float t = Time.realtimeSinceStartup;
+                    if (!LoadoutUi.WalkArmed) { LoadoutUi.ArmWalk(); _wzStageAt = t; return true; }
+                    if (t - _wzStageAt <= 12f) return true;
+                    LoadoutUi.WalkGiveUp();
+                }
+                if (SetupStageOn && !SetupRun && !PausePreviewOn)
+                {
+                    if (!_wzBackedOut)
+                    {
+                        _wzBackedOut = true; Plugin.Logger.LogInfo("[loadout] setup walk: backing out of the start flow (PreviewSetupRun = false)");
+                        try { UIMainMenu.Get.CloseStartGameFlow(); } catch (Exception e) { Plugin.Logger.LogWarning("[loadout] setup walk: CloseStartGameFlow failed - " + e.Message); }
+                    }
+                    return true;
+                }
                 if (_wzSetup < 1)       // one press selects the difficulty (seen in the game); START is the bar's
                 {
                     _wzSetup++;
@@ -1245,7 +1274,7 @@ namespace YazsCompanion
                     }
                     Plugin.Logger.LogInfo("[menu] pause walk: run setup, no difficulty button to press");
                 }
-                var bar = FindActive<UIStartGameBar>();
+                var bar = WizardView(m => m.UIStartGameBar);
                 if (bar != null && _wzStart < 3)
                 {
                     _wzStart++;
@@ -1254,7 +1283,7 @@ namespace YazsCompanion
                 }
                 return false;
             }
-            var arena = FindActive<UIViewChooseArena>();
+            var arena = WizardView(m => m.UIViewChooseArena);
             if (arena != null)
             {
                 bool modes = false; try { modes = arena.modeButtonsContainer != null && arena.modeButtonsContainer.activeInHierarchy; } catch { }
@@ -1275,9 +1304,86 @@ namespace YazsCompanion
                 }
                 Plugin.Logger.LogInfo("[menu] pause walk: game mode, Continue"); arena.OnClickContinueFromGameMode(); return true;
             }
-            var hero = FindActive<UIViewChooseHero>();
+            var hero = WizardView(m => m.UIViewChooseHero);
             if (hero != null && _wzHero < 3) { _wzHero++; Plugin.Logger.LogInfo("[menu] pause walk: team leader screen, Start"); hero.OnClickStart(); return true; }
             return false;
+        }
+
+        // the wizard's screens through the main menu's own view properties (the first call fills the field, later ones read it:
+        // no search) - a search only when the main menu itself is not there
+        static T WizardView<T>(Func<UIMainMenu, T> view) where T : Component
+        {
+            UIMainMenu mm = null; try { mm = UIMainMenu.Get; } catch { }
+            if (mm != null)
+            {
+                try { var v = view(mm); return v != null && v.gameObject.activeInHierarchy ? v : null; } catch { return null; }
+            }
+            return FindActive<T>();
+        }
+
+        static bool SetupStageOn { get { try { return Plugin.PreviewSetup.Value; } catch { return false; } } }
+        static bool SetupRun { get { try { return Plugin.PreviewSetupRun.Value; } catch { return true; } } }
+        static bool PausePreviewOn { get { try { return Plugin.PreviewPause.Value; } catch { return false; } } }
+        static float _wzStageAt; static bool _wzBackedOut;
+
+        // ================================================================ the run setup walk ([Debug] PreviewSetup, 0.13.0)
+        // Its own driver (with PreviewPause on as well, that walk drives and the stage runs inside it): 7 s after the main menu,
+        // a window of PreviewResolution when one is set, the main menu's own Play (OnClickStartSolo: always the whole start flow),
+        // the wizard one screen per step, at the run setup screen LoadoutUi's stage (screenshots, the game's cursor moved over three
+        // badges - never a click), then the difficulty and START (or, with PreviewSetupRun = false, back out of the start flow),
+        // 3 s of wall clock into the run Probe.MeasureBadges(), the window put back, '[loadout] setup walk done'. The game is
+        // stopped from outside then - a run killed that early writes no save.
+        static bool _swDone; static int _swStage; static float _swAt = -1f, _swStarted, _swActiveAt;
+
+        static void SetupPreviewTick()
+        {
+            if (_swDone || !SetupStageOn || PausePreviewOn) return;
+            float now = Time.realtimeSinceStartup;
+            if (_swAt < 0) { _swAt = now + 7f; return; }
+            if (now < _swAt) return;
+            try
+            {
+                switch (_swStage)
+                {
+                    case 0:
+                        if (MainMenu() == null) { _swAt = now + 2f; return; }
+                        _wzHero = _wzArena = _wzMode = _wzSetup = _wzStart = 0;
+                        _swStage = 1;
+                        if (Preview.Window()) { _swAt = now + 2.5f; return; }
+                        return;
+                    case 1:
+                        {
+                            var mm = MainMenu(); if (mm == null) { _swAt = now + 2f; return; }
+                            try { Plugin.Logger.LogInfo("[loadout] setup walk: Play (the main menu's OnClickStartSolo)"); mm.OnClickStartSolo(); }
+                            catch (Exception e) { Plugin.Logger.LogInfo("[loadout] setup walk: OnClickStartSolo failed (" + e.Message + ") - Quick Run instead"); mm.quickRunButton.onClick.Invoke(); }
+                            _swStarted = now; _swStage = 2; _swAt = now + 1.5f; return;
+                        }
+                    case 2:
+                        {
+                            bool playing = false;
+                            try { var gm = GameplayMaster.s_instance; playing = gm != null && gm.currentGameMode != null && gm.currentGameMode.IsGameplayActive; } catch { }
+                            if (playing)
+                            {
+                                if (!LoadoutUi.WalkDone) Plugin.Logger.LogWarning("[loadout] setup walk: the run started without the run setup stage");
+                                Plugin.Logger.LogInfo("[loadout] setup walk: the run is playing - measuring in 3 s");
+                                _swActiveAt = now; _swStage = 3; _swAt = now + 0.5f; return;
+                            }
+                            if (_wzBackedOut && LoadoutUi.WalkDone) { _swStage = 4; _swAt = now + 1.5f; return; }
+                            bool stepped = WizardStep();
+                            _swAt = now + (stepped ? 2.5f : 1.5f);
+                            if (now - _swStarted > 150f) { Plugin.Logger.LogWarning("[loadout] setup walk: no run setup screen and no run within 150 s - giving up"); _swStage = 4; }
+                            return;
+                        }
+                    case 3:
+                        if (now - _swActiveAt < 3f) { _swAt = now + 0.5f; return; }
+                        Probe.MeasureBadges();
+                        _swStage = 4; _swAt = now + 0.5f; return;
+                    default:
+                        Preview.Restore();
+                        _swDone = true; Plugin.Logger.LogInfo("[loadout] setup walk done"); return;
+                }
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[loadout] setup walk: " + e); Preview.Restore(); _swDone = true; }
         }
 
         // work a control of the open mod menu the way a key press does (its own Change handler), for the walk
@@ -1430,7 +1536,16 @@ namespace YazsCompanion
                         Shots.Later(0.9f, "menu2_tank", true); _pvAt = now + 1.5f; _pvStage = 4; return;
                     case 4:
                         { var mine = Builds.EnsureCustom("Tank"); _editing = true; _focusKey = "ed:evo:Bombing Strike"; _dirty = true; }
-                        Shots.Later(0.9f, "menu3_editor", true); _pvAt = now + 1.5f; _pvStage = 5; return;
+                        Shots.Later(0.9f, "menu3_editor", true); _pvAt = now + 1.5f; _pvStage = 44; return;
+                    case 44:    // 0.13.0: the BADGES page (SWAT: a preset or Auto - nothing is written)
+                        Builds.DropCustom("Tank"); _editing = false; _survivor = 0; OpenBadges(false);
+                        Shots.Later(0.9f, "menu_badges0", true); _pvAt = now + 1.5f; _pvStage = 45; return;
+                    case 45:
+                        _focusKey = FirstAdvisedCell(); _dirty = true;
+                        Shots.Later(0.9f, "menu_badges1", true); _pvAt = now + 1.5f; _pvStage = 46; return;
+                    case 46:
+                        Work("lo:preview", 1);
+                        Shots.Later(0.9f, "menu_badges2", true); _pvAt = now + 1.5f; _pvStage = 5; return;
                     case 5:
                         Builds.DropCustom("Tank"); SetTab(1); _focusKey = "ad:timing"; _dirty = true;
                         Shots.Later(0.9f, "menu4_advice", true); _pvAt = now + 1.5f; _pvStage = 6; return;

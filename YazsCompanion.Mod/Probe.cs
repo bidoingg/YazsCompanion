@@ -2,7 +2,9 @@
 // write what the rules and the menu are built against into BepInEx\plugins\YazsCompanion\probe.json and the log -
 // every item and powerup with the exact fields the game itself uses (powerup tags, damage type tags per level,
 // highlighted statistics, mode availability), the team passives that boost a powerup tag, the input actions the
-// game registered, and the layout of the main menu's button column. For development; it changes nothing.
+// game registered, and the layout of the main menu's button column; since 0.13.0 also every badge as the run setup screen's
+// advice reads it (and as the game itself reports it) and the badge slots. For development; it changes nothing.
+// MeasureBadges() is the [Debug] PreviewSetup walk's one line 3 s into a run: the badge statistics the advice only estimates.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -32,6 +34,8 @@ namespace YazsCompanion
             Section(root, "taggedBoosts", TaggedBoosts);
             Section(root, "actions", Actions);
             Section(root, "mainMenu", MainMenu);
+            Section(root, "badges", Badges);
+            Section(root, "badgeSlots", BadgeSlots);
             try
             {
                 string path = Path.Combine(Plugin.PluginDir, "probe.json");
@@ -139,6 +143,107 @@ namespace YazsCompanion
             }
             Plugin.Logger.LogInfo("[probe] powerups: " + o.Count);
             return o;
+        }
+
+        // ---- 0.13.0: the badges, as LoadoutState reads them and as the game reports them ----
+        static object Badges()
+        {
+            if (!LoadoutState.EnsureFacts()) return "no badge registry";
+            var levels = new Dictionary<int, int>(); var open = new Dictionary<int, bool>(); int raised;
+            LoadoutState.ReadLevels(levels, open, out raised);
+            var grid = new Dictionary<IntPtr, int>();
+            try
+            {
+                var view = LoadoutState.SetupView();
+                if (view != null) { int i = 0; foreach (var btn in G.Each(view.availableBadgesButtons)) { try { var b = btn == null ? null : btn.badgeReference; if (b != null) grid[b.Pointer] = i; } catch { } i++; } }
+            }
+            catch { }
+            var o = new List<object>();
+            foreach (var f in LoadoutState.All)
+            {
+                var d = new Dictionary<string, object>();
+                d["sortOrder"] = f.Sort; d["baseId"] = f.Id; d["asset"] = f.Asset; d["class"] = f.KindName; d["kind"] = f.Kind.ToString();
+                d["name"] = f.Name; d["owner"] = f.Owner; d["rank"] = f.Rank; d["max"] = f.Max;
+                var bon = new List<object>();
+                foreach (var b in f.Bonuses) bon.Add(new Dictionary<string, object> { { "stat", b.Stat }, { "type", b.Type }, { "value", b.PerLevel }, { "template", b.Template } });
+                d["bonuses"] = bon; d["tags"] = f.TagTypes; d["points"] = f.TagPoints;
+                int lvl; levels.TryGetValue(f.Id, out lvl); d["treeLevel"] = lvl;
+                bool rank; if (open.TryGetValue(f.Id, out rank)) d["rankOpen"] = rank;
+                var g = f.Ref as GameplayBadgeBase;
+                if (g != null)
+                {
+                    try { d["gameLevel"] = g.GetSkillTreeNodeLevel(); } catch { }
+                    try { d["unlocked"] = g.IsUnlocked(); } catch { }
+                    try { int gi; if (grid.TryGetValue(g.Pointer, out gi)) d["gridIndex"] = gi; } catch { }
+                }
+                o.Add(d);
+            }
+            Plugin.Logger.LogInfo("[probe] badges: " + o.Count + " (" + LoadoutState.Source + ", hash " + LoadoutState.Short + (LoadoutState.IsReference ? " = the reference" : "") + ")");
+            return o;
+        }
+
+        static object BadgeSlots()
+        {
+            var d = new Dictionary<string, object>();
+            try { d["maxNumBadges"] = GamePermanentData.Get.GetMaxNumBadges(); } catch (Exception e) { d["maxNumBadges"] = "failed: " + e.Message; }
+            try { d["baseNumBadges"] = GamePermanentData.BASE_NUM_BADGES; } catch { }
+            try
+            {
+                var nodes = new List<object>();
+                foreach (var n in G.Each(GamePermanentData.Get.badgeUnlockUpgrades))
+                {
+                    if (n == null) continue;
+                    nodes.Add(new Dictionary<string, object> { { "asset", G.Asset(n) }, { "level", G.NodeLevel(n) }, { "max", G.NodeMax(n) } });
+                }
+                d["slotNodes"] = nodes;
+            }
+            catch { }
+            try
+            {
+                var byId = new Dictionary<string, object>();
+                var refs = PowerupReferences.Get;
+                for (int i = 0; i <= 35; i++) { try { var b = refs.GetBadgeById(i); byId[i.ToString()] = b == null ? null : G.Asset(b); } catch (Exception e) { byId[i.ToString()] = "failed: " + e.GetType().Name; } }
+                d["badgeById"] = byId;
+            }
+            catch { }
+            return d;
+        }
+
+        /// <summary>The [Debug] PreviewSetup walk, 3 s into a run (the player's own badges; no badge is clicked): the statistics the
+        /// badge advice only estimates (SPEC 11: U1 tag points vs the Hashtag multiplier, U2 player stats on another class, U3 the
+        /// crit pools), as one line.</summary>
+        public static void MeasureBadges()
+        {
+            try
+            {
+                var gm = GameplayMaster.s_instance;
+                if (gm == null) { Plugin.Logger.LogInfo("[loadout] measure: no run"); return; }
+                var lead = gm.currentMainCharacterType;
+                var badges = LoadoutState.RunBadges();
+                string names = badges == null ? "unreadable" : badges.Count == 0 ? "none" : string.Join(", ", badges.ConvertAll(x => x.Key.Short + " " + x.Value));
+                int elec = -1; try { elec = gm.hashtagSystem.GetNumType(HashtagSystem.EHashtagType.Electric); } catch { }
+                float he = float.NaN; try { he = gm.teamStatistics.GetStatisticValue(PlayerStatistic.EType.TeamHashtagElectric); } catch { }
+                float frLead = float.NaN, frOther = float.NaN, cc = float.NaN, cd = float.NaN; string other = "?";
+                try { frLead = gm.GetPlayerTypeStatisticFinalValue(lead, PlayerStatistic.EType.PlayerWeaponFireRate); } catch { }
+                try
+                {
+                    foreach (GamePlayer.CharacterType cls in Enum.GetValues(typeof(GamePlayer.CharacterType)))
+                    {
+                        if (cls == GamePlayer.CharacterType.None || cls == GamePlayer.CharacterType.NumCharacters || cls == lead) continue;
+                        other = G.ClassName(cls);
+                        try { frOther = gm.GetPlayerTypeStatisticFinalValue(cls, PlayerStatistic.EType.PlayerWeaponFireRate); } catch (Exception e) { other += " (" + e.GetType().Name + ")"; }
+                        break;
+                    }
+                }
+                catch { }
+                try { cc = gm.GetPlayerTypeStatisticFinalValue(lead, PlayerStatistic.EType.PlayerWeaponCritChance); } catch { }
+                try { cd = gm.GetPlayerTypeStatisticFinalValue(lead, PlayerStatistic.EType.PlayerWeaponCritDamage); } catch { }
+                Func<float, string> n3 = x => float.IsNaN(x) ? "?" : x.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+                Plugin.Logger.LogInfo("[loadout] measure: leader " + G.ClassName(lead) + " | badges " + names + " | Electric points " + (elec >= 0 ? elec.ToString() : "?")
+                    + " | TeamHashtagElectric " + n3(he) + " (1 + the badge's % alone; + 0.02 per point would mean the tag points share this stat)"
+                    + " | PlayerWeaponFireRate leader " + n3(frLead) + ", " + other + " " + n3(frOther) + " | PlayerWeaponCritChance " + n3(cc) + ", PlayerWeaponCritDamage " + n3(cd));
+            }
+            catch (Exception e) { Plugin.Logger.LogInfo("[loadout] measure: failed - " + e.Message); }
         }
 
         static object TaggedBoosts()

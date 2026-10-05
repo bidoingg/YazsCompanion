@@ -54,6 +54,13 @@ namespace YazsCompanion
             for (int i = _tweens.Count - 1; i >= 0; i--) if (_tweens[i].Key != null && _tweens[i].Key.StartsWith(prefix, StringComparison.Ordinal)) _tweens.RemoveAt(i);
         }
 
+        /// <summary>A tween with exactly this key is still queued (waiting out its delay or running): it ends in its own end pose.</summary>
+        public static bool Busy(string key)
+        {
+            for (int i = 0; i < _tweens.Count; i++) if (_tweens[i].Key == key) return true;
+            return false;
+        }
+
         /// <summary>Once per frame, from any of the game's Updates (the frame counter makes extra calls free).</summary>
         public static void Tick()
         {
