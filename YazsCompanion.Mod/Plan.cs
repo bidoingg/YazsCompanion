@@ -24,7 +24,7 @@ namespace YazsCompanion
     internal sealed class Plan
     {
         public const string Gold = Theme.GoldHex, Dim = Theme.DimHex, White = Theme.WhiteHex;
-        /// <summary>Glyphs between a state and its next step / between two items; the sidebar swaps in ASCII when
+        /// <summary>Glyphs between a state and its next step / between two items; the sidebar swaps in '»' (0.14.0) or ASCII when
         /// the game's font lacks them.</summary>
         public static string Arrow = " › ", Sep = "  ·  ";
         public string Signature = "";
@@ -106,6 +106,7 @@ namespace YazsCompanion
                 try { if (compact) p.SurvivorCompact(sv, s); else p.Survivor(sv, s); }
                 catch (Exception e) { p.Add(compact ? "squad" : sv.Name, sv.Name + (compact ? ".plan" : ".weapon"), Tag(sv), C(Dim, e.GetType().Name), true); }
             }
+            try { p.QuestLine(s); } catch { }
             try { p.TagsLine(s); } catch { }
             try { p.Recruits(s); } catch { }
             try { p.Items(s); } catch { }
@@ -114,30 +115,39 @@ namespace YazsCompanion
         }
 
         // one row: "Pump-Action Shotgun 3/4 · Sawblade Drone 2/4"; gold marks a step that is ready now (the next weapon
-        // tier once the current one is maxed, an evolution whose base ability is maxed)
+        // tier once the current one is maxed, an evolution whose base ability is maxed).
+        // 0.14.0 (G7): the two items in the order the cards will rank them (the weapon level's card against the ability's), and
+        // under "abilities first" a weapon level that waits says so ("Handgun later") until the survivor's own abilities are as
+        // good as done (WeaponLift) - it stood first on the row while every offer ranked it last
         void SurvivorCompact(Survivor sv, Snapshot s)
         {
-            var items = new List<string>();
+            string weapon = null, ability = null;
+            double weaponScore = double.MinValue, abilityScore = double.MinValue;
             var path = Ranker.WeaponPath(sv);
             var current = Ranker.CurrentStep(sv, path);
             if (current == null)
             {
                 var first = path.FirstOrDefault(x => x.Depth == 0);
-                if (first != null) items.Add(C(Gold, N("take " + Show(first.W))));
+                if (first != null) { weapon = C(Gold, N("take " + Show(first.W))); weaponScore = 7.2; }       // a recruit's first weapon (Ranker)
             }
             else
             {
                 int max = G.MaxLevel(current.W);
-                if (current.Level < max) items.Add(N(Show(current.W) + " " + current.Level + "/" + max));
+                if (current.Level < max)
+                {
+                    bool lifted = false;
+                    var w = current.W;
+                    try { weaponScore = Ranker.WeaponLevelScore(sv, s, w, out lifted); } catch { weaponScore = double.MinValue; }
+                    weapon = Ranker.StyleOf(sv) == BuildStyle.Ability && !lifted ? N(Show(w)) + C(Dim, " later") : N(Show(w) + " " + current.Level + "/" + max);
+                }
                 else
                 {
                     var next = path.FirstOrDefault(x => x.Recommended && x.Available && x.Level < 1 && x.Depth > current.Depth);
-                    if (next != null) items.Add(C(Gold, N(Arrow.TrimStart() + Show(next.W))));
+                    if (next != null) { weapon = C(Gold, N(Arrow.TrimStart() + Show(next.W))); weaponScore = 6.6; }      // a weapon tier-up (Ranker)
                 }
             }
 
             var owned = sv.Abilities();
-            string ability = null;
             foreach (var kv in owned)
             {
                 if (kv.Value < G.MaxLevel(kv.Key)) continue;
@@ -145,6 +155,7 @@ namespace YazsCompanion
                 if (!v.EvoOwned || sv.EvolutionOf(kv.Key) != null) continue;
                 var pick = PickEvolution(v, kv.Key, sv, s);
                 ability = C(Gold, N("evolve " + Show(kv.Key)) + (pick != null ? " " + N("(" + EvoShort(pick, kv.Key) + " preferred)") : ""));
+                abilityScore = 7.6;          // an evolution card outranks any tier-up (Ranker)
                 break;
             }
             // the ability the cards will rank first: the ranker is asked, the rules live there alone. "next X" (an ability
@@ -153,30 +164,31 @@ namespace YazsCompanion
             if (ability == null)
             {
                 var missing = owned.Count < 4 && sv.Props != null && s.Ctx.Reach(3) >= 0.6 ? NextAbility(sv, s) : null;
-                var top = Ranker.TopAbility(sv, s, missing);
+                var top = Ranker.TopAbility(sv, s, missing, out abilityScore);
                 if (top != null) ability = sv.LevelOf(top) < 1 ? Nx(Show(top)) : N(Show(top) + " " + sv.LevelOf(top) + "/" + G.MaxLevel(top));
+                if (top != null && abilityScore < 1) ability = null;      // 0.14.0 (C3): every ability AVOID (a quest forbids the class's abilities)
             }
-            if (ability != null) items.Add(ability);
-            Add("squad", sv.Name + ".plan", Tag(sv), items.Count > 0 ? Join(items) : C(Dim, "build complete"), true);
+            var items = new List<string>();
+            if (weapon != null) items.Add(weapon);
+            if (ability != null) { if (weapon != null && abilityScore > weaponScore) items.Insert(0, ability); else items.Add(ability); }
+            // 0.14.0 (G8): nothing left to pick is "build complete" only with the ability slots filled - with a slot still empty
+            // late in the run it is the clock that says no
+            string none = owned.Count < 4 && s.Ctx.Reach(3) < 0.6 ? "no new ability - too late to level one" : "build complete";
+            Add("squad", sv.Name + ".plan", Tag(sv), items.Count > 0 ? Join(items) : C(Dim, none), true);
         }
 
         // Abilities of a class rank the survivor had not reached when the run began. Such a node still reads "level 1" (its
         // minimum), so the owned-node test below lets it through - but the game does not offer the ability: "next Kunai
         // Dance" (rank III) stood on a level-39 Ghost's row all run and the card never came, not even after the tree level
-        // (it climbs live) passed 40 mid-run. So what is closed at first sight stays closed until the run clock starts over.
-        static readonly HashSet<string> _closed = new HashSet<string>();
-        static double _closedClock = -1;
+        // (it climbs live) passed 40 mid-run. So what is closed at first sight stays closed until the run clock starts over,
+        // and (0.14.0, B3) the class level is the one of the survivor's first sight in the run: an ability first looked at after
+        // the live level crossed 40 opened mid-run and stood as "next" on the row for the rest of it. RankGate (Synergy.cs).
+        static readonly RankGate _gate = new RankGate();
 
         internal static bool RankClosed(PowerupBase a, SkillTreeUpgradeBase node, Survivor sv, Snapshot s)
         {
-            if (s.Ctx.Seconds < _closedClock - 5) _closed.Clear();        // the clock went back: a new run
-            _closedClock = s.Ctx.Seconds;
-            string key = sv.Name + "/" + G.Name(a);
-            if (_closed.Contains(key)) return true;
             int rank = 0; try { if (node != null) rank = node.rankRequirement; } catch { }
-            if (rank <= 1 || sv.TreeLevel >= (rank - 1) * 20) return false;      // ranks open at class level 20 / 40 / 60 / 80
-            _closed.Add(key);
-            return true;
+            return _gate.Closed(sv.Name, G.Name(a), rank, sv.TreeLevel, s.Ctx.Seconds);
         }
 
         // the best ability this survivor does not own yet and that the game can offer: its tree node bought, its rank open
@@ -216,7 +228,7 @@ namespace YazsCompanion
                 int max = G.MaxLevel(current.W);
                 w = N(Show(current.W) + " " + current.Level + "/" + max);
                 if (next != null) w += C(current.Level < max ? Dim : Gold, N(Arrow + Show(next.W)));
-                else if (current.Level >= max) w += C(Dim, locked ? "  next tier locked" : "  line complete");
+                else if (current.Level >= max) w += C(Dim, locked ? "  next tier locked in the Skill Tree" : "  max tier");
             }
             Add(sv.Name, sv.Name + ".weapon", Tag(sv), w, true);
 
@@ -249,14 +261,25 @@ namespace YazsCompanion
             if (items.Count > 0) Add(sv.Name, sv.Name + ".ability", "", Join(items.Take(2).ToList()));
         }
 
-        // the run's damage type tag points (two highest types) and, when it is not the first one, the type to stack
+        // 0.14.0 (C3): what the active quest still asks, while one of its rules changes the advice ("QUEST  Taser to tier 3, max
+        // level", "QUEST  a health item (0 of 1)"; QuestRules.Row) - the team rule stays on the SOS row
+        void QuestLine(Snapshot s)
+        {
+            var r = s.Rules;
+            if (r == null) return;
+            var items = r.Row(2);
+            if (items.Count == 0) return;
+            Add("run", "quest", "QUEST", Join(items.Select(x => N(Names.Text(x))).ToList()));
+        }
+
+        // the run's damage type tag points (two highest types) and, when it is not the first one, the type to build up at the next Research Pod
         void TagsLine(Snapshot s)
         {
             string pts = s.Tags.PointsText(Compact ? 1 : 2);
             if (pts.Length == 0) return;
             string focus = s.Tags.Focus();
             bool first = focus != null && pts.StartsWith(focus + " ", StringComparison.OrdinalIgnoreCase);
-            Add("run", "tags", "TAGS", pts + (focus != null && !first ? C(Dim, Sep + "stack " + focus) : ""));
+            Add("run", "tags", "TAGS", pts + (focus != null && !first ? C(Dim, Sep + "next Pod: " + focus) : ""));       // 0.14.0: next Pod: T (up to 0.13.0 the word was stack; "build" names a build everywhere else)
         }
 
         void Recruits(Snapshot s)
@@ -327,7 +350,7 @@ namespace YazsCompanion
                     p.Add("squad", "SWAT.plan", "SWAT", N("Automatic Turret 3/4"), true);
                     p.Add("squad", "Engineer.plan", "ENGINEER", Join(new List<string> { N("Tesla 3/4"), N("Electric Turret 2/4") }), true);
                     p.Add("squad", "Huntress.plan", "HUNTRESS", Join(new List<string> { N("Multishot 1/4"), C(Gold, N("evolve Arrow Rain")) }), true);
-                    p.Add("run", "tags", "TAGS", "Kinetic 31" + C(Dim, Sep + "stack Explosive"));
+                    p.Add("run", "tags", "TAGS", "Kinetic 31" + C(Dim, Sep + "next Pod: Explosive"));
                     p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
                 }
                 p.LendNames();
@@ -347,13 +370,13 @@ namespace YazsCompanion
             }
             else
             {
-                p.Add("SWAT", "SWAT.weapon", "SWAT", N("Assault Rifle 4/4") + C(Dim, "  line complete"), true);
+                p.Add("SWAT", "SWAT.weapon", "SWAT", N("Assault Rifle 4/4") + C(Dim, "  max tier"), true);
                 p.Add("SWAT", "SWAT.ability", "", N("Automatic Turret 3/4") + C(Dim, a + N("Sentry") + " / " + N("Twin Barrels")));
                 p.Add("Engineer", "Engineer.weapon", "ENGINEER", N("Tesla 3/4") + C(Dim, N(a + "Blaster")), true);
                 p.Add("Engineer", "Engineer.ability", "", Join(new List<string> { N("Electric Turret 2/4"), Nx("Energy Shield") }));
                 p.Add("Huntress", "Huntress.weapon", "HUNTRESS", N("Multishot 1/4") + C(Dim, N(a + "Explosive Arrows")), true);
                 p.Add("Huntress", "Huntress.ability", "", Join(new List<string> { N("Arrow Rain 4/4") + C(Gold, a + N("Storm") + " / " + N("Barrage")), Nx("Bear Trap") }));
-                p.Add("run", "tags", "TAGS", "Kinetic 31, Electric 22" + C(Dim, Sep + "stack Explosive"));
+                p.Add("run", "tags", "TAGS", "Kinetic 31, Electric 22" + C(Dim, Sep + "next Pod: Explosive"));
                 p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
             }
             p.LendNames();

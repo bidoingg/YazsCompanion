@@ -30,7 +30,7 @@ namespace YazsCompanion
                 if (pending == null) return;
                 bool alive = false; try { alive = _go != null && _text != null && _go.activeInHierarchy; } catch { }
                 if (!alive && !Create()) return;
-                string msg = "YAZS COMPANION " + pending + " DOWNLOADED   •   RESTART THE GAME TO APPLY";
+                string msg = "YAZS COMPANION " + pending + " DOWNLOADED   -   RESTART THE GAME TO APPLY";      // 0.14.0: "-", the font has no bullet
                 if (msg != _shown) { _text.text = msg; _shown = msg; Plugin.Logger.LogInfo("[notice] " + msg); }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[notice] " + e.Message); _next = Time.realtimeSinceStartup + 10f; }

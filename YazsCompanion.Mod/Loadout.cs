@@ -901,15 +901,15 @@ namespace YazsCompanion
 
         static string Pct(double x) { return ((long)Math.Round(x, MidpointRounding.ToEven)).ToString(IC); }
 
-        /// <summary>The badge's effect at a level, short (36 characters at most): "+20% Kinetic, 2 pts", "+8% weapon & ability dmg",
-        /// "+160 HP, +8 armor", "+20% and 3 pts to 4 types".</summary>
+        /// <summary>The badge's effect at a level, short (36 characters at most): "+20% Kinetic, +2 Kinetic tags", "+8% weapon & ability dmg",
+        /// "+160 HP, +8 armor", "+20% and +3 tags to 4 types" (0.14.0, A1: "tags", the game's damage type tags - it said "2 pts").</summary>
         public static string Effect(BadgeFacts b, int level)
         {
             if (b.TagTypes.Count > 0 && b.Bonuses.Count > 0)
             {
                 double per = b.Bonuses[0].PerLevel; int pts = b.PointsAt(level);
-                if (b.TagTypes.Count == 1) return "+" + Pct(per * 100 * level) + "% " + b.TagTypes[0] + ", " + pts + " pt" + (pts == 1 ? "" : "s");
-                return "+" + Pct(per * 100 * level) + "% and " + pts + " pt" + (pts == 1 ? "" : "s") + " to " + b.TagTypes.Count + " types";
+                if (b.TagTypes.Count == 1) return "+" + Pct(per * 100 * level) + "% " + b.TagTypes[0] + ", +" + pts + " " + b.TagTypes[0] + " tag" + (pts == 1 ? "" : "s");
+                return "+" + Pct(per * 100 * level) + "% and +" + pts + " tag" + (pts == 1 ? "" : "s") + " to " + b.TagTypes.Count + " types";
             }
             var keys = new HashSet<string>(b.Bonuses.Select(x => x.Stat ?? ""));
             if (keys.Count == 2 && keys.Contains("WeaponDamage") && keys.Contains("AbilityDamage") && b.Bonuses.Count > 0)
@@ -936,11 +936,14 @@ namespace YazsCompanion
 
         static bool CritStat(Knowledge k, string stat) { BadgeStat s; return k.BadgeStats.TryGetValue(stat ?? "", out s) && !string.IsNullOrEmpty(s.Crit); }
 
-        /// <summary>How a reason names the run's build: "your Rifleman build" for one the player chose, "Rifleman (Auto)" for a lent
-        /// build Auto follows (<see cref="RunShape.Auto"/>; 0.13.0, the in-run wording of F02).</summary>
-        public static string BuildRef(RunShape s) { return s != null && s.Auto ? s.BuildName + " (Auto)" : "your " + (s != null ? s.BuildName : "") + " build"; }
-        /// <summary>The second WHY line of a pinned badge: "pinned on your build", or "pinned on Rifleman (Auto)" for a lent build.</summary>
-        public static string PinnedOn(RunShape s) { return s != null && s.Auto ? "pinned on " + s.BuildName + " (Auto)" : "pinned on your build"; }
+        /// <summary>How a reason names the run's build: "your Rifleman build" for one the player chose, "the Rifleman build" for a lent
+        /// build Auto follows (<see cref="RunShape.Auto"/>; 0.13.0, the in-run wording of F02; 0.14.0, A1: no "(Auto)" on screen).</summary>
+        public static string BuildRef(RunShape s) { return s != null && s.Auto ? "the " + s.BuildName + " build" : "your " + (s != null ? s.BuildName : "") + " build"; }
+        /// <summary>The second WHY line of a pinned badge: "pinned on your build", or "pinned on the Rifleman build" for a lent build.</summary>
+        public static string PinnedOn(RunShape s) { return s != null && s.Auto ? "pinned on the " + s.BuildName + " build" : "pinned on your build"; }
+
+        /// <summary>The game's name of a mode ("Boss Rush" for BossRush, "One Hit" for OneHit).</summary>
+        public static string ModeName(string mode) { return mode == "BossRush" ? "Boss Rush" : mode == "OneHit" ? "One Hit" : mode ?? ""; }
 
         /// <summary>Why the badge fits THIS run, short (48 characters at most); the biggest term decides. A knowledge.json note
         /// replaces it; a forced badge always says the mission.</summary>
@@ -989,7 +992,7 @@ namespace YazsCompanion
                 var keys = new HashSet<string>(b.Bonuses.Select(x => x.Stat ?? ""));
                 if (keys.Count == 2 && keys.Contains("WeaponDamage") && keys.Contains("AbilityDamage")) return "counts on every hit";
                 double heavy = kind == "ability" ? s.AbilityShare : s.WeaponShare;
-                return heavy >= 0.6 ? s.BuildName + " build leans on " + (kind == "ability" ? "abilities" : "weapons") : "tempo for weapons and abilities";
+                return heavy >= 0.6 ? s.BuildName + " build leans on " + (kind == "ability" ? "abilities" : "weapons") : "faster weapons and abilities";
             }
             switch (kind)
             {
@@ -997,12 +1000,16 @@ namespace YazsCompanion
                 case "cash": return c.Farming == 2 ? "run goal Farm: the Training Yard counts" : "Training Yard only (run goal: " + (c.Farming == 0 ? "win" : "balanced") + ")";
                 case "survival":
                     {
-                        string where = c.Mode == "Hardcore" || c.Mode == "Endless" || c.Mode == "Infinite" ? c.Mode : c.Mode + " " + RomanOf(c.Difficulty);
-                        return where + ": survival weighs x" + Fixed(c.Survival, 2);
+                        // 0.14.0 (A1): the multiplier as a share in words ("survival weighs x1.31" counted nothing a player knows);
+                        // under 1 (the early run's 0.8 over a short horizon, [Advice] Caution = Low's x0.6) it counts LESS
+                        if (c.Survival < 0.95) return "survival picks count " + Pct((1 - c.Survival) * 100) + "% less";
+                        if (c.Survival < 1.10) return "survival picks always help";
+                        string where = c.Mode == "Hardcore" || c.Mode == "Endless" || c.Mode == "Infinite" ? c.Mode : ModeName(c.Mode) + " " + RomanOf(c.Difficulty);
+                        return where + ": survival picks count " + Pct((c.Survival - 1) * 100) + "% more";
                     }
                 case "dodge": case "move": return "keeps you out of the horde";
-                case "consistency": return s.BuildSelected ? (s.Auto ? "finds the pieces of " + s.BuildName + " (Auto)" : "finds your " + s.BuildName + " build's pieces") : "steadier offers all run";
-                case "elite": case "boss": return c.Mode + ": ~" + Pct((c.Elite + c.Boss) * 100) + "% of damage hits elites/bosses";
+                case "consistency": return s.BuildSelected ? (s.Auto ? "finds the " + s.BuildName + " build's pieces" : "finds your " + s.BuildName + " build's pieces") : "steadier offers all run";
+                case "elite": case "boss": return ModeName(c.Mode) + ": ~" + Pct((c.Elite + c.Boss) * 100) + "% of damage hits elites/bosses";
                 case "clip": return "instant reloads on a clip weapon";
                 case "heal": return "more from every heal on the squad";
                 case "estimated": return "an effect the Companion estimates";

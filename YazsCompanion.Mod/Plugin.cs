@@ -23,11 +23,12 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.13.0";
+        public const string VERSION = "0.14.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> ShowBadges;
+        internal static ConfigEntry<bool> ShowWhy;                     // 0.14.0: the WHY band under the cards for the selected card (WhyUi.cs)
         internal static ConfigEntry<bool> ShowPanel;
         internal static ConfigEntry<bool> ShowYard;
         internal static ConfigEntry<bool> Motion;
@@ -64,6 +65,8 @@ namespace YazsCompanion
         internal static ConfigEntry<TagStrategy> AdviceTags;
         internal static ConfigEntry<RecruitPolicy> AdviceRecruit;
         internal static ConfigEntry<bool> AdviceRerollHint;
+        internal static ConfigEntry<HintActions> AdviceActionHints;     // 0.14.0: REROLL / SKIP / BANISH on the other selection screens (ScreenCall.cs)
+        internal static ConfigEntry<QuestSteer> AdviceQuest;           // 0.14.0 (C3): how hard the active quest steers the cards (QuestRules.cs)
         internal static ConfigEntry<LoadoutDetail> AdviceLoadout;
         internal static ConfigEntry<bool> AdviceLoadoutEquip;
         internal static ConfigEntry<string> AdviceLoadoutEquipKey;
@@ -155,6 +158,7 @@ namespace YazsCompanion
         {
             Logger = Log;
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
+            ShowWhy = Config.Bind("General", "ShowWhy", true, "While a card of a selection screen is selected (the mouse over it, or the controller's focus on it), a band under the cards says the rest of its verdict in plain words: up to four more reasons, and what the first card has that puts it first (or, on the first card, how far ahead it is) - CLOSE CALL when the first two cards are nearly even. It goes with the selection. Needs ShowBadges. false = the reason line under each card only.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
             ShowYard = Config.Bind("General", "ShowYard", true, "Training Yard advice: number the nodes worth buying with the points on hand (gold diamonds, in purchase order), ring the node to save for next, and print a PLAN strip under the tree (SPEND / THEN / WHY). Read-only: it never buys anything.");
             Motion = Config.Bind("General", "Motion", true, "Animate what the mod draws: Training Yard diamonds stamp in and the next purchase pings, rules draw themselves, the strip types on, the RECOMMENDED ribbon unfolds, the PLAN readout slides in and its title diamond spins when the advice changes. During play nothing loops. false = everything appears in place.");
@@ -171,6 +175,7 @@ namespace YazsCompanion
             LoadoutSize = Config.Bind("General", "LoadoutSize", 1f, new ConfigDescription("Size of the badge advice on the run setup screen (the numbered diamonds, the WHY line, the summary under CHOSEN BADGES) relative to its automatic size (the BADGES page's \"Size\"): 1 = automatic - the text is 1.9 % of the screen's height, never under 15 px; the diamonds are 40 % of a badge button (more on small screens, so their number stays at 13 px or more), at most 60 %.", new AcceptableValueRange<float>(0.7f, 2f)));
             BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
             PanelHighlight = Config.Bind("General", "PanelHighlight", 3f, "Seconds the sidebar lines whose advice changed (after a pick, a recruit or a Research Pod) glow gold before fading back to white. 0 = off.");
+            WideMenus.Bind(Config);         // 0.14.0: [General] WideMenus (+ [Debug] WideMenusWings)
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
             Verbose = Config.Bind("Logging", "Verbose", false, "Also log every raw field of every card and survivor (for validating the ranking).");
             AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the screen says so). The older file is removed by the new build.");
@@ -180,15 +185,26 @@ namespace YazsCompanion
             PreviewYard = Config.Bind("Debug", "PreviewYard", false, "About 6 s after launch, open the Training Yard from the main menu, walk its tabs and save a screenshot of each into the shots folder, then go back. For checking the Training Yard advice without touching the controls; off by default.");
             PreviewResolution = Config.Bind("Debug", "PreviewResolution", "", "Screen to emulate in the preview captures, WIDTHxHEIGHT (3440x1440 for the PC look, 1280x800 for the Steam Deck look): the frames are rendered so the sidebar has the pixels it would have on that screen, whatever desktop the game runs on. Empty = as the game is running.");
 
-            AdviceStyle = Config.Bind("Advice", "LevelUpStyle", LevelUpStyle.Balanced, "How level-ups are split between the weapon and the abilities for survivors on Auto (a build selected in the mod menu brings its own style). WeaponFirst = every weapon level before any ability level (the rule up to 0.9); Balanced = each ability once early, then the weapon and the focus ability side by side; AbilitiesFirst = the abilities first, the weapon fills in. The human guides disagree on this, so it is yours to set.");
+            AdviceStyle = Config.Bind("Advice", "LevelUpStyle", LevelUpStyle.Balanced, "How level-ups are split between the weapon and the abilities for survivors on Auto (a build selected in the mod menu brings its own style). WeaponFirst = every weapon level before any ability level (the rule up to 0.9); Balanced = each ability once early, then the weapon and the main ability side by side; AbilitiesFirst = the abilities first, the weapon fills in. The human guides disagree on this, so it is yours to set.");
             AdviceTiming = Config.Bind("Advice", "Timing", Strength.Normal, "How strongly the run clock moves the advice. What pays back over the rest of the run (XP, luck, pickup range, a fresh ability, a recruit) is worth the most early and little near the end; what works at once keeps its value. Off = the clock is ignored.");
             AdviceModeAware = Config.Bind("Advice", "ModeAware", true, "Let the game mode and difficulty steer the advice: the horizon (20:00 Default, 10:00 Hardcore and Boss Rush, 5:00 One Hit, waves in Extermination, open-ended Endurance and Infinite), boss damage in Boss Rush, crowd control and no health picks in One Hit, more weight on survival in Hardcore and on higher difficulties.");
-            AdviceSynergy = Config.Bind("Advice", "Synergy", Strength.Normal, "Weight of the live squad synergy: damage types shared across the squad (every level adds a tag point to each type it deals), tag specials within reach, team passives that boost grenades / turrets / taunts / deployables, and which evolution fits the squad.");
+            AdviceSynergy = Config.Bind("Advice", "Synergy", Strength.Normal, "Weight of the live squad synergy: damage types shared across the squad (every level adds a tag point to each type it deals), 10-tag effects within reach, team passives that boost grenades / turrets / taunts / deployables, and which evolution fits the squad.");
             AdviceGoal = Config.Bind("Advice", "RunGoal", RunGoal.WinTheRun, "What the run is for. WinTheRun = cash and XP bonuses fade with the clock; FarmProgress = cash, XP and luck keep their value to the end (the Training Yard is the goal), and a recruit close to a new rank counts for more.");
             AdviceCaution = Config.Bind("Advice", "Caution", CautionLevel.Normal, "How much survival picks (max health, armor, regeneration, healing) weigh.");
-            AdviceTags = Config.Bind("Advice", "TagPlan", TagStrategy.Auto, "Damage type tags. Auto = stack the type the squad deals most; Spread = no stacking bonus; or name one type to always favour.");
+            AdviceTags = Config.Bind("Advice", "TagPlan", TagStrategy.Auto, "Damage type tags. Auto = favour the type the squad deals most (toward its 10-tag effect); Spread = favour none; or name one type to always favour.");
             AdviceRecruit = Config.Bind("Advice", "Recruit", RecruitPolicy.ByTheClock, "SOS signals late in a timed run. ByTheClock = Liberate once a recruit no longer has the level-ups to grow; AlwaysRecruit; LiberateFromHalfway.");
-            AdviceRerollHint = Config.Bind("Advice", "RerollHint", true, "The rescue (SOS) screen: when a survivor who could still come (unlocked, not on the squad, not on the cards) rates clearly higher than the best card on offer - by 0.75 or more on the cards' own scale - and the game still has a reroll for the screen, the Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. Advice only: it never rerolls for you. false = no hint (the [squad] reroll hint line is still written to the log).");
+            AdviceRerollHint = Config.Bind("Advice", "RerollHint", true, "The rescue (SOS) screen: when a survivor who could still come (unlocked, not on the squad, not on the cards) rates clearly higher than the best card on offer - by 0.75 or more on the cards' own scale - and the game still has a reroll for the screen, the Reroll button gets a gold frame and a line over it: REROLL - Tank would fit this squad better. Checked again after every reroll, gone with the pick. Advice only: it never rerolls for you. false = no hint (the [squad] reroll hint line, with the scores, is still written to the log).");
+            // 0.14.0 (migration): a 0.13.0 player who switched the rescue screen's reroll hint off opted out of hints - the new ones
+            // start off too. Read before the bind: an existing ActionHints line stays in the file as BepInEx saves it
+            bool hadHints = true;
+            try { hadHints = !File.Exists(Config.ConfigFilePath) || System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(Config.ConfigFilePath), @"^\s*ActionHints\s*=", System.Text.RegularExpressions.RegexOptions.Multiline); } catch { }
+            AdviceActionHints = Config.Bind("Advice", "ActionHints", HintActions.Reroll | HintActions.Skip, "The other selection screens (level-up, chest, military training, Research Pod): one hint at most per screen, over the game's button, with a gold frame on it. Reroll = REROLL - the best card here is weak for this squad, when the best card is weak for the screen (a chest under 2.5 on the cards' own scale, a level-up under 3.5 in the first half of the run and 2.5 after, a training or a Research Pod under 2.0) and a reroll is left ('(2 rerolls left)' when two or fewer are). Skip = SKIP when every card would hurt the squad, or every card is weak and the skip's cash and heal are worth more. Banish = BANISH a card the build skips or that would hurt the squad - never one the game will not banish or one the active quest names; off by default, a banish is for the whole run. None = no hint (the [squad] action hint lines are still written to the log). Advice only: it never presses a button for you. The rescue screen has its own switch, RerollHint (off in an older cfg: these start off too).");
+            if (!hadHints && !AdviceRerollHint.Value)
+            {
+                try { AdviceActionHints.Value = HintActions.None; Logger.LogInfo("[config] Advice.ActionHints = None: RerollHint is off in this cfg, so the 0.14.0 hints on the other selection screens start off too (the ADVICE tab switches them)"); }
+                catch { }
+            }
+            AdviceQuest = Config.Bind("Advice", "QuestSteer", QuestSteer.On, "How hard the active quest steers the advice. On = what its objectives ask for is lifted with a 'Quest: ...' reason under the card (the weapon it wants maxed, the ability or evolution it wants, health items, the Research Pods and trainings it counts), a pick that would fail it is marked AVOID (an ability of a class it forbids, a tier-3 weapon, any item, tags past its cap), kills with one survivor and the like weigh a little, and the PLAN readout shows a QUEST row while a rule changes something; your build and tag plan stay as they are. InfoOnly = the QUEST row and the reasons in the log, no card moves (the quest's team rule neither). Off = the quest is not followed at all. A quest the run cannot complete (its arena, mode, difficulty or leader condition) is never followed.");
             AdviceLoadout = Config.Bind("Advice", "LoadoutHint", LoadoutDetail.NumbersAndReason, "The run setup screen (difficulty and badges): number the badges worth equipping for the team leader and the run you picked (gold diamonds, 1 = most worth it), frame the ones not equipped yet, mark equipped ones that are not advised, explain the badge under the cursor and list the swaps under CHOSEN BADGES. Off / Numbers / NumbersAndReason / Full (adds close calls and a Training Yard hint). Advice only: it never equips a badge (unless you switch on LoadoutEquip). Off = nothing drawn (the [loadout] lines are still written to the log).");
             AdviceLoadoutEquip = Config.Bind("Advice", "LoadoutEquip", false, "The one-click EQUIP ADVICE button on the run setup screen (off by default; the mod menu's BADGES page switches it). A click on it, or LoadoutEquipKey, presses the game's own badge button for you along the advice - removes first, then adds; never a forced (quest) badge, never a locked one - exactly as clicks by hand would (the game saves the selection as usual). UNDO is offered until the screen closes. Every press is logged.");
             // 0.13.0 (C5): no key by default - F9 is another plugin's key on the screen before (and F8 / F10 / F11 / F12 / BackQuote are taken
@@ -253,6 +269,8 @@ namespace YazsCompanion
             // nothing it meets (a game build older than the interop's card classes) may stop the update check
             try { Badge.CheckCardClasses(); } catch (Exception e) { Logger.LogWarning("[badge] card classes not checked: " + e.Message); }
             // 0.13.0: the badge advice's hooks, the game members it reads and the badge classes of this game build - in their own try
+            // 0.14.0: the WHY band's hooks (each card class's OnSelected, the one OnDeselected they share)
+            try { WhyUi.LogHooks(); } catch (Exception e) { Logger.LogWarning("[why] hooks not checked: " + e.Message); }
             try { LoadoutUi.LogHooks(); LoadoutState.CheckMembers(); LoadoutState.CheckClasses(); }
             catch (Exception e) { Logger.LogWarning("[loadout] load checks skipped: " + e.Message); }
         }
@@ -266,8 +284,10 @@ namespace YazsCompanion
         public FileListener(string path)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string rotated = LogFile.Rotate(path);          // 0.14.0 (B5): over 4 MB the old log moves to .1 first
             _w = new StreamWriter(path, true) { AutoFlush = true };
-            _w.WriteLine("==== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " session start ====");
+            _w.WriteLine(LogFile.Header(DateTime.Now));     // the session header the overhaul's marks look for: always the first line
+            if (rotated != null) _w.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " [Info] [log] " + rotated);
         }
         public LogLevel LogLevelFilter { get { return LogLevel.All; } }
         public void LogEvent(object sender, LogEventArgs e)

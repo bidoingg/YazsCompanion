@@ -68,6 +68,7 @@ namespace YazsCompanion
         public readonly List<KeyValuePair<string, string>> Wants = new List<KeyValuePair<string, string>>();   // (how a reason names the build: "your Rifleman build", or "Rifleman (Auto)" for a lent build Auto follows; a leaning) of the builds the squad follows
         public bool ShieldOwned;                 // Energy Shield is up (Glass Cannon)
         public bool CritSquad;
+        public ItemSay Say;                      // 0.14.0 (A1): set for a chest card - what the rules reason, for the line under the card (Wording.Item)
     }
 
     internal static class ItemRules
@@ -135,13 +136,15 @@ namespace YazsCompanion
             // a bonus per squad size (Duct Tape): only the line of the current size is scored, not the sum of the three. The
             // highlighted statistics list all three lines too, so for such an item the line's own words decide
             string sizeLine; string text = SizedText(description, c.Squad == null ? 0 : c.Squad.Count, out sizeLine);
+            string noteSay = null;          // 0.14.0 (A1): a rule's note in the card's words, where they differ from the log's
             var stats = c.Stats; if (sizeLine != null) c.Stats = null;
             double fit;
             try { fit = Score(text, c, fitWhy, out typed, out fits, out economic); } finally { c.Stats = stats; }
             string tier; k.ItemTier.TryGetValue(name ?? "", out tier);
             double tierScore = Knowledge.Tier(tier, 3.0, 2.0, 1.0, -1.5);
             string note; k.ItemNote.TryGetValue(name ?? "", out note);
-            if (sizeLine != null && note == null) note = "with " + c.Squad.Count + (c.Squad.Count == 1 ? " survivor: " : " survivors: ") + sizeLine;
+            string guideNote = note;
+            if (sizeLine != null && note == null) { note = "with " + c.Squad.Count + (c.Squad.Count == 1 ? " survivor: " : " survivors: ") + sizeLine; noteSay = (c.Squad.Count == 1 ? "solo: " : "with " + c.Squad.Count + " survivors: ") + sizeLine; }
 
             // an item that is ABOUT a damage type the squad does not deal keeps little of its tier
             if (typed && !fits && tierScore > 0) { tierScore *= 0.3; note = null; }
@@ -149,8 +152,8 @@ namespace YazsCompanion
             // its tier follows the clock too, or a pickup-range item would still be "A" with ninety seconds left
             if (economic && tierScore > 0 && c.Ctx != null) tierScore *= Math.Max(0.3, Math.Min(1.15, 0.3 + 0.7 * c.Ctx.Economy));
 
-            if (Is(name, "Silencer")) Ranged(c.CloseShare, "short", c, ref tierScore, ref note);
-            else if (Is(name, "Dartboard")) Ranged(c.LongShare, "long", c, ref tierScore, ref note);
+            if (Is(name, "Silencer")) noteSay = Ranged(c.CloseShare, "short", c, ref tierScore, ref note) ?? noteSay;
+            else if (Is(name, "Dartboard")) noteSay = Ranged(c.LongShare, "long", c, ref tierScore, ref note) ?? noteSay;
             else if (Is(name, "Magazine Clip") || Is(name, "Last Round"))
             {
                 if (c.ClipShare > 0) { tierScore += 1.2 * c.ClipShare - 0.4; note = "the squad reloads magazines"; }
@@ -174,16 +177,34 @@ namespace YazsCompanion
             if (tier != null) why.Add(tier + "-tier item" + (note != null ? ", " + note : ""));
             else if (note != null) why.Add(note);
             why.AddRange(fitWhy);
+            if (c.Say != null) { c.Say.Tier = tier; c.Say.Note = note; c.Say.RuleNote = note != null && note != guideNote; c.Say.NoteSay = c.Say.RuleNote ? noteSay : null; if (c.Ctx != null) c.Say.Clock = c.Ctx.ClockText; }
             return score;
         }
 
         static bool Is(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
 
-        static void Ranged(double share, string what, ItemContext c, ref double tierScore, ref string note)
+        // returns the note in the card's words (null: the tier stands, no note)
+        static string Ranged(double share, string what, ItemContext c, ref double tierScore, ref string note)
         {
-            if (share < 0) return;      // unknown: the tier stands
+            if (share < 0) return null;      // unknown: the tier stands
             tierScore = tierScore * (0.25 + 0.75 * share) - (share <= 0 ? 0.8 : 0);
             note = share <= 0 ? "no " + what + "-range weapon on the squad" : (int)Math.Round(share * 100) + "% of the squad's weapons are " + what + "-range";
+            return share <= 0 ? note : share >= 0.995 ? "all your weapons are " + what + "-range" : Portion(share) + " your weapons are " + what + "-range";
+        }
+
+        // a share of the squad's weapons in words where it is a plain fraction ("half", "a third of"), else in per cent
+        static string Portion(double share)
+        {
+            int pct = (int)Math.Round(share * 100);
+            switch (pct)
+            {
+                case 50: return "half";
+                case 25: return "a quarter of";
+                case 33: return "a third of";
+                case 67: return "two thirds of";
+                case 75: return "three quarters of";
+                default: return pct + "% of";
+            }
         }
 
         // What a description says never changes, only what it is worth to this squad at this minute: so the text work -
@@ -274,7 +295,7 @@ namespace YazsCompanion
                 if (inPos) { if (kw.Axis == "economy" || kw.Axis == "cash") economyRules++; else if (kw.Tag != "damage" && !incidental) otherRules++; }
                 if (kw.Cls != null)
                 {
-                    double best = 0; string who = null;
+                    double best = 0; string who = null; bool power = false;
                     if (kw.Type != null) typed = true;
                     if (kw.Type != null && exact)
                     {
@@ -283,25 +304,34 @@ namespace YazsCompanion
                     }
                     else if (kw.PowerTag != null && c.OwnedTags != null)
                     {
-                        if (c.OwnedTags.Contains(kw.PowerTag)) { best = 1; who = "the squad owns a " + kw.PowerTag.ToLowerInvariant(); }
+                        if (c.OwnedTags.Contains(kw.PowerTag)) { best = 1; who = "the squad owns a " + kw.PowerTag.ToLowerInvariant(); power = true; }
                     }
                     else foreach (var s in squad) { double v; if (kw.Cls.TryGetValue(s, out v) && v > best) { best = v; who = s; } }
                     if (kw.Type != null && !exact && best > 0) fits = true;
-                    if (inNeg) { if (best > 0) { score -= 0.7 * best; why.Add("hurts " + who + ": " + kw.Tag); } continue; }
-                    if (best > 0) { score += best * axis; why.Add(who + ": " + kw.Tag); named = true; }
+                    if (inNeg) { if (best > 0) { score -= 0.7 * best; why.Add("hurts " + who + ": " + kw.Tag); if (c.Say != null) c.Say.Hurts.Add(Fit(kw, who, power, exact, c.Tags, 0.7 * best)); } continue; }
+                    if (best > 0) { score += best * axis; why.Add(who + ": " + kw.Tag); named = true; if (c.Say != null) c.Say.Boosts.Add(Fit(kw, who, power, exact, c.Tags, best * axis)); }
                     else if (kw.Exclusive || (kw.PowerTag != null && c.OwnedTags != null && kw.Generic <= 0 && kw.Survival <= 0))
                     {
                         var needs = new List<string>(); foreach (var kv in kw.Cls) if (kv.Value >= 1) needs.Add(kv.Key);
                         score -= kw.Exclusive ? 1 : 0.4; why.Add(kw.PowerTag != null && c.OwnedTags != null ? "no " + kw.PowerTag.ToLowerInvariant() + " on the squad" : "needs " + string.Join("/", needs));
+                        if (c.Say != null && c.Say.Lacks == null) c.Say.Lacks = Wording.Lacks(kw.PowerTag != null && c.OwnedTags != null ? kw.PowerTag : null, needs);
                     }
-                    else if (kw.Type != null && exact) why.Add("no " + kw.Type + " damage on the squad");
+                    else if (kw.Type != null && exact) { why.Add("no " + kw.Type + " damage on the squad"); if (c.Say != null) c.Say.Nobody.Add(kw.Type); }
                     else if (kw.Tag == "status effects" && hasElemental) score += 0.3;
                 }
-                if (inNeg) { if (kw.Cls == null && kw.Generic > 0) { score -= 0.5 * kw.Generic; why.Add("costs " + kw.Tag); } continue; }
+                if (inNeg)
+                {
+                    if (kw.Cls == null && kw.Generic > 0) { score -= 0.5 * kw.Generic; why.Add("costs " + kw.Tag); if (c.Say != null) c.Say.Hurts.Add(new ItemFit { What = kw.Tag, Weight = 0.5 * kw.Generic }); }
+                    continue;
+                }
                 if (kw.Generic > 0)
                 {
                     score += kw.Generic * axis;
-                    if (kw.Cls == null) why.Add(kw.Tag + AxisNote(kw.Axis, axis, ctx));
+                    if (kw.Cls == null)
+                    {
+                        why.Add(kw.Tag + AxisNote(kw.Axis, axis, ctx));
+                        if (c.Say != null && c.Say.Keyword == null) { c.Say.Keyword = kw.Tag; c.Say.KeywordAxis = kw.Axis; c.Say.KeywordValue = axis; }
+                    }
                 }
                 if (kw.Survival > 0 && ctx != null)
                 {
@@ -312,12 +342,19 @@ namespace YazsCompanion
                     if (clause != null) { if (!why.Contains(clause)) why.Add(clause); }
                     // say what it is scored for when no survivor is named for it: a MedKit read "no squad-specific value"
                     else if (!named && !incidental && !why.Contains("survival")) why.Add("survival");
+                    if (c.Say != null && c.Say.Survival == null && (clause != null || (!named && !incidental)))
+                        c.Say.Survival = ctx.Survival <= 0 ? "onehit" : ctx.Survival >= 1.3 ? (ctx.Health < 0.5 ? "hurting" : "now") : "plain";
                 }
                 if (kw.Ability > 0) score += kw.Ability * (c.AbilityLean - 0.5) * 2 * 0.5;
                 if (kw.Weapon > 0) score += kw.Weapon * (0.5 - c.AbilityLean) * 2 * 0.5;
                 if (!wanted)
                     foreach (var w in c.Wants)
-                        if (Is(w.Value, kw.Tag) || (kw.Type != null && Is(w.Value, kw.Type))) { score += 0.5; why.Add(w.Key + " wants " + kw.Tag); wanted = true; break; }
+                        if (Is(w.Value, kw.Tag) || (kw.Type != null && Is(w.Value, kw.Type)))
+                        {
+                            score += 0.5; why.Add(w.Key + " wants " + kw.Tag); wanted = true;
+                            if (c.Say != null) { c.Say.Want = w.Value; c.Say.WantBuild = Wording.BuildOf(w.Key); }
+                            break;
+                        }
             }
             if (c.Healing && ctx != null && ctx.Survival <= 0) { score -= 1.0; }
             economic = economyRules > 0 && otherRules == 0;
@@ -328,6 +365,15 @@ namespace YazsCompanion
         public static double Score(string description, IList<string> squad, TagProfile tags, List<string> why)
         {
             bool a, b, e; return Score(description, new ItemContext { Squad = squad, Tags = tags }, why, out a, out b, out e);
+        }
+
+        // one thing an item boosts or weakens, for the card's words: a damage type the squad deals (and the first powerup dealing it), a
+        // powerup tag the squad owns, or a keyword a class favours
+        static ItemFit Fit(ItemRule kw, string who, bool power, bool exact, TagProfile tags, double weight)
+        {
+            if (power) return new ItemFit { What = kw.PowerTag, Power = true, Weight = weight };
+            if (kw.Type != null && exact) return new ItemFit { What = kw.Type, Who = Wording.FirstSource(who), Typed = true, Pct = (int)Math.Round(tags.Share(kw.Type) * 100), Weight = weight };
+            return new ItemFit { What = kw.Type ?? kw.Tag, Who = who, Weight = weight };
         }
 
         static bool StatHit(ItemRule kw, IList<string> stats, bool noMalus)
@@ -368,9 +414,10 @@ namespace YazsCompanion
             int top = 0; string topType = null; int withPoints = 0;
             foreach (var t in TagProfile.Names) { int n = tags.PointsOf(t); if (n > 0) withPoints++; if (n > top) { top = n; topType = t; } }
 
+            var say = c.Say;
             if (Is(name, "Ultra Instinct"))
             {
-                if (top >= 30 && !tags.Known) { why.Insert(0, topType + " is at " + top + ": every other tag point pours into it"); return 3.0; }
+                if (top >= 30 && !tags.Known) { why.Insert(0, topType + " is at " + top + ": every other tag point pours into it"); if (say != null) say.Lead = "pools every other tag point into " + topType; return 3.0; }
                 if (top >= 22 && tags.Known)
                 {
                     // taking it POOLS the tags: every other type's points move into the top one. Gained: those points for the
@@ -391,19 +438,25 @@ namespace YazsCompanion
                     double net = Math.Max(-1.5, Math.Min(3.0, 0.4 * (0.85 * tags.Share(topType) * moved - lost) - 1.2 * specials));
                     // not switched on yet (22 to 29): worth the old "close to it" bonus at most, and nothing when switching it on
                     // would wipe more than it pools
-                    if (top < 30 && net >= 0.8) { why.Add(topType + " " + top + "/30: close to switching it on"); return 0.8; }
+                    if (top < 30 && net >= 0.8) { why.Add(topType + " " + top + "/30: close to switching it on"); if (say != null) say.Lead = topType + " has " + top + " of the 30 tags it needs"; return 0.8; }
                     if (net >= 1.5) why.Insert(0, topType + " is at " + top + ": the " + moved + " points of the other tags pour into it");
                     else if (hurt != null && worst >= 1) why.Insert(0, (top < 30 ? "at 30 it pools " : "pools ") + moved + " points into " + topType + " but wipes " + hurt);
                     else why.Add(topType + (top < 30 ? " " + top + "/30" : " is at " + top) + ": only " + moved + " other points to pour into it");
+                    if (say != null)
+                        say.Lead = net >= 1.5 ? "pools " + moved + " tag points into " + topType + " (at " + top + ")"
+                            : hurt != null && worst >= 1 ? "would wipe your " + hurt.Split(' ')[0] + " tags to feed " + topType
+                            : "only " + moved + " other tag points to pour into " + topType;
                     return net;
                 }
-                if (top >= 22) { why.Add(topType + " " + top + "/30: close to switching it on"); return 0.8; }
-                why.Add("does nothing until a tag reaches 30 (best: " + (topType ?? "none") + " " + top + ")"); return -0.8;
+                if (top >= 22) { why.Add(topType + " " + top + "/30: close to switching it on"); if (say != null) say.Lead = topType + " has " + top + " of the 30 tags it needs"; return 0.8; }
+                why.Add("does nothing until a tag reaches 30 (best: " + (topType ?? "none") + " " + top + ")");
+                if (say != null) say.Lead = "does nothing until a tag hits 30 (" + (topType != null ? topType + " is " + top : "no tags yet") + ")";
+                return -0.8;
             }
             if (Is(name, "One For All"))
             {
-                if (top >= 10 && withPoints <= 3) { why.Add("would flatten your " + topType + " stack of " + top); return -1.5; }
-                if (withPoints >= 4) { why.Add("evens out " + withPoints + " tag types"); return 0.6; }
+                if (top >= 10 && withPoints <= 3) { why.Add("would flatten your " + topType + " stack of " + top); if (say != null) say.Lead = "would flatten your " + top + " " + topType + " tags"; return -1.5; }
+                if (withPoints >= 4) { why.Add("evens out " + withPoints + " tag types"); if (say != null) say.Lead = "evens out your " + withPoints + " damage type tags"; return 0.6; }
                 return 0;
             }
 
@@ -417,6 +470,7 @@ namespace YazsCompanion
                 if (tags.SpecialAt > 0 && cur < tags.SpecialAt && cur + n >= tags.SpecialAt && fit > 0)
                 {
                     v += 1.2; why.Insert(0, "+" + n + " " + type + " reaches the special (" + tags.SpecialAt + ")");
+                    if (say != null) say.Lead = "turns on the " + type + " 10-tag effect";
                 }
             }
             return Math.Min(2.5, v);
@@ -438,6 +492,7 @@ namespace YazsCompanion
                 string other = Is(pair.Key, name) ? pair.Value : Is(pair.Value, name) ? pair.Key : null;
                 if (other == null || !c.Held.Contains(other)) continue;
                 v += 0.9; why.Insert(0, "pairs with your " + other);
+                if (c.Say != null) c.Say.Lead = "pairs with your " + other;
             }
             return Math.Min(1.8, v);
         }
@@ -447,8 +502,8 @@ namespace YazsCompanion
         {
             if (c.Ctx == null || c.K == null || name == null || !c.K.ScalingItems.Contains(name)) return 0;
             double e = c.Ctx.Economy;
-            if (e >= 1.25) { why.Add("grows all run: take it early"); return 0.7; }
-            if (e <= 0.5) { why.Add("grows over time: too late to matter (" + c.Ctx.ClockText + ")"); return -0.9; }
+            if (e >= 1.25) { why.Add("grows all run: take it early"); if (c.Say != null) c.Say.Scaling = "early"; return 0.7; }
+            if (e <= 0.5) { why.Add("grows over time: too late to matter (" + c.Ctx.ClockText + ")"); if (c.Say != null) c.Say.Scaling = "late"; return -0.9; }
             return 0.2 * (e - 1);
         }
     }

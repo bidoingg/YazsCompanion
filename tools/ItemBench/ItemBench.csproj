@@ -24,6 +24,12 @@
     <Compile Include="..\..\YazsCompanion.Mod\Loadout.cs" Link="mod\Loadout.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\LoadoutView.cs" Link="mod\LoadoutView.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\LoadoutLayout.cs" Link="mod\LoadoutLayout.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\LogFile.cs" Link="mod\LogFile.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Wording.cs" Link="mod\Wording.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\QuestRules.cs" Link="mod\QuestRules.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\WhyText.cs" Link="mod\WhyText.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\ScreenCall.cs" Link="mod\ScreenCall.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\ScreenBand.cs" Link="mod\ScreenBand.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- the parity file of the badge advice: research\badges_1004\tools\value_model.py's report (1.0.2, leader only) -->

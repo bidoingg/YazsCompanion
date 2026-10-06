@@ -523,16 +523,16 @@ namespace YazsCompanion.Bench
             var fq = Advise(b1.With(s => { s.Slots = 2; s.Forced = new[] { 15, 6 }; }));
             Check("M20 every slot forced: no UNLOCK hint, 'the quest fixes every badge'", fq.Unlocks.Count == 0 && fq.Notes.Contains("the quest fixes every badge"),
                 Loadout.HintLine(fq) + " | " + string.Join("; ", fq.Notes));
-            // M21 (review, F02's wording): a lent build Auto follows is named "Rifleman (Auto)" in the reasons, never "your ... build";
-            // the scores do not change
+            // M21 (review, F02's wording): a lent build Auto follows is named "the Rifleman build" in the reasons (0.14.0, A1: it said
+            // "Rifleman (Auto)" - no "(Auto)" on screen), never "your ... build"; the scores do not change
             var pinAuto = Preset("swat-rifleman").Clone(); pinAuto.Badges.Add("Power");
             var inAuto = Input(b1, k, -1, pinAuto); inAuto.Shape.Auto = true;
             var aAuto = Loadout.Recommend(inAuto, Fixture(), k, 7); var aMine = Advise(b1, null, -1, null, pinAuto);
             var vAuto = LoadoutView.Of(aAuto, b1.Equipped, b1.Forced, 4, LoadoutDetail.Full, k);
             var autoTexts = Loadout.WhyLines(aAuto).Concat(aAuto.Picks.Select(p => p.Why2)).Concat(vAuto.Grid.SelectMany(m => new[] { m.Why1, m.Why2 })).ToList();
             var autoJson = Loadout.InputJson(aAuto.Input, aAuto); List<KeyValuePair<int, double>> autoLogged;
-            Check("M21 a lent build on Auto: 'Rifleman (Auto) wants crits', 'pinned on Rifleman (Auto)', no 'your ... build'; the same scores; the flag replays",
-                autoTexts.Any(t => t.Contains("Rifleman (Auto) wants crits")) && aAuto.Picks.Any(p => p.Why2 == "pinned on Rifleman (Auto)") && !autoTexts.Any(t => t.Contains("your Rifleman") || t.Contains("your build"))
+            Check("M21 a lent build on Auto: 'the Rifleman build wants crits', 'pinned on the Rifleman build', no 'your ... build', no '(Auto)'; the same scores; the flag replays",
+                autoTexts.Any(t => t.Contains("the Rifleman build wants crits")) && aAuto.Picks.Any(p => p.Why2 == "pinned on the Rifleman build") && !autoTexts.Any(t => t.Contains("your Rifleman") || t.Contains("your build") || t.Contains("(Auto)"))
                 && Names(aAuto) == Names(aMine) && Loadout.ReadInput(autoJson, out autoLogged).Shape.Auto && !Loadout.InputJson(aMine.Input, aMine).Contains("\"auto\""),
                 string.Join(" | ", Loadout.WhyLines(aAuto)));
         }

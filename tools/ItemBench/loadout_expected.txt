@@ -37,10 +37,10 @@ B1. The user's profile: SWAT Rifleman, Normal II, WinTheRun, solo start (4 slots
 leader SWAT, build Rifleman, recruits - | Normal d2 (economy x0.80, survival x1.13, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 92%, Explosive 8% | weapon 65% / ability 35% | crit lean 1.0 | deployable 85% | projected tags Kinetic 20
 ADVICE: 1 Gunner L2 17.15  2 Critical L2 6.96  3 Power L2 6.33  4 Tough L2 5.90
-   1 Gunner     +20% Kinetic, 2 pts - Kinetic is 92% of your damage
+   1 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 92% of your damage
    2 Critical   +24% crit dmg - your Rifleman build wants crits
    3 Power      +8% weapon & ability dmg - counts on every hit
-   4 Tough      +160 HP, +8 armor - Normal II: survival weighs x1.13
+   4 Tough      +160 HP, +8 armor - Normal II: survival picks count 13% more
    next: Physical 4.75 (Kinetic 92%, Explosive 8% of the damage); Reload 3.39 (Rifleman build leans on weapons)
    never: Thunder (nothing in this run deals Electric); Carver (nothing in this run deals Slashing); Heat (nothing in this run deals Fire)
 LEVEL: Gunner 2>3 costs 3 SWAT points: +8.33 (2.78 per point)
@@ -79,11 +79,11 @@ B2. The same with RunGoal FarmProgress
 leader SWAT, build Rifleman, recruits - | Normal d2 (economy x1.10, survival x1.13, cash x1.20, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 92%, Explosive 8% | weapon 65% / ability 35% | crit lean 1.0 | deployable 85% | projected tags Kinetic 20
 ADVICE: 1 Gunner L2 17.15  2 Leveling L2 8.40  3 Critical L2 6.96  4 Power L2 6.33 (close: Tough)
-   1 Gunner     +20% Kinetic, 2 pts - Kinetic is 92% of your damage
+   1 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 92% of your damage
    2 Leveling   +10% cash, +4% survivor XP - run goal Farm: the Training Yard counts
    3 Critical   +24% crit dmg - your Rifleman build wants crits
    4 Power      +8% weapon & ability dmg - counts on every hit
-   next: Tough 5.90 (Normal II: survival weighs x1.13); Physical 4.75 (Kinetic 92%, Explosive 8% of the damage)
+   next: Tough 5.90 (Normal II: survival picks count 13% more); Physical 4.75 (Kinetic 92%, Explosive 8% of the damage)
    never: Thunder (nothing in this run deals Electric); Carver (nothing in this run deals Slashing); Heat (nothing in this run deals Fire)
 LEVEL: Gunner 2>3 costs 3 SWAT points: +8.33 (2.78 per point)
 EQUIPPED: Leveling 8.40, Speed 3.23, Growth 3.29, Thunder 0.00 | SWAP Thunder > Gunner (+17.15); Speed > Critical (+3.73); Growth > Power (+3.04)
@@ -93,8 +93,8 @@ B3. The user's last win: Huntress (Auto), Normal II, recruits Engineer + Tank ex
 leader Huntress, build Auto, recruits Engineer+Tank | Normal d2 (economy x0.80, survival x1.13, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 49%, Explosive 25%, Electric 20%, Slashing 13%, Chemical 6%, Ice 6% | weapon 50% / ability 50% | crit lean 0.6 | deployable 64% | projected tags Kinetic 12, Slashing 4
 ADVICE: 1 Gunner L2 9.22  2 Tough L2 5.90  3 Power L2 5.60  4 Critical L2 5.23 (close: Bomber)
-   1 Gunner     +20% Kinetic, 2 pts - Kinetic is 49% of the squad's damage
-   2 Tough      +160 HP, +8 armor - Normal II: survival weighs x1.13
+   1 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 49% of the squad's damage
+   2 Tough      +160 HP, +8 armor - Normal II: survival picks count 13% more
    3 Power      +8% weapon & ability dmg - counts on every hit
    4 Critical   +24% crit dmg - crits on every hit
    next: Bomber 4.52 (Explosive is 25% of the squad's damage); Physical 4.11 (Kinetic 49%, Explosive 25% of the damage)
@@ -135,11 +135,11 @@ B3a. The same, leader only (recruitWeight 0, the default: OD3)
 leader Huntress, build Auto, recruits - | Normal d2 (economy x0.80, survival x1.13, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 75%, Explosive 18%, Slashing 18%, Chemical 10%, Ice 10% | weapon 50% / ability 50% | crit lean 0.6 | deployable 50% | projected tags Kinetic 12, Slashing 4
 ADVICE: 1 Gunner L2 14.00  2 Tough L2 5.90 (close: Physical)  3 Power L2 5.60 (close: Physical)  4 Critical L2 5.23 (close: Physical)
-   1 Gunner     +20% Kinetic, 2 pts - Kinetic is 75% of your damage
-   2 Tough      +160 HP, +8 armor - Normal II: survival weighs x1.13
+   1 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 75% of your damage
+   2 Tough      +160 HP, +8 armor - Normal II: survival picks count 13% more
    3 Power      +8% weapon & ability dmg - counts on every hit
    4 Critical   +24% crit dmg - crits on every hit
-   next: Physical 5.20 (Kinetic 75%, Slashing 18% of the damage); Coverage 3.50 (tempo for weapons and abilities)
+   next: Physical 5.20 (Kinetic 75%, Slashing 18% of the damage); Coverage 3.50 (faster weapons and abilities)
    never: Thunder (nothing in this run deals Electric); Heat (nothing in this run deals Fire)
 LEVEL: Gunner 2>3 costs 3 SWAT points: +6.75 (2.25 per point)
 EQUIPPED: Leveling 2.10, Speed 2.56, Growth 2.39, Thunder 0.00 | SWAP Thunder > Gunner (+14.00); Leveling > Tough (+3.80); Growth > Power (+3.21); Speed > Critical (+2.67)
@@ -149,11 +149,11 @@ B4. Huntress Bombardier (Explosive Arrows), Normal II, solo
 leader Huntress, build Bombardier, recruits - | Normal d2 (economy x0.80, survival x1.13, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 79%, Explosive 45%, Slashing 8% | weapon 65% / ability 35% | crit lean 1.0 | deployable 44% | projected tags Kinetic 17, Explosive 8
 ADVICE: 1 Gunner L2 14.71  2 Bomber L2 9.39  3 Critical L2 6.96 (close: Physical)  4 Power L2 6.33 (close: Physical)
-   1 Gunner     +20% Kinetic, 2 pts - Kinetic is 79% of your damage
-   2 Bomber     +20% Explosive, 2 pts - Explosive is 45% of your damage
+   1 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 79% of your damage
+   2 Bomber     +20% Explosive, +2 Explosive tags - Explosive is 45% of your damage
    3 Critical   +24% crit dmg - your Bombardier build wants crits
    4 Power      +8% weapon & ability dmg - counts on every hit
-   next: Physical 6.17 (Kinetic 79%, Explosive 45% of the damage); Tough 5.90 (Normal II: survival weighs x1.13)
+   next: Physical 6.17 (Kinetic 79%, Explosive 45% of the damage); Tough 5.90 (Normal II: survival picks count 13% more)
    never: Thunder (nothing in this run deals Electric); Heat (nothing in this run deals Fire); Elemental (no elemental damage in this run)
 LEVEL: Gunner 2>3 costs 3 SWAT points: +7.11 (2.37 per point)
 EQUIPPED: Leveling 2.10, Speed 3.23, Growth 2.39, Thunder 0.00 | SWAP Thunder > Gunner (+14.71); Leveling > Bomber (+7.29); Growth > Critical (+4.57); Speed > Power (+3.10)
@@ -163,8 +163,8 @@ B5. Engineer Shield Anchor, Hardcore I
 leader Engineer, build Shield Anchor, recruits - | Hardcore d1 (economy x0.80, survival x1.31, cash x0.30, elites 15% / bosses 6% of damage, ~25 level-ups) | slots 4
 deals Electric 100%, Explosive 7% | weapon 35% / ability 65% | crit lean 0.3 | deployable 68% | projected tags Electric 16
 ADVICE: 1 Thunder L2 18.50  2 Tough L2 6.82  3 Power L2 6.33  4 Coverage L2 5.74 (close: Elemental)
-   1 Thunder    +20% Electric, 2 pts - Electric is all of your damage
-   2 Tough      +160 HP, +8 armor - Hardcore: survival weighs x1.31
+   1 Thunder    +20% Electric, +2 Electric tags - Electric is all of your damage
+   2 Tough      +160 HP, +8 armor - Hardcore: survival picks count 31% more
    3 Power      +8% weapon & ability dmg - counts on every hit
    4 Coverage   +10% area, +10% duration - Shield Anchor build leans on abilities
    next: Elemental 4.75 (Electric 100% of the damage); Critical 3.94 (crits on every hit)
@@ -177,9 +177,9 @@ B6. Tank Demolition, One Hit
 leader Tank, build Demolition, recruits - | OneHit d1 (economy x0.80, survival x0.00, cash x0.30, elites 15% / bosses 3% of damage, ~12 level-ups) | slots 4
 deals Explosive 69%, Kinetic 19%, Slashing 12% | weapon 65% / ability 35% | crit lean 0.3 | deployable 100% | projected tags Explosive 5, Kinetic 3, Slashing 1
 ADVICE: 1 Bomber L2 12.43  2 Power L2 5.99  3 Physical L1 4.50  4 Critical L2 3.94 (close: Speed)
-   1 Bomber     +20% Explosive, 2 pts - Explosive is 69% of your damage
+   1 Bomber     +20% Explosive, +2 Explosive tags - Explosive is 69% of your damage
    2 Power      +8% weapon & ability dmg - counts on every hit
-   3 Physical   +4% and 1 pt to 3 types - Explosive 69%, Kinetic 19% of the damage
+   3 Physical   +4% and +1 tag to 3 types - Explosive 69%, Kinetic 19% of the damage
    4 Critical   +24% crit dmg - crits on every hit
    next: Speed 3.48 (keeps you out of the horde); Gunner 3.43 (Kinetic is 19% of your damage)
    never: Tough (One Hit: a single hit ends the run); Thunder (nothing in this run deals Electric); Ninja (One Hit: a single hit ends the run)
@@ -219,10 +219,10 @@ leader Ghost, build Blademaster, recruits - | BossRush d1 (economy x0.80, surviv
 deals Slashing 67%, Electric 33% | weapon 65% / ability 35% | crit lean 1.0 | deployable 20% | projected tags Slashing 13, Electric 6
 ADVICE: 1 Critical L2 6.96  2 Carver L1 6.25 (close: Tough)  3 Thunder L2 6.00 (close: Tough)  4 Power L2 5.60 (close: Tough)
    1 Critical   +24% crit dmg - your Blademaster build wants crits
-   2 Carver     +10% Slashing, 1 pt - Slashing is 67% of your damage
-   3 Thunder    +20% Electric, 2 pts - Electric is 33% of your damage
+   2 Carver     +10% Slashing, +1 Slashing tag - Slashing is 67% of your damage
+   3 Thunder    +20% Electric, +2 Electric tags - Electric is 33% of your damage
    4 Power      +8% weapon & ability dmg - counts on every hit
-   next: Tough 5.46 (BossRush I: survival weighs x1.05); Physical 3.25 (Slashing 67% of the damage)
+   next: Tough 5.46 (survival picks always help); Physical 3.25 (Slashing 67% of the damage)
    never: Gunner (nothing in this run deals Kinetic); Bomber (nothing in this run deals Explosive); Heat (nothing in this run deals Fire)
 LEVEL: Carver 1>2 costs 2 Ghost points: +6.00 (3.00 per point)
 
@@ -231,9 +231,9 @@ B8. Pyro Inferno (Flamethrower), Endless
 leader Pyro, build Inferno, recruits - | Endless d1 (economy x1.29, survival x1.05, cash x0.30, elites 20% / bosses 10% of damage, ~25 level-ups) | slots 4
 deals Fire 81%, Explosive 12%, Kinetic 12%, Slashing 7% | weapon 65% / ability 35% | crit lean 0.3 | deployable 45% | projected tags Fire 14, Slashing 3, Explosive 3, Kinetic 3
 ADVICE: 1 Heat L1 7.54  2 Power L2 5.99  3 Tough L2 5.46  4 Critical L2 3.94 (close: Elemental)
-   1 Heat       +10% Fire, 1 pt - Fire is 81% of your damage
+   1 Heat       +10% Fire, +1 Fire tag - Fire is 81% of your damage
    2 Power      +8% weapon & ability dmg - counts on every hit
-   3 Tough      +160 HP, +8 armor - Endless: survival weighs x1.05
+   3 Tough      +160 HP, +8 armor - survival picks always help
    4 Critical   +24% crit dmg - crits on every hit
    next: Elemental 3.89 (Fire 81% of the damage); Growth 3.86 (open-ended: XP never stops paying)
    never: Thunder (nothing in this run deals Electric)
@@ -245,8 +245,8 @@ leader Medic, build Field Medic, recruits - | Extermination d1 (economy x0.80, s
 deals Ice 59%, Chemical 41%, Explosive 27%, Kinetic 27% | weapon 35% / ability 65% | crit lean 0.3 | deployable 41% | projected tags Kinetic 8, Chemical 8, Ice 8, Explosive 4
 ADVICE: 1 Power L2 6.33  2 Gunner L2 5.68 (close: Bomber)  3 Tough L2 5.46 (close: Bomber)  4 Coverage L2 5.32 (close: Bomber)
    1 Power      +8% weapon & ability dmg - counts on every hit
-   2 Gunner     +20% Kinetic, 2 pts - Kinetic is 27% of your damage
-   3 Tough      +160 HP, +8 armor - Extermination I: survival weighs x1.05
+   2 Gunner     +20% Kinetic, +2 Kinetic tags - Kinetic is 27% of your damage
+   3 Tough      +160 HP, +8 armor - survival picks always help
    4 Coverage   +10% area, +10% duration - Field Medic build leans on abilities
    next: Bomber 4.86 (Explosive is 27% of your damage (Experiment 21)); Elemental 4.50 (Ice 59%, Chemical 41% of the damage)
    never: Thunder (nothing in this run deals Electric); Carver (nothing in this run deals Slashing); Growth (Extermination: the game drops XP and luck)
@@ -257,8 +257,8 @@ B10. Engineer Live Wire, Normal I, Cautious
 leader Engineer, build Live Wire, recruits - | Normal d1 (economy x0.80, survival x1.47, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Electric 100%, Explosive 7% | weapon 35% / ability 65% | crit lean 0.3 | deployable 48% | projected tags Electric 20
 ADVICE: 1 Thunder L2 18.50  2 Tough L2 7.64  3 Power L2 6.33  4 Coverage L2 5.43 (close: Elemental)
-   1 Thunder    +20% Electric, 2 pts - Electric is all of your damage
-   2 Tough      +160 HP, +8 armor - Normal I: survival weighs x1.47
+   1 Thunder    +20% Electric, +2 Electric tags - Electric is all of your damage
+   2 Tough      +160 HP, +8 armor - Normal I: survival picks count 47% more
    3 Power      +8% weapon & ability dmg - counts on every hit
    4 Coverage   +10% area, +10% duration - Live Wire build leans on abilities
    next: Elemental 4.75 (Electric 100% of the damage); Critical 3.94 (crits on every hit)
@@ -272,7 +272,7 @@ deals Kinetic 92%, Explosive 8% | weapon 65% / ability 35% | crit lean 1.0 | dep
 ADVICE: 1 Speed L1 3.13 (close: Tough)  2 Gamble L1 2.99 (close: Tough)
    1 Speed      +4% fire rate, +6 move - Rifleman build leans on weapons
    2 Gamble     +2 rerolls, +1 banish - finds your Rifleman build's pieces
-   next: Tough 2.73 (Normal I: survival weighs x1.05); Ninja 2.42 (Normal I: survival weighs x1.05)
+   next: Tough 2.73 (survival picks always help); Ninja 2.42 (survival picks always help)
 LEVEL: Speed 1>2 costs 2 Huntress points: +3.13 (1.57 per point)
 UNLOCK: Gunner (SWAT tree, rank 3) 8.57 at L1; Physical (Huntress tree, rank 3) 4.75 at L1
    badge      class    lvl   score   per-L  terms at its level (points)
@@ -309,8 +309,8 @@ C2. Every badge at L5, 4 slots: Pyro Inferno, Normal I (Heat vs Elemental)
 leader Pyro, build Inferno, recruits - | Normal d1 (economy x0.80, survival x1.05, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Fire 81%, Explosive 12%, Kinetic 12%, Slashing 7% | weapon 65% / ability 35% | crit lean 0.3 | deployable 45% | projected tags Fire 17, Slashing 4, Explosive 4, Kinetic 4
 ADVICE: 1 Heat L5 37.68  2 Elemental L5 16.54  3 Reload L5 16.05  4 Chance L5 15.04 (close: Power)
-   1 Heat       +50% Fire, 5 pts - Fire is 81% of your damage
-   2 Elemental  +20% and 3 pts to 4 types - Fire 81% of the damage
+   1 Heat       +50% Fire, +5 Fire tags - Fire is 81% of your damage
+   2 Elemental  +20% and +3 tags to 4 types - Fire 81% of the damage
    3 Reload     +20% weapon CDR, +15% ability CDR - Inferno build leans on weapons
    4 Chance     +20% crit - crits on every hit
    next: Power 14.98 (counts on every hit); Speed 14.10 (Inferno build leans on weapons)
@@ -321,21 +321,21 @@ C3. Every badge at L5: Pyro Inferno with Engineer + Medic + Mechanic expected (s
 leader Pyro, build Inferno, recruits Engineer+Medic+Mechanic | Normal d1 (economy x0.80, survival x1.05, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Fire 43%, Ice 19%, Electric 17%, Explosive 13%, Kinetic 13%, Chemical 6%, Slashing 6% | weapon 53% / ability 47% | crit lean 0.3 | deployable 53% | projected tags Fire 17, Slashing 4, Explosive 4, Kinetic 4
 ADVICE: 1 Heat L5 20.18  2 Elemental L5 17.09  3 Reload L5 16.41  4 Power L5 15.31 (close: Chance)
-   1 Heat       +50% Fire, 5 pts - Fire is 43% of the squad's damage
-   2 Elemental  +20% and 3 pts to 4 types - Fire 43%, Ice 19% of the damage
-   3 Reload     +20% weapon CDR, +15% ability CDR - tempo for weapons and abilities
+   1 Heat       +50% Fire, +5 Fire tags - Fire is 43% of the squad's damage
+   2 Elemental  +20% and +3 tags to 4 types - Fire 43%, Ice 19% of the damage
+   3 Reload     +20% weapon CDR, +15% ability CDR - faster weapons and abilities
    4 Power      +20% weapon & ability dmg - counts on every hit
-   next: Chance 15.04 (crits on every hit); Tough 13.65 (Normal I: survival weighs x1.05)
+   next: Chance 15.04 (crits on every hit); Tough 13.65 (survival picks always help)
 
 ======================================================================================================================
 C4. Every badge at L5: Ranger Beastmaster (abilities, crit), Normal I
 leader Ranger, build Beastmaster, recruits - | Normal d1 (economy x0.80, survival x1.05, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Kinetic 62%, Slashing 38%, Fire 11%, Electric 11% | weapon 35% / ability 65% | crit lean 1.0 | deployable 0% | projected tags Kinetic 13, Slashing 5
 ADVICE: 1 Gunner L5 29.22  2 Physical L5 20.25  3 Chance L5 18.40  4 Carver L5 18.16 (close: Critical)
-   1 Gunner     +50% Kinetic, 5 pts - Kinetic is 62% of your damage
-   2 Physical   +20% and 3 pts to 3 types - Kinetic 62%, Slashing 38% of the damage
+   1 Gunner     +50% Kinetic, +5 Kinetic tags - Kinetic is 62% of your damage
+   2 Physical   +20% and +3 tags to 3 types - Kinetic 62%, Slashing 38% of the damage
    3 Chance     +20% crit - your Beastmaster build wants crits
-   4 Carver     +50% Slashing, 5 pts - Slashing is 38% of your damage
+   4 Carver     +50% Slashing, +5 Slashing tags - Slashing is 38% of your damage
    next: Critical 17.40 (your Beastmaster build wants crits); Reload 16.95 (Beastmaster build leans on abilities)
    never: Bomber (nothing in this run deals Explosive); Soul (nothing in this run deals Chemical); Glacier (nothing in this run deals Ice)
 
@@ -346,8 +346,8 @@ deals Kinetic 92%, Explosive 8% | weapon 65% / ability 35% | crit lean 1.0 | dep
 ADVICE: 1 Gatherer L5 3.59 (forced)  2 Thief L5 7.98 (forced)  3 Gunner L5 42.88  4 Physical L5 20.25
    1 Gatherer   +50% pickup, +50% power-up time - the active mission requires it
    2 Thief      +50% gem rarity - the active mission requires it
-   3 Gunner     +50% Kinetic, 5 pts - Kinetic is 92% of your damage
-   4 Physical   +20% and 3 pts to 3 types - Kinetic 92%, Explosive 8% of the damage
+   3 Gunner     +50% Kinetic, +5 Kinetic tags - Kinetic is 92% of your damage
+   4 Physical   +20% and +3 tags to 3 types - Kinetic 92%, Explosive 8% of the damage
    next: Chance 18.40 (your Rifleman build wants crits); Critical 17.40 (your Rifleman build wants crits)
    never: Thunder (nothing in this run deals Electric); Carver (nothing in this run deals Slashing); Soul (nothing in this run deals Chemical)
 
@@ -356,11 +356,11 @@ C6. Every badge at L5: Mechanic Cold Chain, Normal I (Glacier special pull)
 leader Mechanic, build Cold Chain, recruits - | Normal d1 (economy x0.80, survival x1.05, cash x0.30, elites 15% / bosses 6% of damage, ~50 level-ups) | slots 4
 deals Ice 69%, Kinetic 19%, Explosive 12%, Slashing 12% | weapon 50% / ability 50% | crit lean 0.3 | deployable 68% | projected tags Ice 12, Kinetic 8, Slashing 4, Explosive 4
 ADVICE: 1 Glacier L5 32.32  2 Reload L5 16.50  3 Power L5 15.40  4 Chance L5 15.04 (close: Elemental)
-   1 Glacier    +50% Ice, 5 pts - Ice is 69% of your damage
-   2 Reload     +20% weapon CDR, +15% ability CDR - tempo for weapons and abilities
+   1 Glacier    +50% Ice, +5 Ice tags - Ice is 69% of your damage
+   2 Reload     +20% weapon CDR, +15% ability CDR - faster weapons and abilities
    3 Power      +20% weapon & ability dmg - counts on every hit
    4 Chance     +20% crit - crits on every hit
-   next: Elemental 14.21 (Ice 69% of the damage); Tough 13.65 (Normal I: survival weighs x1.05)
+   next: Elemental 14.21 (Ice 69% of the damage); Tough 13.65 (survival picks always help)
    never: Thunder (nothing in this run deals Electric); Soul (nothing in this run deals Chemical); Heat (nothing in this run deals Fire)
 
 ======================================================================================================================

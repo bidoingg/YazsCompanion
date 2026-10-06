@@ -300,7 +300,8 @@ namespace YazsCompanion
                 + " (" + v.Grid.Count + " on the grid) | build " + bname + " | pins " + (build != null && build.Badges.Count > 0 ? string.Join(", ", build.Badges) : "-")
                 + " | skips " + (build != null && build.SkipBadges.Count > 0 ? string.Join(", ", build.SkipBadges) : "-") + (v.Missing.Count > 0 ? " | fallbacks: " + string.Join("; ", v.Missing) : "");
             if (line != _visitLine) { _visitLine = line; Plugin.Logger.LogInfo("[loadout] " + line); }
-            if (v.Quest != "-" && v.Quest != "?" && v.Forced.Count == 0) Once("questnoforced:" + v.Quest, "an active quest (" + v.Quest + ") and no forced badge on the screen: the quest's badge objective, if any, is not read (worth a look)");
+            // a developer's note (0.14.0, B6: only with [Logging] Verbose - most quests have no badge objective)
+            if (Verbose && v.Quest != "-" && v.Quest != "?" && v.Forced.Count == 0) Once("questnoforced:" + v.Quest, "an active quest (" + v.Quest + ") and no forced badge on the screen: the quest's badge objective, if any, is not read (worth a look)");
             Plugin.Logger.LogInfo("[loadout] " + Loadout.ShapeLine(a));
             Plugin.Logger.LogInfo("[loadout] " + Loadout.AdviseLine(a));
             foreach (var l in Loadout.WhyLines(a)) Plugin.Logger.LogInfo("[loadout] " + l);

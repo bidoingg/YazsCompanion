@@ -42,6 +42,51 @@ namespace YazsCompanion
             }
         }
 
+        // 0.14.0 (A1): the game's own names of the statistics, for the reason lines under the stat cards and the rescue cards - the
+        // ENGLISH UI/StatType labels of data\gamedata.json, baked in. Not the game's localization (MyLocalization): the Companion
+        // speaks English, and a translated label would mix two languages inside one sentence.
+        static readonly Dictionary<string, string> StatLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "AbilityCooldownReduction", "Ability cooldown reduction" }, { "AbilityCritChance", "Ability critical chance" }, { "AbilityCritDamage", "Ability critical damage" },
+            { "AbilityDamage", "Ability damage" }, { "AbilityDurationModifier", "Ability duration" }, { "AbilitySizeModifier", "Ability area" }, { "Armor", "Armor" },
+            { "DodgeChance", "Dodge chance" }, { "HealthBonusesMod", "Healing bonuses" }, { "HealthRegen", "Health regeneration" }, { "InviFrames", "Invincibility after hit" },
+            { "LifeStealChance", "Life steal chance" }, { "Luck", "Luck" }, { "MagnetRange", "Pickup range" }, { "MaxHealth", "Max health" }, { "MoneyCollectedMod", "Cash modifier" },
+            { "MovementSpeedMod", "Movement speed" }, { "MultiCastChance", "Multicast chance" }, { "NumBanishes", "Banishes available" }, { "NumLockdowns", "Lockdowns available" },
+            { "NumRerolls", "Rerolls available" }, { "WeaponCooldownReduction", "Weapon cooldown reduction" }, { "WeaponCritChance", "Weapon critical chance" },
+            { "WeaponCritDamage", "Weapon critical damage" }, { "WeaponDamageMod", "Weapon damage" }, { "WeaponFireRateMod", "Weapon attack speed" }, { "XPCollectedMod", "XP modifier" },
+            { "XPGemRarityModifier", "Experience gem rarity" },
+        };
+        // the other names the same statistics go by: the military cards' assets (MilitaryTraining_<x>) and the statistics themselves
+        // (PlayerAbilitySize, TeamArmor, TeamMovementSpeedMultiplier - their Player / Team prefix is dropped first)
+        static readonly Dictionary<string, string> StatAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "AbilityCooldown", "AbilityCooldownReduction" }, { "AbilityCDRed", "AbilityCooldownReduction" }, { "AbilityDuration", "AbilityDurationModifier" },
+            { "AbilitySize", "AbilitySizeModifier" }, { "HPRegen", "HealthRegen" }, { "MovementSpeed", "MovementSpeedMod" }, { "MovementSpeedMultiplier", "MovementSpeedMod" },
+            { "WeaponCooldown", "WeaponCooldownReduction" }, { "WeaponCooldownMod", "WeaponCooldownReduction" }, { "WeaponCDRed", "WeaponCooldownReduction" },
+            { "WeaponDamage", "WeaponDamageMod" }, { "WeaponFireRate", "WeaponFireRateMod" }, { "XPModifierMod", "XPCollectedMod" }, { "XPModifier", "XPCollectedMod" },
+            { "XPMultiplier", "XPCollectedMod" }, { "MoneyMultiplier", "MoneyCollectedMod" }, { "HealthBonuses", "HealthBonusesMod" }, { "XPGemRarity", "XPGemRarityModifier" },
+        };
+
+        /// <summary>The game's label of a statistic ("Ability area" for AbilitySize, AbilitySizeModifier, MilitaryTraining_AbilitySize or
+        /// PlayerAbilitySize), lower-cased for use inside a sentence ("ability area"; "XP modifier" keeps its capitals); null when the
+        /// game has no label for it.</summary>
+        public static string StatLabel(string key, bool inSentence = true)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            string k = key;
+            if (k.StartsWith("MilitaryTraining_", StringComparison.Ordinal)) k = k.Substring("MilitaryTraining_".Length);
+            string label;
+            if (!StatLabels.TryGetValue(k, out label))
+            {
+                foreach (var prefix in new[] { "GamePlayer_", "Team_", "Internal_", "Player", "Team" })
+                    if (k.Length > prefix.Length && k.StartsWith(prefix, StringComparison.Ordinal) && char.IsUpper(k[prefix.Length])) { k = k.Substring(prefix.Length); break; }
+                string alias;
+                if (!StatLabels.TryGetValue(k, out label) && (!StatAliases.TryGetValue(k, out alias) || !StatLabels.TryGetValue(alias, out label))) return null;
+            }
+            if (!inSentence || label.Length < 2 || char.IsUpper(label[1])) return label;
+            return char.ToLowerInvariant(label[0]) + label.Substring(1);
+        }
+
         public static Knowledge Load(string path)
         {
             var k = new Knowledge();
@@ -242,8 +287,8 @@ namespace YazsCompanion
     ""Glass Cannon"": ""C"", ""Brave Toaster"": ""C"", ""Easter Egg"": ""C"", ""Mushroom Mushroom"": ""C""
   },
   ""itemNotes"": {
-    ""Silencer"": ""short-range weapons"",
-    ""Dartboard"": ""long-range weapons"",
+    ""Silencer"": ""boosts short-range weapons"",
+    ""Dartboard"": ""boosts long-range weapons"",
     ""Accumulator"": ""magnet pickups nuke the screen"",
     ""Chick Magnet"": ""pickup range, and cooldowns on every magnet"",
     ""Electric Personality"": ""magnets collect everything"",
@@ -252,10 +297,10 @@ namespace YazsCompanion
     ""Giant Enemy Crab"": ""a forum and guide staple"",
     ""Homing Pigeon"": ""ability hits on full health enemies always crit"",
     ""Gaslighter"": ""+20% damage per status effect on the target"",
-    ""Wooden Stick"": ""XP: an early pick"",
+    ""Wooden Stick"": ""XP item, take it early"",
     ""Crowbar"": ""chests and signals open at once: saves time, nothing else"",
     ""Boxing Gloves"": ""+30% against elites and bosses"",
-    ""Acoustic Guitar"": ""guides disagree (a must-have in one, avoid in another)"",
+    ""Acoustic Guitar"": ""the guides disagree on it (a must-have in one, avoid in another)"",
     ""Magical Hat"": ""+2 to every elemental tag (+4 at 4 or more)""
   },
   // pairs the items themselves name: the second half is worth more once the first is held

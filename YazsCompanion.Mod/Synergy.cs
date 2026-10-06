@@ -44,8 +44,9 @@ namespace YazsCompanion
         }
     }
 
-    /// <summary>A headline an ability card can show, with the reason line it sums up (Synergy.AbilityHeads).</summary>
-    internal sealed class HeadCut { public int Rank; public string Text, From; }
+    /// <summary>A headline an ability card can show, with the reason line it sums up (Synergy.AbilityHeads) and - 0.14.0 (A1) - the
+    /// same in the words the card draws (Wording: longest form first).</summary>
+    internal sealed class HeadCut { public int Rank; public string Text, From; public string[] Say; }
 
     /// <summary>0.13.0 (C2): a level of the weapon in hand under the "abilities first" style. The style puts the weapon on a low
     /// floor (3.3: "the abilities first, the weapon fills in") - but that floor is absolute, so every OTHER survivor's ability
@@ -96,6 +97,40 @@ namespace YazsCompanion
         public static string UnderOwnLine(string own) { return "abilities first: after " + own + ", ahead of the rest"; }
     }
 
+    /// <summary>Abilities of a class rank the survivor had not reached when the run began (Plan.RankClosed). Such a node still
+    /// reads "level 1" (its minimum), so the owned-node test lets it through - but the game does not offer the ability:
+    /// "next Kunai Dance" (rank III) stood on a level-39 Ghost's row all run and the card never came. What is closed at first
+    /// sight stays closed until the run clock starts over. 0.14.0 (B3): the class level is the one the survivor had at its
+    /// first sight in the run, too - it climbs live, and an ability first looked at after it crossed a multiple of 20
+    /// opened mid-run: the user's 10-05 run showed "next Resuscitation" (rank III) on the Medic's row from 06:46 to the
+    /// end (its class level went 37 -> 41 during the run) and the card never came in eleven offers after 40; the weapon's
+    /// lift went with it, since that ability counted as one the build still misses. Pure: the bench replays it.</summary>
+    internal sealed class RankGate
+    {
+        readonly HashSet<string> _closed = new HashSet<string>();
+        readonly Dictionary<string, int> _runLevel = new Dictionary<string, int>();
+        double _clock = -1;
+
+        /// <summary>Is <paramref name="ability"/> of <paramref name="survivor"/> held back by its class rank this run?
+        /// <paramref name="rank"/> = its tree node's rankRequirement (0 / 1: no gate), <paramref name="level"/> = the survivor's
+        /// class level now, <paramref name="seconds"/> = the play clock (it going back means a new run).</summary>
+        public bool Closed(string survivor, string ability, int rank, int level, double seconds)
+        {
+            if (seconds < _clock - 5) { _closed.Clear(); _runLevel.Clear(); }        // the clock went back: a new run
+            _clock = seconds;
+            string key = survivor + "/" + ability;
+            if (_closed.Contains(key)) return true;
+            int lvl;
+            if (!_runLevel.TryGetValue(survivor ?? "", out lvl)) _runLevel[survivor ?? ""] = lvl = level;
+            if (rank <= 1 || lvl >= (rank - 1) * 20) return false;      // ranks open at class level 20 / 40 / 60 / 80
+            _closed.Add(key);
+            return true;
+        }
+
+        /// <summary>The class level this run judges <paramref name="survivor"/> by (-1: not seen yet this run).</summary>
+        public int RunLevel(string survivor) { int lvl; return _runLevel.TryGetValue(survivor ?? "", out lvl) ? lvl : -1; }
+    }
+
     internal static class Synergy
     {
         /// <summary>The floor of a level of the weapon in hand by style: Weapon 6.0, Balanced 4.3, Ability 3.3 (Ranker.ScoreWeapon).</summary>
@@ -109,6 +144,59 @@ namespace YazsCompanion
             if (floor > soft) floor = soft + (floor - soft) * reach;
             return floor + 0.1 * lvl + syn + (lvl == max - 1 ? 0.25 : 0);
         }
+
+        // ---- the stat cards (Ranker.ScoreMilitary; pure, so the bench replays the logged cards)
+        /// <summary>The rarity factor of a stat card: Common 1, Rare 2, Legendary 3 - the cards' own numbers go about 1 : 2 : 3-4 by
+        /// rarity - and an Endless card <see cref="EndlessWeight"/> of <paramref name="endlessRatio"/>.</summary>
+        public static double RarityWeight(string rarity, double endlessRatio)
+        {
+            switch (rarity)
+            {
+                case "Legendary": return 3.0;
+                case "Rare": return 2.0;
+                case "Endless": return EndlessWeight(endlessRatio);
+                default: return 1.0;
+            }
+        }
+
+        /// <summary>0.14.0 (B1): an Endless card's factor is its own value against the Common card of its stat
+        /// (|bonusesEndless[0]| / |bonuses[0]|, 0.25 - 0.5 in the game's data: Ability Area +2.5 % against +10 %), held to 0.1 - 1.0;
+        /// 0.4 when it could not be read. Up to 0.13.0 it was a flat 2.6 - "just under Legendary" - for the game's filler card:
+        /// an Endless +2.5 % ability area ranked over the build's main ability (6.07 against 4.72), and of the logged offers where
+        /// an Endless card came first beside an ability, a weapon or an evolution the player overrode it 8 times in 13.</summary>
+        public static double EndlessWeight(double ratio)
+        {
+            if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0) return 0.4;
+            return Math.Max(0.1, Math.Min(1.0, ratio));
+        }
+
+        /// <summary>A stat card's score: 1 + rarity x weight x 2, +0.2 for a card for the whole team.</summary>
+        public static double StatCard(double rarity, double weight, bool team) { return 1.0 + rarity * weight * 2.0 + (team ? 0.2 : 0); }
+
+        // ---- the reason line under a card (Badge.Show draws it; pure, so the bench says it too)
+        static readonly string[] Ordinal = { "", "", "2ND", "3RD", "4TH", "5TH", "6TH" };
+
+        /// <summary>What stands before a card's reason: nothing on the recommended card (<paramref name="rank"/> 1), its place on
+        /// the others ("2ND"), and - 0.14.0 (B4) - "AVOID" in its place on a card scored under 1, which up to 0.13.0 only the line's
+        /// dull red said. The place of a card to avoid tells the player nothing, and "2ND   AVOID  " took 13 of the 56 characters
+        /// the Steam Deck shows: the AVOID cards' reasons, the ones that matter most there, were cut.</summary>
+        public static string ReasonPrefix(int rank, double score)
+        {
+            if (rank == 1) return "";
+            if (score < 1) return "<b>AVOID</b>   ";
+            return "<b>" + (rank >= 0 && rank < Ordinal.Length ? Ordinal[rank] : "#" + rank) + "</b>   ";
+        }
+
+        /// <summary>The visible characters of <see cref="ReasonPrefix"/> (the tags left out): 0, 6 ("2ND   ") or 8 ("AVOID   ").</summary>
+        public static int ReasonPrefixWidth(int rank, double score)
+        {
+            string p = ReasonPrefix(rank, score);
+            return p.Replace("<b>", "").Replace("</b>", "").Length;
+        }
+
+        /// <summary>A reason as the card's text may draw it: no '&lt;' (it would open a rich-text tag). 0.14.0 (A1): the '&gt;' stays -
+        /// a lone one opens nothing, and dropping it drew "level 2>3 of 4" as "23 of 4" on a quarter of the cards since 0.10.0.</summary>
+        public static string ReasonText(string s) { return (s ?? "").Replace("<", ""); }
 
         /// <summary>The value of the tag points one more level of <paramref name="p"/> brings, and of sharing damage types
         /// with the rest of the squad. 0 for powerups that deal no damage type (Ricochet, Fury Unleashed).</summary>
@@ -131,7 +219,7 @@ namespace YazsCompanion
                 {
                     int left = tags.SpecialAt - cur;
                     if (left <= 1) { v += 0.9; if (why != null) why.Insert(0, SpecialLine(t, tags.SpecialAt)); }
-                    else if (left <= 3 && (share > 0 || spread)) { v += 0.3; if (why != null) why.Add(left + " tags from the " + t + " special"); }
+                    else if (left <= 3 && (share > 0 || spread)) { v += 0.3; if (why != null) why.Add(t + " " + left + " tags short of its 10-tag effect"); }
                 }
             }
             if (best != null && bestShare >= 0.25 && why != null) why.Add(ShareLine(best, bestShare, tags.SourceText(best)));
@@ -159,11 +247,12 @@ namespace YazsCompanion
             if (why.Count > 0 && why[0].StartsWith(SpecialPrefix, StringComparison.Ordinal))
             {   // TagValue puts a special within one level first (the last type it met, when two are that close)
                 string t = why[0].Substring(SpecialPrefix.Length); int sp = t.IndexOf(' ');
-                heads.Add(new HeadCut { Rank = 5, Text = "unlocks the " + (sp > 0 ? t.Substring(0, sp) : t) + " special", From = why[0] });
+                string type = sp > 0 ? t.Substring(0, sp) : t;
+                heads.Add(new HeadCut { Rank = 5, Text = "unlocks the " + type + " special", From = why[0], Say = Wording.Special(type) });
             }
             if (boostValue > 0 && boosts != null)
                 foreach (var b in boosts)
-                    if (b.Covers(facts)) { string line = BoostLine(b); heads.Add(new HeadCut { Rank = 3, Text = b.Name + " boosts it", From = why.Contains(line) ? line : null }); break; }
+                    if (b.Covers(facts)) { string line = BoostLine(b); heads.Add(new HeadCut { Rank = 3, Text = b.Name + " boosts it", From = why.Contains(line) ? line : null, Say = Wording.Boosted(b.Name, b.Owner) }); break; }
             if (tagValue >= 0.45 && facts.Damage.Count > 0 && tags != null)
             {   // the type TagValue's share line names: the first of the highest share (it adds that line from 25 %, the head needs 40 %)
                 string best = null; double share = 0;
@@ -171,7 +260,7 @@ namespace YazsCompanion
                 if (best != null && share >= 0.4)
                 {
                     string prefix = SharePrefix(best);
-                    heads.Add(new HeadCut { Rank = 1, Text = best + ": " + (int)Math.Round(share * 100) + "% of the squad", From = why.FirstOrDefault(w => w.StartsWith(prefix, StringComparison.Ordinal)) });
+                    heads.Add(new HeadCut { Rank = 1, Text = best + ": " + (int)Math.Round(share * 100) + "% of the squad", From = why.FirstOrDefault(w => w.StartsWith(prefix, StringComparison.Ordinal)), Say = Wording.Share(best, (int)Math.Round(share * 100)) });
                 }
             }
             return heads;

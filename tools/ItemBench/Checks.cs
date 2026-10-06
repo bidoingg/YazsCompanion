@@ -14,6 +14,18 @@
 //      drift, the view, the placement, safety, the replay of logged advices).
 //   8. (0.13.0) two findings from the user's 1.0.2 sessions: a lent build pack follows the tier-3 branch taken (F02), each
 //      reason said once (F12) - AdviceFixCases.cs (run before 7, which points builds.json at a temp file).
+//   9. (0.13.0) the review of a 10-04 match: MatchFixCases.cs.
+//  10. (0.14.0) the fix-now items of the review of the user's 10-05 run (Endless stat cards, the class rank of a run, AVOID in
+//      words, the '>' kept, the log rotated, a verbose note): RunFixCases.cs.
+//  11. (0.14.0) the plain words under the cards (Wording.cs): every builder within the rails, the glyphs, the user's 10-05 offers
+//      replayed, the game's stat labels and the sources wired: WordingCases.cs.
+//  12. (0.14.0) the active quest's objectives as advice (QuestRules.cs): every 1.0.2 objective decoded, the user's 10-05 'Heroic
+//      Theory' offers replayed, one case per objective kind, the QuestSteer gates, the rails and the sources: QuestCases.cs.
+//  13. (0.14.0) the action hints on every selection screen (ScreenCall.cs: the user's logged chests replayed, the floors, SKIP,
+//      BANISH), WHY on highlight and CLOSE CALL (WhyText.cs) and the band manager (ScreenBand.cs) at 3440 x 1440 and 1280 x 800:
+//      HintCases.cs.
+//  14. (0.14.0) the integration review of the round: the WHY band under a quest, the vs sentence, two equal lines told apart,
+//      lent short names, the rewordings, the loadout's survival words, the sources: ReviewCases.cs.
 // Usage: ItemBench [gamedata.json] --probe path\to\probe.json
 using System;
 using System.Collections.Generic;
@@ -93,6 +105,11 @@ namespace YazsCompanion.Bench
             bad += AdviceFixes.Run(Items);                     // 0.13.0 F02 / F12 from the 10-03 / 10-04 sessions (AdviceFixCases.cs)
             bad += Loadouts.Run(probePath, gamedataPath);       // 0.13.0 badge advice (LoadoutCases.cs)
             bad += MatchFixes.Run(Find, Items);                        // 0.13.0 C1 / C2 / C3 / C5 from the 10-04 match (MatchFixCases.cs)
+            bad += RunFixes.Run();                                      // 0.14.0 B1 / B3 / B4 / A1 / B5 / B6 from the 10-05 run (RunFixCases.cs)
+            bad += Wordings.Run(Powers.Values.ToList(), Items, Weapons);       // 0.14.0 A1 stage 2: the plain words under the cards (WordingCases.cs)
+            bad += QuestCases.Run(probePath);                           // 0.14.0 C3: the active quest's objectives as advice (QuestCases.cs)
+            bad += HintCases.Run(Items);                                // 0.14.0 C4: action hints, WHY on highlight, CLOSE CALL, the band manager (HintCases.cs)
+            bad += ReviewCases.Run();                                   // 0.14.0: the integration review's findings replayed (ReviewCases.cs)
             return bad == 0 ? 0 : 3;
         }
 

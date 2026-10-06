@@ -506,7 +506,8 @@ namespace YazsCompanion
                 var font = text.font;
                 if (font != null)
                 {
-                    if (!font.HasCharacter('›', true, true)) Plan.Arrow = " > ";
+                    // 0.14.0 (A1): '»' when '›' is missing (every game font but the Thai one has it: the card fonts' one arrow), '>' last
+                    if (!font.HasCharacter('›', true, true)) Plan.Arrow = font.HasCharacter('»', true, true) ? " » " : " > ";
                     if (!font.HasCharacter('·', true, true)) Plan.Sep = "  |  ";
                 }
                 Plugin.Logger.LogInfo("[panel] glyphs: arrow '" + Plan.Arrow.Trim() + "' sep '" + Plan.Sep.Trim() + "'");

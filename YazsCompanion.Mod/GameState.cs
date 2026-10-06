@@ -123,6 +123,11 @@ namespace YazsCompanion
         QuestSos _quest;
         public QuestSos Quest { get { if (_quest == null) { try { _quest = YazsCompanion.Quest.Judge(this); } catch { } if (_quest == null) _quest = new QuestSos { Size = Squad.Count }; } return _quest; } }
 
+        // 0.14.0 (C3): the active quest's other objectives as rules for the cards and the QUEST row, their progress read once per
+        // snapshot (null: no quest, or nothing in it for the cards)
+        QuestRules _rules; bool _rulesRead;
+        public QuestRules Rules { get { if (!_rulesRead) { _rulesRead = true; try { _rules = YazsCompanion.Quest.Rules(this); } catch { } } return _rules; } }
+
         public string SquadText()
         {
             var sb = new StringBuilder();

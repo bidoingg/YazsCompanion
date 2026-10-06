@@ -5,7 +5,12 @@
 //  - recommended card: a gold frame on exactly the game's selection rect, with a small diamond on each
 //    corner (the game's own motif), and a diamond-tipped ribbon reading RECOMMENDED hanging under the card
 //    like the game's NEW / UPGRADE ribbon;
-//  - every card: one short reason line under the card, in the card's own font ("2ND  new ability").
+//  - every card: one short reason line under the card, in the card's own font ("2ND   The Rifleman build's main ability";
+//    "AVOID   ..." in place of the card's place on a card scored under 1, 0.14.0). Since 0.14.0 (A1) the line is the card's
+//    plain words (Card.Display, Wording.cs), not the ranking's headline, which the log keeps; a [shown] line logs what was drawn.
+// 0.14.0 (A1): the ribbon steps aside while the game shows its own "Skill Tree 3 / 5" label under the hovered recommended card
+// (the label sat right under it): Tick follows the label's fade. And the size follows the card's own scale (the card is drawn
+// at 0.77 of the canvas): on the Steam Deck the line came out at about 12 px, now about 13.
 // All of it is parented to the card root, so it rises with a hovered card and disappears with the screen.
 // Nothing here captures clicks. Colours and primitives are the shared ones in Ui.cs.
 using System;
@@ -25,8 +30,6 @@ namespace YazsCompanion
         const float ReasonH = 70f, ReasonW = 800f;                        // reason centre sits at -134 for scale 1
         const float RibbonFont = 42f, ReasonFont = 40f;
 
-        static readonly string[] Ordinal = { "", "", "2ND", "3RD", "4TH", "5TH", "6TH" };
-
         public static void Show(Card c)
         {
             try
@@ -41,18 +44,79 @@ namespace YazsCompanion
 
                 var ribbon = Ribbon(root, c.Button, s);
                 if (ribbon != null) ribbon.gameObject.SetActive(best);
-                if (best) Entrance(frame, ribbon, "badge:" + c.Button.Pointer);
+                if (best) { Entrance(frame, ribbon, "badge:" + c.Button.Pointer); Follow(c.Button, ribbon); }
 
                 var reason = Reason(root, c.Button, s);
                 if (reason != null)
                 {
-                    string prefix = best ? "" : "<b>" + (c.Rank < Ordinal.Length ? Ordinal[c.Rank] : "#" + c.Rank) + "</b>   ";
-                    reason.text = prefix + Clean(Names.Text(c.Reason));      // the rules' words; a name another mod lends in place of the game's
+                    // "2ND", or (0.14.0, B4) "AVOID" on a card scored under 1: said in words, the dull red is the second cue
+                    string prefix = best ? "" : Synergy.ReasonPrefix(c.Rank, c.Score);
+                    reason.text = prefix + Text(c);
                     reason.color = best ? Theme.Cream : (c.Score < 1 ? Theme.Rust : Theme.Grey);
                     reason.gameObject.SetActive(true);
                 }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[badge] " + e.Message); }
+        }
+
+        /// <summary>The line a card's reason shows (without its "2ND" / "AVOID"): its plain words (0.14.0, A1; the headline when it has
+        /// none), with the names another mod lends in place of the game's, in the glyphs the card font has. The [shown] log line
+        /// logs exactly this.</summary>
+        public static string Text(Card c) { return Wording.Safe(Names.Text(c.Display ?? c.Reason)); }
+
+        // ---- 0.14.0 (A1): the RECOMMENDED ribbon yields to the game's "Skill Tree 3 / 5" label on the hovered recommended card.
+        // That label (UIPowerupButtonSkill.skillTreeCurrentLevelGameObject) hangs right under the card where the ribbon is. The game
+        // never switches it off again: its card Animator fades the label's CanvasGroup in on select and out on deselect, and after
+        // the first hover the object stays active at alpha 0. So the ribbon follows that alpha, frame by frame from the HUD's tick:
+        // ribbon alpha = 1 - label alpha (no Harmony hook of its own). The gold frame and the reason line stay.
+        static UIPowerupButtonSkill _follow;       // the recommended card while it is a skill card (null: none)
+        static GameObject _ribbon; static CanvasGroup _ribbonGroup;       // held once: a per-frame .gameObject would allocate a wrapper each frame
+        static GameObject _label; static CanvasGroup _labelGroup; static bool _labelRead, _tickWarned;
+
+        static void Follow(UIPowerupButtonBase b, RectTransform ribbon)
+        {
+            Forget();
+            if (ribbon == null) return;
+            try
+            {
+                var skill = b.TryCast<UIPowerupButtonSkill>(); if (skill == null) return;
+                var g = ribbon.GetComponent<CanvasGroup>();
+                if (g == null) { g = ribbon.gameObject.AddComponent(Il2CppInterop.Runtime.Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); if (g == null) return; g.blocksRaycasts = false; g.interactable = false; }
+                g.alpha = 1f;
+                _follow = skill; _ribbon = ribbon.gameObject; _ribbonGroup = g;
+            }
+            catch { Forget(); }
+        }
+
+        /// <summary>Once a frame from the HUD's tick (P_HudTick): nothing unless a recommended skill card's ribbon is on screen.</summary>
+        public static void Tick()
+        {
+            if (_follow == null) return;
+            try
+            {
+                if (_ribbon == null || _ribbonGroup == null || !_ribbon.activeInHierarchy) return;
+                if (!_labelRead)
+                {
+                    _labelRead = true;
+                    _label = _follow.skillTreeCurrentLevelGameObject;
+                    _labelGroup = _label == null ? null : _label.GetComponent<CanvasGroup>();
+                }
+                float a = _label != null && _label.activeInHierarchy ? (_labelGroup != null ? _labelGroup.alpha : 1f) : 0f;
+                float want = Mathf.Clamp01(1f - a);
+                if (Mathf.Abs(_ribbonGroup.alpha - want) > 0.004f) _ribbonGroup.alpha = want;
+            }
+            catch (Exception e)
+            {
+                if (!_tickWarned) { _tickWarned = true; Plugin.Logger.LogWarning("[badge] the ribbon cannot follow the Skill Tree label (" + e.GetType().Name + " " + e.Message + "): it stays as it is"); }
+                Forget();
+            }
+        }
+
+        /// <summary>No recommended card to follow any more (its screen went, the HUD went); the ribbon is shown whole again.</summary>
+        public static void Forget()
+        {
+            try { if (_ribbonGroup != null) _ribbonGroup.alpha = 1f; } catch { }
+            _follow = null; _ribbon = null; _ribbonGroup = null; _label = null; _labelGroup = null; _labelRead = false;
         }
 
         // the offer appears: the gold frame settles onto the card, the ribbon unfolds from its middle, its tips ping
@@ -86,6 +150,7 @@ namespace YazsCompanion
         {
             try
             {
+                if (_follow != null && b != null && _follow.Pointer == b.Pointer) Forget();
                 var t = b.transform;
                 foreach (var n in new[] { FrameName, RibbonName, ReasonName }) { var x = t.Find(n); if (x != null) x.gameObject.SetActive(false); }
             }
@@ -156,10 +221,15 @@ namespace YazsCompanion
             return text;
         }
 
-        // one canvas unit is Screen.height / canvas height pixels (a third of a pixel on the Deck): enlarge the ribbon and
-        // the reason line until the reason font is at least MinTextPx tall, capped so both stay inside the band under the
-        // card (about 220 units); BadgeScale in the config overrides the automatic value
-        const float MinTextPx = 16f, MaxScale = 1.3f;
+        // one canvas unit is canvas pixel height / canvas height pixels (a third of a pixel on the Deck), and the card is drawn at
+        // a fraction of the canvas: its parents' scale times its own resting 0.95 (the prefab: 0.95 x 0.9 x 0.9 = 0.77). Enlarge the
+        // ribbon and the reason line until the reason font is at least MinTextPx tall, capped so both stay inside the band under
+        // the card (about 220 units); BadgeScale in the config overrides the automatic value.
+        // 0.14.0 (A1): up to 0.13.0 the card's own scale was left out - about 21 px on a 1440p monitor either way, but s = 1.2 and
+        // about 12 px on the Deck (canvas 3840 x 2400 on 800 pixels); now s = 1.3 there, about 13 px. The root's own scale is not
+        // read: the card's Selected animation grows it ~7 % on hover, and the badges are built while cards may still be moving.
+        const float MinTextPx = 16f, MaxScale = 1.3f, RestingRootScale = 0.95f;
+        static string _scaleSaid;
         static float Scale(RectTransform root)
         {
             float fixedScale = 0; try { fixedScale = Plugin.BadgeScale.Value; } catch { }
@@ -171,8 +241,21 @@ namespace YazsCompanion
                 if (canvas != null && canvas.rootCanvas != null) canvas = canvas.rootCanvas;
                 var crt = canvas == null ? null : canvas.transform.TryCast<RectTransform>();
                 float h = crt == null ? 0 : crt.rect.height; if (h <= 0) return 1f;
-                float px = ReasonFont * UnityEngine.Screen.height / h;
-                return Mathf.Clamp(MinTextPx / px, 1f, MaxScale);
+                float pixels = canvas.pixelRect.height; if (!(pixels > 0)) pixels = UnityEngine.Screen.height;
+                float canvasScale = canvas.transform.lossyScale.y, chain = RestingRootScale;
+                var up = root.parent;
+                if (up != null && canvasScale > 0) chain = up.lossyScale.y / canvasScale * RestingRootScale;
+                if (!(chain > 0.05f) || chain > 4f) chain = RestingRootScale;
+                float px = ReasonFont * chain * pixels / h;
+                float s = Mathf.Clamp(MinTextPx / px, 1f, MaxScale);
+                string key = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + "/" + h.ToString("0");
+                if (key != _scaleSaid)
+                {
+                    _scaleSaid = key;
+                    Plugin.Logger.LogInfo("[badge] scale s=" + s.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " px=" + (px * s).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                        + " (screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + ", canvas height " + h.ToString("0") + ", card scale " + chain.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ")");
+                }
+                return s;
             }
             catch { return 1f; }
         }
@@ -286,7 +369,5 @@ namespace YazsCompanion
             if (text != null) { try { text.overflowMode = TextOverflowModes.Ellipsis; } catch { } }
             return text;
         }
-
-        static string Clean(string s) { return (s ?? "").Replace("<", "").Replace(">", ""); }
     }
 }

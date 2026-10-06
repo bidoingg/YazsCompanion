@@ -14,7 +14,7 @@ namespace YazsCompanion
         static float _lastT = -1f;           // the run clock (CurrentModePlayTime) of the last offer: a selection screen pauses it
 
         /// <summary>The HUD went away (the run ended or the scene changed): no offer is open any more.</summary>
-        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); Quest.Forget(); }
+        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); WhyUi.Forget(); Quest.Forget(); Badge.Forget(); }
 
         // 0.12.2 (F13): a reroll or a banish fills the SAME screen again - AssignGeneratedElements runs a second time with no
         // Hide in between (every close clears _lastCards), on the clock the screen holds still. The game's isReroll flag was
@@ -105,8 +105,13 @@ namespace YazsCompanion
                     line.Append(") ").Append(c.Score.ToString("0.00")).Append(" - ").Append(string.Join("; ", c.Why));
                     Plugin.Logger.LogInfo(line.ToString());
                 }
+                // 0.14.0 (A1): what the cards SAID, as drawn (their plain words, the names another mod lends, without "2ND" / "AVOID"),
+                // best first - the [card] lines above keep the ranking's own headline
+                if (Plugin.ShowBadges.Value) Plugin.Logger.LogInfo(ShownLine(screen, snap.Clock, cards));
                 // 0.12.2: the rescue screen - is a reroll worth it? (judged again after a reroll: the replaced offer)
-                if (screen == Screen.SOS) RerollHint.OnOffer(sel, cards, snap, before != null);
+                // 0.14.0: and every other screen (REROLL / SKIP / BANISH: ScreenCall.cs); the WHY band of the selected card (WhyUi.cs)
+                RerollHint.OnOffer(sel, screen, cards, snap, before != null);
+                WhyUi.OnOffer(sel, screen, cards, snap.Clock, before != null);
                 if (Plugin.Verbose.Value) Describe.Offer(sel, screen.ToString());
                 _lastCards = cards; _lastScreen = screen; _lastClock = snap.Clock; _lastT = t;
                 _debugScreen = sel; _debugOfferAt = UnityEngine.Time.realtimeSinceStartup;
@@ -120,6 +125,7 @@ namespace YazsCompanion
             {
                 Panel.ScreenClosed();
                 RerollHint.Close();
+                WhyUi.Close();
                 string what = "skip / nothing";
                 Card picked = null;
                 if (clicked != null && _lastCards != null)
@@ -143,6 +149,22 @@ namespace YazsCompanion
         }
 
         static string Best(List<Card> cards) { foreach (var c in cards) if (c.Rank == 1) return c.Name; return "?"; }
+
+        // [shown] LevelUp 03:12: 1 'Level 3 of 4 - evolution unlocks at level 4' | 2 'The Rifleman build's main ability' | ...
+        static string ShownLine(Screen screen, string clock, List<Card> cards)
+        {
+            var sb = new StringBuilder("[shown] ");
+            sb.Append(screen).Append(' ').Append(clock).Append(':');
+            bool first = true;
+            var ranked = new List<Card>(cards); ranked.Sort((a, b) => a.Rank.CompareTo(b.Rank));
+            foreach (var c in ranked)
+            {
+                string text; try { text = Badge.Text(c); } catch (Exception e) { text = "(not read: " + e.GetType().Name + ")"; }
+                sb.Append(first ? " " : " | ").Append(c.Rank).Append(" '").Append(text).Append('\'');
+                first = false;
+            }
+            return sb.ToString();
+        }
 
         // ---- for the scripted pause walk ([Debug] PreviewPause) only: click the recommended card of the offer on screen ----
         static UIGameplayUpgradeSelection _debugScreen; static float _debugOfferAt;
@@ -195,10 +217,11 @@ namespace YazsCompanion
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.Update))]
     static class P_HudTick
     {
-        static void Postfix(UIGameplay __instance) { long t = Perf.Begin(); Fx.Tick(); Panel.Tick(__instance); Perf.End("tick.hud", t); }
+        // 0.14.0: WideMenus after the game's own frame switch of this frame (its Update ends with it)
+        static void Postfix(UIGameplay __instance) { long t = Perf.Begin(); Fx.Tick(); Badge.Tick(); Panel.Tick(__instance); WideMenus.Tick(__instance); Perf.End("tick.hud", t); }
     }
     [HarmonyPatch(typeof(UIGameplay), nameof(UIGameplay.OnDestroy))]
-    static class P_HudGone { static void Postfix() { Panel.Reset(); Advisor.Forget(); LoadoutUi.RunGone(); } }
+    static class P_HudGone { static void Postfix() { Panel.Reset(); Advisor.Forget(); LoadoutUi.RunGone(); WideMenus.Forget(); } }
 
     // the Training Yard: advice on the tab that is open, and the node under the cursor for its WHY row
     [HarmonyPatch(typeof(UIViewSkillTree), nameof(UIViewSkillTree.Update))]
@@ -218,7 +241,7 @@ namespace YazsCompanion
         static void Postfix()
         {
             long t = Perf.Begin();
-            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick(); RerollHint.Tick(); LoadoutUi.FallbackTick(); Plugin.CheckKeysOnce();
+            Fx.Tick(); Panel.FallbackTick(); Notice.Tick(); Preview.Tick(); Probe.Tick(); Menu.Tick(); Shots.Tick(); Warmup.Tick(); RerollHint.Tick(); WhyUi.Tick(); LoadoutUi.FallbackTick(); WideMenus.MenuTick(); Plugin.CheckKeysOnce();
             Perf.End("tick.master", t);
             Perf.Frame();
         }

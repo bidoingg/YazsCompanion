@@ -34,11 +34,12 @@ namespace YazsCompanion
         public bool AnyOf;                          // the objectives match "Any": a team rule is one way of several
         public bool Failed;                         // the game counts the quest as failed already
         public string NotThisRun;                   // why this run cannot complete the quest (its arena / mode / difficulty / leader condition refuses the run); null = it can
+        public string Muted;                        // 0.14.0 (C3): [Advice] QuestSteer is not On - why the rule is not followed (null: it is)
 
         /// <summary>The quest has a team rule at all (followed or not).</summary>
         public bool HasRule { get { return Min > 1 || Max < Full || Needs.Count > 0; } }
         /// <summary>The quest limits the team in a way the advice follows.</summary>
-        public bool Rules { get { return !AnyOf && !Failed && NotThisRun == null && HasRule; } }
+        public bool Rules { get { return !AnyOf && !Failed && NotThisRun == null && Muted == null && HasRule; } }
 
         static int Clamp(int n) { return n < 0 ? 0 : n > Full ? Full : n; }
         public void AtLeast(int n) { Min = Math.Max(Min, Clamp(n)); }
@@ -83,7 +84,7 @@ namespace YazsCompanion
         public QuestSos Judge(IList<string> squad)
         {
             var v = new QuestSos { Words = Words, Min = Min, Max = Max, Size = squad == null ? 0 : squad.Count };
-            if (!Rules) { v.Broken = AnyOf ? "its objectives match Any (a team rule is one way of several)" : Failed ? "the game counts the quest as failed" : NotThisRun; return v; }
+            if (!Rules) { v.Broken = Muted ?? (AnyOf ? "its objectives match Any (a team rule is one way of several)" : Failed ? "the game counts the quest as failed" : NotThisRun); return v; }
             foreach (var n in Needs) if (squad == null || !squad.Contains(n, StringComparer.OrdinalIgnoreCase)) v.Missing.Add(n);
             if (v.Size > Max) { v.Broken = "the team is " + v.Size + " already, the quest wants " + (Min == Max ? "" : "at most ") + Max; return v; }
             if (v.Missing.Count > Max - v.Size) { v.Broken = "no room left for " + string.Join(" + ", v.Missing) + " (team of " + v.Size + ", at most " + Max + ")"; return v; }

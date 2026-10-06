@@ -270,7 +270,8 @@ namespace YazsCompanion
             string why = pick != null ? pick.Why : Loadout.WhyOf(row, a, k);
             int room = 60 - m.Tag.Length - 2;
             m.Why1 = "<b>" + m.Tag + "</b>  " + Clip(why, Math.Max(10, room));
-            string L = "L" + Math.Max(row.Level, 1);
+            // 0.14.0 (A1): "level 2 · score 6.8", "replaces Thunder (+17 score)" - up to 0.13.0 "L2 · 6.82 points", "in for Thunder (+17.15)"
+            string L = "level " + Math.Max(row.Level, 1);
             string s = " " + sep + " ";
             Func<int, string> nm = id => { var r = a.RowOf(id); return r != null ? name(r.Badge) : id.ToString(IC); };
             if (v.Forced.Contains(row.Badge.Id)) { m.Why2 = pick != null && pick.Why2.Length > 0 ? pick.Why2 : "the game keeps it in for this run"; return; }
@@ -279,24 +280,24 @@ namespace YazsCompanion
                 var sw = v.Swaps.FirstOrDefault(x => x.Value == row.Badge.Id);
                 var kp = v.Kept.FirstOrDefault(x => x.Value == row.Badge.Id);
                 if (v.Kept.Any(x => x.Value == row.Badge.Id))
-                    m.Why2 = "#" + pick.Rank + " by points, but your " + nm(kp.Key) + " is within " + F2((Loadout.Centi(pick.Score) - Loadout.Centi(a.RowOf(kp.Key).Score)) / 100.0) + ": keep it";
+                    m.Why2 = "#" + pick.Rank + " by score, but your " + nm(kp.Key) + " is only " + Behind((Loadout.Centi(pick.Score) - Loadout.Centi(a.RowOf(kp.Key).Score)) / 100.0) + " behind - keep it";      // "only 0.3 score behind"
                 else if (pick.Source == "pin") m.Why2 = Loadout.PinnedOn(shape) + s + L;
-                else if (v.Swaps.Any(x => x.Value == row.Badge.Id)) m.Why2 = L + s + "in for " + nm(sw.Key) + " (+" + F2((Loadout.Centi(pick.Score) - Loadout.Centi(a.RowOf(sw.Key).Score)) / 100.0) + ")";
+                else if (v.Swaps.Any(x => x.Value == row.Badge.Id)) m.Why2 = L + s + "replaces " + nm(sw.Key) + " (" + Gain((Loadout.Centi(pick.Score) - Loadout.Centi(a.RowOf(sw.Key).Score)) / 100.0) + ")";
                 else if (v.Free.Contains(row.Badge.Id)) m.Why2 = L + s + "into a free slot";
-                else m.Why2 = L + s + F2(pick.Score) + " points";
-                if (pick.Close && pick.CloseTo != null && !v.Kept.Any(x => x.Value == row.Badge.Id)) m.Why2 += s + "close call: " + name(pick.CloseTo) + " " + F2(a.RowOf(pick.CloseTo.Id).Score);
+                else m.Why2 = L + s + "score " + F1(pick.Score);
+                if (pick.Close && pick.CloseTo != null && !v.Kept.Any(x => x.Value == row.Badge.Id)) m.Why2 += s + "close call: " + name(pick.CloseTo) + " (score " + F1(a.RowOf(pick.CloseTo.Id).Score) + ")";
                 return;
             }
             if (v.Kept.Any(x => x.Key == row.Badge.Id))
             {
                 var kp = v.Kept.First(x => x.Key == row.Badge.Id); var ap = a.PickOf(kp.Value);
-                m.Why2 = L + s + nm(kp.Value) + " would add only +" + F2((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + ": keep it";
+                m.Why2 = L + s + nm(kp.Value) + " would add only " + Gain((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + " - keep it";
                 return;
             }
             if (v.Swaps.Any(x => x.Key == row.Badge.Id))
             {
                 var sw = v.Swaps.First(x => x.Key == row.Badge.Id); var ap = a.PickOf(sw.Value);
-                m.Why2 = L + s + "out for " + nm(sw.Value) + " (+" + F2((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + ")";
+                m.Why2 = L + s + "replaced by " + nm(sw.Value) + " (" + Gain((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + ")";
                 return;
             }
             if (!row.Rated) { m.Why2 = "the Companion cannot read its effect"; return; }
@@ -307,12 +308,17 @@ namespace YazsCompanion
                 return;
             }
             // the reason itself is on line 1 already ("#16 of 18  nothing in this run deals Electric"): line 2 says what it means
-            if (row.Score <= 0.05) { m.Why2 = L + s + "never advised (" + F2(row.Score) + " points)"; return; }
-            if (row.Skipped) { m.Why2 = shape != null && shape.Auto ? "never on " + shape.BuildName + " (Auto)" : "you marked it never on your build"; return; }
+            if (row.Score <= 0.05) { m.Why2 = L + s + "never advised (score " + F1(row.Score) + ")"; return; }
+            if (row.Skipped) { m.Why2 = shape != null && shape.Auto ? "never on the " + shape.BuildName + " build" : "you marked it never on your build"; return; }
             if (m.Equipped) { m.Why2 = L + s + "fills a free slot"; return; }
             var last = a.Picks.LastOrDefault(p => !p.Forced);
-            m.Why2 = L + s + F2(row.Score) + " points" + (last != null ? " (#" + last.Rank + " has " + F2(last.Score) + ")" : "");
+            m.Why2 = L + s + "score " + F1(row.Score) + (last != null ? " (the #" + last.Rank + " badge scores " + F1(last.Score) + ")" : "");
         }
+
+        // a badge's score on the WHY line: one decimal; a gain or a gap, "+17 score" from 10 up, "+0.9 score" under it
+        static string F1(double x) { return x.ToString("0.0", IC); }
+        static string Gain(double d) { return "+" + (Math.Abs(d) >= 10 ? Math.Round(d).ToString("0", IC) : d.ToString("0.0", IC)) + " score"; }
+        static string Behind(double d) { return d < 0.05 ? "a hair" : d.ToString("0.0", IC) + " score"; }
 
         static void SummaryOf(LoadoutView v, Func<BadgeFacts, string> name, Func<string, string> className, string sep, Knowledge k)
         {
@@ -349,7 +355,12 @@ namespace YazsCompanion
             if (u != null)
                 v.Rows.Add(new SummaryRow { Kind = "unlock", Sep = sep, Label = "UNLOCK  " + name(u.Row.Badge) + " (" + className(u.Row.Badge.Owner) + " tree) " + (u.Pinned ? "- " + Loadout.PinnedOn(a.Input != null ? a.Input.Shape : null) : "would be #" + u.WouldBe) });
             else if (a.Level != null)
-                v.Rows.Add(new SummaryRow { Kind = "yard", Sep = sep, Label = "YARD  " + name(a.Level.Badge) + " " + a.Level.From + ">" + a.Level.To + ": +" + Loadout.Fixed(a.Level.Gain, 1) + " for " + a.Level.Cost + " " + className(a.Level.Badge.Owner) + " points" });
+            {
+                // 0.14.0 (A1): "TRAINING YARD  Tough to level 3: best use of 3 Tank points" (it read "YARD Tough 2>3: +3.4 for 3 Tank points")
+                string head = "TRAINING YARD  " + name(a.Level.Badge) + " to level " + a.Level.To, pts = a.Level.Cost + " " + className(a.Level.Badge.Owner) + " points";
+                string label = head + ": best use of " + pts;
+                v.Rows.Add(new SummaryRow { Kind = "yard", Sep = sep, Label = label.Length <= 64 ? label : head + " (" + pts + ")" });
+            }
         }
 
         // ------------------------------------------------------------------------------------------------ the EQUIP plan (OD1)

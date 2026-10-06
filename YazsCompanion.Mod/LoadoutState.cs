@@ -669,8 +669,8 @@ namespace YazsCompanion
             ReadPowers();
             var recruits = k.BadgeRules.RecruitWeight > 0 ? Recruits(leader) : null;
             var inp = Loadout.Prepare(leader, build, mode, difficulty, d, k, PowerFactsOf, recruits);
-            // a build the player did not select (a lent pack default Auto follows) is named "X (Auto)" in the reasons, as in a run
-            // (F02, Builds.Your): the player's own build is the one the selection names
+            // a build the player did not select (a lent pack default Auto follows) is named "the X build" in the reasons, never "your"
+            // (F02, Builds.Your; 0.14.0: no "(Auto)" on screen): the player's own build is the one the selection names
             string sel = Builds.SelectedId(leader);
             inp.Shape.Auto = build != null && (sel == Builds.AutoId || !string.Equals(sel, build.Id, StringComparison.OrdinalIgnoreCase));
             double clip = ClipShare(leader, build);

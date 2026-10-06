@@ -258,9 +258,10 @@ namespace YazsCompanion
                 {
                     if (!font.HasCharacter('·', true, true)) _sep = "  |  ";
                     if (!font.HasCharacter('—', true, true)) _dash = " - ";
+                    if (!font.HasCharacter('»', true, true)) _step = ">";
                 }
             }
-            catch { _sep = "  |  "; _dash = " - "; }
+            catch { _sep = "  |  "; _dash = " - "; _step = ">"; }
             _strip = root; _text = text;
             return true;
         }
@@ -369,7 +370,9 @@ namespace YazsCompanion
         {
             return "<size=" + LabelSize + "><b>" + Gold(label) + "</b></size><indent=" + LabelW + ">" + value + "</indent>";
         }
-        static string Item(TBuy b) { return "<nobr>" + (b.Order > 0 ? Gold("<b>" + b.Order + "</b>") + " " : "") + b.Node.Name + " " + Dim(b.From + ">" + b.To) + "</nobr>"; }
+        // a node's level step, "2»3" (0.14.0: the arrow the card fonts share, as on the cards and the PLAN readout; '>' without it)
+        static string _step = "»";
+        static string Item(TBuy b) { return "<nobr>" + (b.Order > 0 ? Gold("<b>" + b.Order + "</b>") + " " : "") + b.Node.Name + " " + Dim(b.From + _step + b.To) + "</nobr>"; }
 
         static void Render(int terse)
         {
@@ -387,7 +390,7 @@ namespace YazsCompanion
             if (_advice.SaveFor != null)
             {
                 int need = Math.Max(1, _advice.SaveFor.Cost - _advice.Left);
-                then.Add("<nobr>save " + need + " more for " + _advice.SaveFor.Node.Name + " " + Dim(_advice.SaveFor.From + ">" + _advice.SaveFor.To) + "</nobr>");
+                then.Add("<nobr>save " + need + " more for " + _advice.SaveFor.Node.Name + " " + Dim(_advice.SaveFor.From + _step + _advice.SaveFor.To) + "</nobr>");
             }
             var later = _advice.Later.Where(b => _advice.SaveFor == null || b.Node != _advice.SaveFor.Node).Take(2).Select(b => "<nobr>" + b.Node.Name + "</nobr>").ToList();
             if (later.Count > 0 && (terse < 1 || then.Count == 0)) then.Add(Dim((then.Count > 0 ? "after that " : "next ") + string.Join(", ", later)));

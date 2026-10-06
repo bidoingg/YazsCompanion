@@ -3,7 +3,8 @@
   Publishes a release of the YAZS Companion mod. Builds (and deploys to the local game), packages the
   Steam Deck / Windows zip, writes latest.json (version, DLL url, SHA-256) for the in-game auto-updater,
   tags the commit, creates the GitHub release with the versioned DLL, latest.json and the zip, and copies
-  the zip into the Drive folder for hand installs.
+  the zip into the Drive folder for hand installs. First (0.14.0) the maintainer's private name scan, where it is checked
+  out next to this repository: a hit stops the release before anything is built.
 
   The in-game updater reads https://github.com/<repo>/releases/latest/download/latest.json, so every
   non-draft, non-prerelease release becomes "latest" the moment it is published.
@@ -24,6 +25,10 @@ param(
     [switch]$Draft
 )
 $ErrorActionPreference = "Stop"
+# the maintainer's private name scan, first (only where that tree is checked out next to this one; other clones skip it):
+# no name of another mod's content packs may reach this public repository
+$scan = Join-Path $PSScriptRoot '..\overhaul\tools\franchise_scan.ps1'
+if (Test-Path $scan) { & $scan; if ($LASTEXITCODE -ne 0) { throw 'franchise scan: pack names under mod\' } }
 $modDir = Join-Path $PSScriptRoot "YazsCompanion.Mod"
 $dist = Join-Path $PSScriptRoot "dist"
 $version = (Select-String -Path (Join-Path $modDir "Plugin.cs") -Pattern 'VERSION = "([^"]+)"').Matches[0].Groups[1].Value

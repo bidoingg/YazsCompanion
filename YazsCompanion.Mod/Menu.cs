@@ -890,7 +890,7 @@ namespace YazsCompanion
 
             c.Desc = () => b == null
                 ? (viaAuto != null ? "AUTO - while " + viaAuto.Pack + " lends its builds, Auto follows its " + viaAuto.Name + "; select any card to follow that instead. Otherwise: no" : "AUTO. No")
-                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, tag specials within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab." + BadgeSentence(who, viaAuto)
+                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, 10-tag effects within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab." + BadgeSentence(who, viaAuto)
                 : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]") + BadgeSentence(who, b);
         }
 
@@ -909,7 +909,7 @@ namespace YazsCompanion
                 d => { b.Style = styles[(Array.IndexOf(styles, b.Style) + d + styles.Length) % styles.Length]; changed(); },
                 () => b.Style == BuildStyle.Weapon ? "WEAPON FIRST: every weapon level comes before any ability level. Evolutions, a recruit's first weapon and the next weapon tier are always on top."
                     : b.Style == BuildStyle.Ability ? "ABILITIES FIRST: the abilities in your order come before weapon levels; the weapon fills in. For support and ability-damage builds."
-                    : "BALANCED: each ability once early, then the weapon and your #1 ability side by side, the other abilities after."); y += step;
+                    : "BALANCED: each ability once early, then the weapon and your main ability side by side, the other abilities after."); y += step;
 
             // 0.12.2 (F05): the fork has THREE branches - the fifth weapon of a line is a third tier-3 weapon, not a final one
             var branches = new List<string> { "" }; if (kit != null) branches.AddRange(kit.Branches);
@@ -930,7 +930,7 @@ namespace YazsCompanion
                     Text(row, "Name", 140, 0, 800, rh, 48f, Theme.White, Say(a), TextAlignmentOptions.Left, true);
                     Cycler(_body, "ed:rank:" + a, x + 960, y, 640, rh, "", null, () => b.Skips(a) ? "SKIP" : "#" + (b.PriorityOf(a) + 1),
                         d => { Rerank(b, a, d); changed(); _focusKey = "ed:rank:" + a; _dirty = true; },
-                        () => b.Skips(a) ? Say(a) + " is skipped: the advice ranks it under everything else for this build." : Say(a) + " is #" + (b.PriorityOf(a) + 1) + " in your order. #1 is the ability to focus; new abilities are suggested in this order.", 560f);
+                        () => b.Skips(a) ? Say(a) + " is skipped: the advice ranks it under everything else for this build." : Say(a) + " is #" + (b.PriorityOf(a) + 1) + " in your order. #1 is the build's main ability; new abilities are suggested in this order.", 560f);
                     Cycler(_body, "ed:evo:" + a, x + 1630, y, 1170, rh, "", null, () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "Evolution: live" : Evo(b.EvolutionOf(a)),
                         d => { int i = Math.Max(0, evos.FindIndex(s => string.Equals(s, b.EvolutionOf(a) ?? "", StringComparison.OrdinalIgnoreCase))); string pick = evos[(i + d + evos.Count) % evos.Count]; if (pick.Length == 0) b.Evolution.Remove(a); else b.Evolution[a] = pick; changed(); },
                         () => string.IsNullOrEmpty(b.EvolutionOf(a)) ? "The evolution of " + Say(a) + " is decided live: the one that shares a damage type with what your squad deals, or carries a tag a team passive boosts (" + Evo(ab[1]) + " or " + Evo(ab[2]) + ")."
@@ -1002,32 +1002,75 @@ namespace YazsCompanion
 
         static void BuildAdvice()
         {
-            float x = 320f, w = 3200f, y = 360f, rh = 128f, step = 136f;       // 0.13.0: ten rows - the tenth ends at 1808, above the footer rule (1846)
+            float x = 320f, w = 3200f, y = 360f, rh = 116f, step = 124f;       // 0.14.0: eleven rows - the eleventh ends at 1804, above the footer rule (1846)
             Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "The standing orders of the advice, saved as you change them and followed from the next offer on. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
-            y += 96f;
+            y += 88f;
             Cycler(_body, "ad:style", x, y, w, rh, "Level-up style (survivors on Auto)", "chevrons", () => Words(Plugin.AdviceStyle.Value.ToString()), d => Plugin.AdviceStyle.Value = Next(Plugin.AdviceStyle.Value, d),
                 () => Plugin.AdviceStyle.Value == LevelUpStyle.WeaponFirst ? "WEAPON FIRST: every weapon level before any ability level - the rule of the mod up to 0.9. Some guides swear by it; others, and the ability-centred survivors, do not."
                     : Plugin.AdviceStyle.Value == LevelUpStyle.AbilitiesFirst ? "ABILITIES FIRST: abilities before weapon levels; the weapon fills in. Evolutions, a recruit's first weapon and new weapon tiers stay on top."
-                    : "BALANCED (default): each ability once early, then the weapon and the focus ability side by side, the rest after. The human guides disagree on 'weapon first', so this sits between them."); y += step;
+                    : "BALANCED (default): each ability once early, then the weapon and the main ability side by side, the rest after. The human guides disagree on 'weapon first', so this sits between them."); y += step;
             Cycler(_body, "ad:timing", x, y, w, rh, "Run clock", "clock", () => Words(Plugin.AdviceTiming.Value.ToString()), d => Plugin.AdviceTiming.Value = Next(Plugin.AdviceTiming.Value, d),
-                () => "What pays back over the rest of the run - XP, luck, pickup range, a fresh ability, a recruit - is worth the most early and little near the end; what works at once (a weapon tier, the level that completes an ability, a tag special within reach) keeps its value. " + (Plugin.AdviceTiming.Value == Strength.Off ? "OFF: the clock is ignored." : Plugin.AdviceTiming.Value == Strength.Strong ? "STRONG: the late-run cut-off is sharper." : "")); y += step;
+                () => "What pays back over the rest of the run - XP, luck, pickup range, a fresh ability, a recruit - is worth the most early and little near the end; what works at once (a weapon tier, the level that completes an ability, a 10-tag effect within reach) keeps its value. " + (Plugin.AdviceTiming.Value == Strength.Off ? "OFF: the clock is ignored." : Plugin.AdviceTiming.Value == Strength.Strong ? "STRONG: the late-run cut-off is sharper." : "")); y += step;
             Cycler(_body, "ad:mode", x, y, w, rh, "Game mode and difficulty", "skull", () => Plugin.AdviceModeAware.Value ? "Steer the advice" : "Ignore", d => Plugin.AdviceModeAware.Value = !Plugin.AdviceModeAware.Value,
                 () => "The mode sets the horizon (Default 20:00, Hardcore and Boss Rush 10:00, One Hit 5:00, Extermination by waves, Endurance and Infinite open-ended: economy never fades), doubles boss damage in Boss Rush, drops health picks and raises crowd control in One Hit, and weighs survival more in Hardcore and on higher difficulties."); y += step;
             Cycler(_body, "ad:synergy", x, y, w, rh, "Squad synergy", "link", () => Words(Plugin.AdviceSynergy.Value.ToString()), d => Plugin.AdviceSynergy.Value = Next(Plugin.AdviceSynergy.Value, d),
-                () => "Read live: every level adds a tag point to each damage type it deals (+2% for everything dealing it, a special effect at 10), so picks that share a type with your squad are worth more; team passives boost grenades, turrets, taunts and deployables across the squad; evolutions are chosen by what they add for THIS squad."); y += step;
-            Cycler(_body, "ad:tags", x, y, w, rh, "Damage type tags", "hash", () => Plugin.AdviceTags.Value == TagStrategy.Auto ? "Auto: stack the main type" : Plugin.AdviceTags.Value == TagStrategy.Spread ? "Spread" : "Always " + Plugin.AdviceTags.Value, d => Plugin.AdviceTags.Value = Next(Plugin.AdviceTags.Value, d),
-                () => "AUTO stacks the type your squad deals most (the guides: one main type, maybe a second, avoid totals under 10). SPREAD gives no stacking bonus. Or name one type to always favour on Research Pods, items and level-ups."); y += step;
+                () => "Read live: every level adds a tag point to each damage type it deals (+2% for everything dealing it, its 10-tag effect at 10 points), so picks that share a type with your squad are worth more; team passives boost grenades, turrets, taunts and deployables across the squad; evolutions are chosen by what they add for THIS squad."); y += step;
+            Cycler(_body, "ad:tags", x, y, w, rh, "Damage type tags", "hash", () => Plugin.AdviceTags.Value == TagStrategy.Auto ? "Auto: favour the main type" : Plugin.AdviceTags.Value == TagStrategy.Spread ? "Spread" : "Always " + Plugin.AdviceTags.Value, d => Plugin.AdviceTags.Value = Next(Plugin.AdviceTags.Value, d),
+                () => "AUTO favours the type your squad deals most, toward its 10-tag effect (the guides: one main type, maybe a second, avoid totals under 10); the readout's TAGS row names it as 'next Pod'. SPREAD favours none. Or name one type to always favour on Research Pods, items and level-ups."); y += step;
             Cycler(_body, "ad:goal", x, y, w, rh, "What the run is for", "coin", () => Words(Plugin.AdviceGoal.Value.ToString()), d => Plugin.AdviceGoal.Value = Next(Plugin.AdviceGoal.Value, d),
                 () => "WIN THE RUN: cash never helps the run itself, so cash bonuses rank low and XP fades with the clock. FARM PROGRESS: cash, XP and luck keep their value to the end, and a recruit close to a new rank counts for more."); y += step;
             Cycler(_body, "ad:caution", x, y, w, rh, "Caution", "heart", () => Words(Plugin.AdviceCaution.Value.ToString()), d => Plugin.AdviceCaution.Value = Next(Plugin.AdviceCaution.Value, d),
                 () => "How much max health, armor, regeneration and healing weigh. They already weigh more late, on higher difficulties and while the squad is hurting; this scales all of that."); y += step;
             Cycler(_body, "ad:recruit", x, y, w, rh, "SOS signals late in a run", "radio", () => Words(Plugin.AdviceRecruit.Value.ToString()), d => Plugin.AdviceRecruit.Value = Next(Plugin.AdviceRecruit.Value, d),
                 () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark."); y += step;
-            // 0.12.2: the ninth row still ends above the footer rule (1640 + 128 < 1846)
-            Cycler(_body, "ad:reroll", x, y, w, rh, "Reroll hint on the rescue screen", "diamond", () => Plugin.AdviceRerollHint.Value ? "On" : "Off", d => Plugin.AdviceRerollHint.Value = !Plugin.AdviceRerollHint.Value,
-                () => "ON: when a survivor who could still come - unlocked, not on the squad, not on the cards - rates clearly higher than every card on the rescue screen (0.75 or more on the cards' own scores) and you have a reroll left, the game's Reroll button gets a gold frame and a line over it: REROLL - Tank would rate higher (5.9 vs 4.6). Checked again after every reroll, gone with the pick. It never rerolls for you."); y += step;
+            // 0.12.2: the reroll hint on the rescue screen; 0.14.0: the action hints of every selection screen in the same row
+            // ([Advice] RerollHint + ActionHints), so the tab keeps its eleven rows
+            Cycler(_body, "ad:hints", x, y, w, rh, "Hints on the selection screens", "diamond", () => HintsText(), d => HintsStep(d), () => HintsHelp()); y += step;
+            // 0.14.0 (C3): how hard the active quest steers the cards
+            Cycler(_body, "ad:quest", x, y, w, rh, "The active quest", "crosshair", () => QuestText(Plugin.AdviceQuest.Value), d => Plugin.AdviceQuest.Value = Next(Plugin.AdviceQuest.Value, d),
+                () => Plugin.AdviceQuest.Value == QuestSteer.Off ? "OFF: the quest is not followed at all - its team rule on the rescue screen neither. The game still counts it."
+                    : Plugin.AdviceQuest.Value == QuestSteer.InfoOnly ? "INFO ONLY: the readout's QUEST row says what the quest still asks and the log gives the reasons, but no card moves for it (its team rule neither)."
+                    : "ON (default): what the quest asks for comes first, with a 'Quest: ...' line under the card - the weapon it wants maxed, the ability or evolution it wants, a health item, the Research Pods and trainings it counts; a pick that would fail it reads AVOID. Kills with a survivor and the like weigh a little. Your build and tag plan stay; the readout gets a QUEST row while a rule changes something."); y += step;
             Cycler(_body, "ad:loadout", x, y, w, rh, "Badge advice on the run setup screen", "diamond", () => LoadoutText(Plugin.AdviceLoadout.Value), d => Plugin.AdviceLoadout.Value = Next(Plugin.AdviceLoadout.Value, d),
                 () => LoadoutHelp(Plugin.AdviceLoadout.Value));
+        }
+        static string QuestText(QuestSteer q) { return q == QuestSteer.On ? "Steer the advice" : q == QuestSteer.InfoOnly ? "Info only" : "Off"; }
+
+        // ---- 0.14.0: the hints row - four settings of [Advice] RerollHint (the rescue screen) and ActionHints (every other screen)
+        static readonly HintActions[] HintSets = { HintActions.Reroll | HintActions.Skip, HintActions.Reroll | HintActions.Skip | HintActions.Banish, HintActions.None, HintActions.None };
+        static readonly bool[] HintRescue = { true, true, true, false };
+        static readonly string[] HintNames = { "Reroll and skip", "Reroll, skip, banish", "Rescue screen only", "Off" };
+        static int HintsAt()
+        {
+            for (int i = 0; i < HintSets.Length; i++) if (Plugin.AdviceActionHints.Value == HintSets[i] && Plugin.AdviceRerollHint.Value == HintRescue[i]) return i;
+            return -1;
+        }
+        static string HintsText()
+        {
+            int i = HintsAt();
+            if (i >= 0) return HintNames[i];
+            var a = Plugin.AdviceActionHints.Value;
+            return "Custom: " + (a == HintActions.None ? "none" : a.ToString().ToLowerInvariant()) + (Plugin.AdviceRerollHint.Value ? " + rescue" : "");
+        }
+        static void HintsStep(int d)
+        {
+            int i = HintsAt(), n = HintSets.Length;
+            int next = i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n;
+            if (Plugin.AdviceActionHints.Value != HintSets[next]) Plugin.AdviceActionHints.Value = HintSets[next];
+            if (Plugin.AdviceRerollHint.Value != HintRescue[next]) Plugin.AdviceRerollHint.Value = HintRescue[next];
+        }
+        static string HintsHelp()
+        {
+            const string rescue = "the rescue screen: when a survivor who could still come rates clearly higher than every card (0.75 or more on the cards' own scores) and a reroll is left, the Reroll button gets a gold frame and a line over it - REROLL - Tank would fit this squad better.";
+            const string others = "Level-ups, chests, trainings and Research Pods: REROLL - the best card here is weak for this squad, when the best card is weak for the screen and a reroll is left ('2 rerolls left' when few are); SKIP when every card would hurt the squad, or the skip's cash and heal beat them all.";
+            switch (HintsAt())
+            {
+                case 0: return "REROLL AND SKIP (default): " + rescue + " " + others + " One hint at most per screen. Nothing is pressed for you.";
+                case 1: return "REROLL, SKIP, BANISH: as the default, and BANISH - Medical Drone - the build skips it, for a card the build skips or that would hurt the squad (never one the game will not banish, nor one the active quest names). A banish is for the whole run.";
+                case 2: return "RESCUE SCREEN ONLY (the hints of 0.13.0): " + rescue;
+                case 3: return "OFF: no hints on any selection screen. The [squad] hint lines, with their reasons, are still written to the log.";
+                default: return "CUSTOM (set in the cfg: [Advice] ActionHints = " + Plugin.AdviceActionHints.Value + ", RerollHint = " + Plugin.AdviceRerollHint.Value + "). Left or right picks one of the four settings.";
+            }
         }
 
         // the steps of "Readout size": 70 % .. 200 % of the automatic size
@@ -1037,16 +1080,18 @@ namespace YazsCompanion
         {
             // the settings on the left; on the right the PLAN readout itself, as it will look in play with the settings as
             // they stand - same canvas geometry as the HUD, so the same pixels
-            float x = 120f, w = 2060f, y = 352f, rh = 124f, step = 142f, vw = 800f;
+            float x = 120f, w = 2060f, y = 352f, rh = 116f, step = 124f, vw = 800f;      // 0.14.0: eleven rows (the ADVICE tab's geometry) - the eleventh ends at 1800, above the footer rule (1846)
             Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws. Every change is saved as you make it and applies at once; the preview is the PLAN readout at its real size.", TextAlignmentOptions.Left);
             y += 92f;
             float top = y;
             Func<bool, string> onOff = v => v ? "On" : "Off";
             Action redraw = () => { _pvDirty = true; };
             Cycler(_body, "di:badges", x, y, w, rh, "Card verdicts", "diamond", () => onOff(Plugin.ShowBadges.Value), d => Plugin.ShowBadges.Value = !Plugin.ShowBadges.Value,
-                () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason under every offered card.", vw); y += step;
+                () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason in plain words under every offered card (the ribbon steps aside while the game shows its Skill Tree label). Off also hides the WHY band.", vw); y += step;
+            Cycler(_body, "di:why", x, y, w, rh, "WHY band on the selected card", null, () => onOff(Plugin.ShowWhy.Value), d => Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value,
+                () => "While a card is selected - the mouse over it, or the controller's focus on it - a band under the cards says the rest of its reasons and what the first card has over it (CLOSE CALL when the first two are nearly even). With a controller a card is always selected, so the band is always up. Needs Card verdicts.", vw); y += step;
             Cycler(_body, "di:panel", x, y, w, rh, "PLAN readout during play", "eye", () => onOff(Plugin.ShowPanel.Value), d => { Plugin.ShowPanel.Value = !Plugin.ShowPanel.Value; redraw(); },
-                () => "The see-through readout of what to pick next: a row per survivor, then TAGS / SOS / GRAB.", vw); y += step;
+                () => "The see-through readout of what to pick next: a row per survivor, then QUEST what the active quest still asks - TAGS damage type tags (their effect at 10) - SOS who to recruit - GRAB items worth a chest pick.", vw); y += step;
             Cycler(_body, "di:size", x, y, w, rh, "Readout size", null, () => Mathf.RoundToInt(Plugin.PanelSize.Value * 100f) + "%" + (Mathf.Abs(Plugin.PanelSize.Value - 1f) < 0.01f ? "  (automatic)" : ""),
                 d => { Plugin.PanelSize.Value = SizeStep(Plugin.PanelSize.Value, d); redraw(); },
                 () => "How large the readout is drawn. 100% is the automatic size, which follows the screen: its text is 1.9% of the screen's height and never under 15 pixels, whatever the resolution or aspect. Raise it if the advice is hard to read from where you sit, lower it to see more of the field. The preview shows the real size.", vw); y += step;
@@ -1062,6 +1107,7 @@ namespace YazsCompanion
                 () => "Number the nodes worth buying with the points on hand and print the SPEND / THEN / WHY strip. It follows the build you selected for that survivor.", vw); y += step;
             Cycler(_body, "di:motion", x, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => { Plugin.Motion.Value = !Plugin.Motion.Value; redraw(); },
                 () => "Animate what the mod draws. During play nothing loops; the flair is kept for menus like this one.", vw); y += step;
+            Cycler(_body, "di:wide", x, y, w, rh, "Menus on wide screens", null, WideMenus.Label, WideMenus.Step, WideMenus.Help, vw); y += step;
 
             // ---- the preview window: a stand-in for the field (dark ground, a few bright effects to judge the backing
             //      against), the readout in its corner, a caption with the size in pixels
