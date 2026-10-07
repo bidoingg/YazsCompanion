@@ -5,9 +5,9 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
-## 0.15.0 - in progress (not released)
+## 0.15.0 (2026-10-07) - accurate on 1.0.2
 
-Accurate on the game's 1.0.2. What is built so far; the notes are finished at the release.
+Accurate on the game's 1.0.2, readable on every screen, and a release that checks itself.
 
 - **Card text size** (DISPLAY tab, `[General] BadgeScale`): Auto / 90% / 115% / 130% / 150% - a share of what Auto draws
   on that screen, so 115% is larger than Auto on a monitor (20.5 -> 23.6 px at 1440p) as on the Steam Deck (16 -> 18.4 px)
@@ -83,6 +83,16 @@ Accurate on the game's 1.0.2. What is built so far; the notes are finished at th
   lent build packs); `ItemBench --check-log` says PASS / FAIL per check for a log, `tools/advice_audit.py` what the player
   did with the advice; the README lost its release history to this file and its "Next steps" to a short "Open checks"
   list.
+
+
+Checked in two scripted series on the PC (10-06 23:07 - 10-07 08:12; the 3440x1440 monitor and a true 1280x800 window):
+the pause, menu and run setup walks at both sizes (the ADVICE / DISPLAY scroll lines and shots, Card text size Auto -> 150% at
+21 -> 31 px on the PC and Auto -> 130% at 16 -> 19 px in the Deck window, `[badge] scale s=1.56 px=16.0 ... 42 characters` at
+1280x800, the wide menus Off / On cycle, the run setup's slot markers on their own layer), a level-up at both sizes with the WHY
+in the left and the right wing at 21:9 (a hover over cards 2 and 3, `4 of 4 shown`) and the band at 16:10, the rescue screen's
+SOS badges and WHY panel, the results screen at 21:9, and 0 Companion warnings over the series' sessions. The bench: all as
+wanted. Not seen yet: a four-card offer's third card (it keeps the left wing), the first-input line on a real pad, and the
+Training Yard purchase lines - all for the next real sessions.
 
 ## 0.14.0 (2026-10-05) - the review of a live run
 

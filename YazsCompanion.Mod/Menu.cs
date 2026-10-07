@@ -1518,6 +1518,7 @@ namespace YazsCompanion
         static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
         static WideMode _ppWide; static bool _ppWideChanged, _ppWideWas; static int _ppRestores;      // 0.15.0 (C15-08): the wide Off / back step
         static float _ppLastPick = -10f; static int _ppPauseTries;
+        static float _ppResumeAt;           // stage 61: when the walk resumed the run (the first offer is awaited from here)
         internal static bool FakePauseOnce;
 
         // Quick Run does not always start the run: it can stop at SELECT TEAM LEADER, and it can open the whole run
@@ -1905,7 +1906,23 @@ namespace YazsCompanion
                             Plugin.Logger.LogInfo("[menu] pause walk: " + (pm != null ? "resuming the run" : "no pause menu to resume from"));
                             if (pm != null) pm.OnClickClose();
                             Shots.Later(2.5f, "pause4_resumed", true);
-                            _ppStage = 7; _ppAt = now + 5f; return;
+                            _ppStage = 61; _ppResumeAt = now; _ppAt = now + 1f; return;
+                        }
+                    case 61:
+                        {   // (10-07 series: in both walks the first level-up came at 0:42-0:46, AFTER the 40 s pause - the walk then ended
+                            // and put the display back before that offer drew, so the true-Deck window never showed a level-up and the hover
+                            // tour never ran) without an answered offer yet, the walk waits here for the first one - its 'offer' / 'why'
+                            // shots, the hover tour and the pick happen while the selection screen holds the run clock - and only then puts
+                            // the settings and the display back. Bounded by the play clock (48 s: under the 50 s after which a killed run
+                            // leaves a save) and 20 s of wall clock.
+                            bool playing = false; float t = 0f;
+                            try { var gm = GameplayMaster.s_instance; if (gm != null && gm.currentGameMode != null) { playing = gm.currentGameMode.IsGameplayActive; t = gm.currentGameMode.CurrentModePlayTime; } } catch { }
+                            if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }
+                            if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 1.0f; return; }
+                            bool waiting = Advisor.DebugPicks == 0 && t < 48f && now - _ppResumeAt < 20f;
+                            if (waiting || now - _ppLastPick < 1.0f) { _ppAt = now + 0.25f; return; }
+                            if (Advisor.DebugPicks == 0) Plugin.Logger.LogInfo("[menu] pause walk: no offer came after resuming (play clock " + t.ToString("0.0") + " s) - the walk ends without one");
+                            _ppStage = 7; _ppAt = now + 0.5f; return;
                         }
                     case 7:
                         // the walk's two changes are the walk's: the player's settings go back as they were - when it made
