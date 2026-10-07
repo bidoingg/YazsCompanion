@@ -344,7 +344,7 @@ namespace YazsCompanion.Bench
             Console.WriteLine("  " + (ok ? "ok  " : "BAD ") + " " + id + " " + what + (string.IsNullOrEmpty(detail) ? "" : ": " + detail));
         }
 
-        const string Healthy = @"==== 2030-01-02 10:00:00 session start ====
+        static readonly string Healthy = Lf(@"==== 2030-01-02 10:00:00 session start ====
 10:00:01.000 [Info] [hooks] 38 methods patched (class by class; 0 patch classes failed)
 10:00:01.001 [Info] YAZS Companion 9.9.9 (abc1234) loaded from X; 38 methods patched; badges on
 10:00:01.002 [Info] [why] hooks: OnSelected Hashtag ok, Item ok, Military ok, Skill ok, SOS ok | OnDeselected (one body for every card class) ok
@@ -355,7 +355,10 @@ namespace YazsCompanion.Bench
 10:01:10.003 [Info] [card] #3      Potato (item) 0.60 - economy
 10:01:10.004 [Info] [shown] LevelUp 00:30: 1 'The Rifleman build's main ability' | 2 'Level 2 of 4 - this build levels abilities first' | 3 'More XP and luck over the run'
 10:01:13.000 [Info] [pick] LevelUp 00:30: Medical Drone (#1, the pick)
-";
+");
+        // the literal holds the file's own line endings: CRLF where git checks the source out with them (the CI runner), so the
+        // cases' line-by-line replaces (ending in a bare LF) would miss - one form for every checkout
+        static string Lf(string s) => s.Replace("\r\n", "\n");
 
         static List<Result> RunText(string log, string since = "last", bool? wide = null, string wideFrom = null)
         {
