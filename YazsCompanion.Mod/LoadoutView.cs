@@ -296,8 +296,11 @@ namespace YazsCompanion
             }
             if (v.Swaps.Any(x => x.Key == row.Badge.Id))
             {
+                // 0.15.x (C-m6 of the 10-07 review): line 1 led with the badge's own merit ("SWAP OUT  survival picks always help"), which
+                // argued for keeping it; it leads with the comparison now ("SWAP OUT  Critical scores more here (+1.5)"), the merit on line 2
                 var sw = v.Swaps.First(x => x.Key == row.Badge.Id); var ap = a.PickOf(sw.Value);
-                m.Why2 = L + s + "replaced by " + nm(sw.Value) + " (" + Gain((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + ")";
+                m.Why1 = "<b>" + m.Tag + "</b>  " + Clip(nm(sw.Value) + " scores more here (" + Plus((Loadout.Centi(ap.Score) - Loadout.Centi(row.Score)) / 100.0) + ")", Math.Max(10, room));
+                m.Why2 = L + s + Clip(why, 44);
                 return;
             }
             if (!row.Rated) { m.Why2 = "the Companion cannot read its effect"; return; }
@@ -317,7 +320,8 @@ namespace YazsCompanion
 
         // a badge's score on the WHY line: one decimal; a gain or a gap, "+17 score" from 10 up, "+0.9 score" under it
         static string F1(double x) { return x.ToString("0.0", IC); }
-        static string Gain(double d) { return "+" + (Math.Abs(d) >= 10 ? Math.Round(d).ToString("0", IC) : d.ToString("0.0", IC)) + " score"; }
+        static string Gain(double d) { return Plus(d) + " score"; }
+        static string Plus(double d) { return "+" + (Math.Abs(d) >= 10 ? Math.Round(d).ToString("0", IC) : d.ToString("0.0", IC)); }
         static string Behind(double d) { return d < 0.05 ? "a hair" : d.ToString("0.0", IC) + " score"; }
 
         static void SummaryOf(LoadoutView v, Func<BadgeFacts, string> name, Func<string, string> className, string sep, Knowledge k)

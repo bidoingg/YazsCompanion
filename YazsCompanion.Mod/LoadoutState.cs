@@ -668,7 +668,10 @@ namespace YazsCompanion
             var k = Knowledge.Current; var d = Doctrine.Current;
             ReadPowers();
             var recruits = k.BadgeRules.RecruitWeight > 0 ? Recruits(leader) : null;
-            var inp = Loadout.Prepare(leader, build, mode, difficulty, d, k, PowerFactsOf, recruits);
+            // 0.15.0 (C15-07): a lent build Auto follows weighs the weapon against the abilities by the style the cards will follow
+            // ([Advice] LentBuildStyle = Mine: the player's LevelUpStyle; Builds.Styled hands the build itself back otherwise)
+            if (recruits != null && d.LentStyleMine) recruits = recruits.Select(r => new KeyValuePair<string, Build>(r.Key, Builds.Styled(r.Key, r.Value, d))).ToList();
+            var inp = Loadout.Prepare(leader, Builds.Styled(leader, build, d), mode, difficulty, d, k, PowerFactsOf, recruits);
             // a build the player did not select (a lent pack default Auto follows) is named "the X build" in the reasons, never "your"
             // (F02, Builds.Your; 0.14.0: no "(Auto)" on screen): the player's own build is the one the selection names
             string sel = Builds.SelectedId(leader);
@@ -700,6 +703,56 @@ namespace YazsCompanion
         {
             try { var m = MainMenuUi(); var v = m == null ? null : SetupField(m); if (v != null) return Ids(SelectedOf(v)); } catch { }
             return new List<int>();
+        }
+
+        // 0.15.x (the 10-07 review): before the first run setup visit of a session the BADGES page knew no equipped badges and headlined
+        // "NOTHING TO SWAP OUT - FILL THE FREE SLOTS" while the save held four. The game keeps the selection in its profile save (ES3 keys
+        // RunSetup_Badge1..4 = badgeBaseId; UIViewRunSetup.LoadSelectedBadges reads them back as the screen opens): read from the file,
+        // read-only, again only when the file changed.
+        [MethodImpl(MethodImplOptions.NoInlining)] static string ProfileSaveName() { return GameMasterSaveHandler.GetCurrentProfileSaveFileName(); }
+        [MethodImpl(MethodImplOptions.NoInlining)] static string DataPath() { return Application.persistentDataPath; }
+        static string _savedPath = ""; static DateTime _savedAt; static List<int> _saved;
+
+        /// <summary>The badges the save holds selected for the run setup screen (RunSetup_Badge1..N, up to the slots the game gives, ids the
+        /// badge registry knows): what the screen shows when it next opens. Empty: none, or the save not readable.</summary>
+        public static List<int> SavedSelection()
+        {
+            try
+            {
+                string path = SavePath();
+                if (path == null || !EnsureFacts()) return new List<int>();
+                var at = System.IO.File.GetLastWriteTimeUtc(path);
+                if (_saved != null && path == _savedPath && at == _savedAt) return _saved.ToList();
+                string text;
+                using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+                using (var rd = new System.IO.StreamReader(fs)) text = rd.ReadToEnd();
+                var ids = new List<int>(); int slots = SlotsNow();
+                for (int n = 1; n <= slots; n++)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(text, "\"RunSetup_Badge" + n + "\"\\s*:\\s*\\{[^}]*?\"value\"\\s*:\\s*(-?\\d+)");
+                    int id;
+                    if (!m.Success || !int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id)) continue;
+                    if (id >= 0 && !ids.Contains(id) && _all != null && _all.Any(f => f.Id == id)) ids.Add(id);
+                }
+                _saved = ids; _savedPath = path; _savedAt = at;
+                Once("savedsel:" + path, "the saved selection (" + System.IO.Path.GetFileName(path) + ", for the BADGES page before a run setup visit): " + (ids.Count > 0 ? string.Join(", ", ids.Select(i => i.ToString(CultureInfo.InvariantCulture))) : "none"));
+                return ids.ToList();
+            }
+            catch (Exception e) { Once("savedsel:" + e.GetType().Name, "the saved badge selection could not be read: " + e.GetBaseException().Message); return new List<int>(); }
+        }
+
+        // the profile save: the game's own file name for it, under the game's data folder when it is not a full path
+        static string SavePath()
+        {
+            string name = null, data = null;
+            try { name = ProfileSaveName(); } catch { }
+            try { data = DataPath(); } catch { }
+            if (string.IsNullOrEmpty(name)) return null;
+            var tries = new List<string>();
+            if (System.IO.Path.IsPathRooted(name)) tries.Add(name);
+            if (!string.IsNullOrEmpty(data)) { tries.Add(System.IO.Path.Combine(data, name)); tries.Add(System.IO.Path.Combine(data, "Saves", System.IO.Path.GetFileName(name))); }
+            foreach (var p in tries) { try { if (System.IO.File.Exists(p)) return p; } catch { } }
+            return null;
         }
 
         /// <summary>The run setup view the main menu holds (the field, filled once the screen was opened: no search); null = none.</summary>

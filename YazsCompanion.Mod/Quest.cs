@@ -29,7 +29,10 @@
 //  - StatisticThreshold on tag points, item slots, items held, evolutions, Rare+ trainings, armor [Ghost_5, Huntress_2/3,
 //    Mechanic_1/4, Medic_5, Pyro_3/5/RB, Ranger_RB, Tank_RA/RB, Engineer_R1/R2], FullHealthTime [Medic_R2].
 // Survive, SurviveTime, CompleteRun, kill counts of enemies, event counts and badge objectives are logged with their class and
-// leave the advice unchanged. Every game member is read through a small NoInlining accessor inside a try, as in
+// leave the advice unchanged. 0.15.0 (C15-09): the counted ones - CustomGameplayEvent (eventId, targetCount: the story quests),
+// KillBossRushBoss, EventCount (targetEvent, targetCount), KillEnemyFilter (requireBoss, rankMask, targetCount) - are logged with
+// their id and the runtime's own count (_count; _isBossKilled), a change of a count once, and the story kinds feed the readout's
+// info-only QUEST row (QuestStory in QuestRules.cs; [General] QuestProgress). Every game member is read through a small NoInlining accessor inside a try, as in
 // LoadoutState: a member a game patch took away costs that one reading, not the run.
 using System;
 using System.Collections.Generic;
@@ -69,12 +72,21 @@ namespace YazsCompanion
         static bool _progressWarned, _healthPathSaid;
         static readonly Dictionary<IntPtr, bool> _healthItem = new Dictionary<IntPtr, bool>();     // items are assets: kept for the session
 
+        // 0.15.0 (C15-09): the objectives the game counts and the advice does not follow (story events, the Boss Rush boss, event counts,
+        // kills of a rank), each with the objective it was read from and its runtime once found
+        sealed class CountDef { public QuestCount Count; public IntPtr Ptr; public string Name = ""; public GameHubQuestObjectiveRuntimeBase Runtime; }
+        static QuestStory _story;
+        static readonly List<CountDef> _counts = new List<CountDef>();
+        static string _storySaid;                     // the key of the last "[quest] ... -> story ..." line
+        static bool _countWarned;
+
         /// <summary>The HUD went away (the run ended), or the play clock went back (Try Again keeps the scene and the HUD): the
         /// next run reads the quest again and logs it once more.</summary>
         public static void Forget()
         {
             _quest = IntPtr.Zero; _none = false; _team = null; _said = null; _warned = false; _clock = -1f;
             _rules = null; _defs.Clear(); _runtimes.Clear(); _runtimesByName.Clear(); _runtimeCount = -1; _rulesSaid = null; _progressWarned = false; _healthPathSaid = false;
+            _story = null; _counts.Clear(); _storySaid = null; _countWarned = false;
         }
 
         /// <summary>[Advice] QuestSteer as set now (On when the setting cannot be read).</summary>
@@ -328,6 +340,88 @@ namespace YazsCompanion
             return null;
         }
 
+        // ---- 0.15.0 (C15-09): the counted objectives (fields and runtimes as the 1.0.2 interop spells them; each read in its own try)
+        [MethodImpl(MethodImplOptions.NoInlining)] static string EventIdOf(GameHubQuestObjectiveCustomGameplayEvent o) { return o.eventId; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static int TargetCountOf(GameHubQuestObjectiveCustomGameplayEvent o) { return o.targetCount; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static string TargetEventOf(GameHubQuestObjectiveEventCount o) { return o.targetEvent.ToString(); }
+        [MethodImpl(MethodImplOptions.NoInlining)] static int TargetCountOf(GameHubQuestObjectiveEventCount o) { return o.targetCount; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static int TargetCountOf(GameHubQuestObjectiveKillEnemyFilter o) { return o.targetCount; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static bool RequireBossOf(GameHubQuestObjectiveKillEnemyFilter o) { return o.requireBoss; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static int RankMaskOf(GameHubQuestObjectiveKillEnemyFilter o) { return (int)o.rankMask; }
+        // the runtime's own count: _count (the boss: _isBossKilled), else the base class's CurrentValue
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static int CountOf(CountKind kind, GameHubQuestObjectiveRuntimeBase rt)
+        {
+            switch (kind)
+            {
+                case CountKind.Story: { var a = rt.TryCast<GameHubQuestObjectiveCustomGameplayEvent.Runtime>(); if (a != null) return a._count; break; }
+                case CountKind.BossRushBoss: { var a = rt.TryCast<GameHubQuestObjectiveKillBossRushBoss.Runtime>(); if (a != null) return a._isBossKilled ? 1 : 0; break; }
+                case CountKind.Event: { var a = rt.TryCast<GameHubQuestObjectiveEventCount.Runtime>(); if (a != null) return a._count; break; }
+                case CountKind.Kills: { var a = rt.TryCast<GameHubQuestObjectiveKillEnemyFilter.Runtime>(); if (a != null) return a._count; break; }
+            }
+            return rt.CurrentValue;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static string Counted(GameHubQuestObjectiveBase o, QuestStory story)
+        {
+            QuestCount c = null;
+            var ce = o.TryCast<GameHubQuestObjectiveCustomGameplayEvent>();
+            if (ce != null)
+            {
+                string id = null; int n = 1;
+                try { id = EventIdOf(ce); } catch { }
+                try { n = TargetCountOf(ce); } catch { }
+                c = QuestStory.Decode("CustomGameplayEvent", n, eventId: id);
+            }
+            else if (o.TryCast<GameHubQuestObjectiveKillBossRushBoss>() != null) c = QuestStory.Decode("KillBossRushBoss", 1);
+            else
+            {
+                var ec = o.TryCast<GameHubQuestObjectiveEventCount>();
+                if (ec != null)
+                {
+                    string ev = null; int n = 1;
+                    try { ev = TargetEventOf(ec); } catch { }
+                    try { n = TargetCountOf(ec); } catch { }
+                    c = QuestStory.Decode("EventCount", n, targetEvent: ev);
+                }
+                else
+                {
+                    var kf = o.TryCast<GameHubQuestObjectiveKillEnemyFilter>();
+                    if (kf != null)
+                    {
+                        int n = 1, mask = 15; bool boss = false;
+                        try { n = TargetCountOf(kf); } catch { }
+                        try { boss = RequireBossOf(kf); } catch { }
+                        try { mask = RankMaskOf(kf); } catch { }
+                        c = QuestStory.Decode("KillEnemyFilter", n, requireBoss: boss, rankMask: mask);
+                    }
+                }
+            }
+            if (c == null) return null;
+            var d = new CountDef { Count = c };
+            try { d.Ptr = o.Pointer; } catch { }
+            try { d.Name = Bare(G.Asset(o)); } catch { }
+            _counts.Add(d); story.Counts.Add(c);
+            ReadCount(d);                 // the count at the run's start, when the runtimes are built already
+            return QuestStory.LogText(c);
+        }
+
+        // one counted objective's progress from its runtime (found once, by the objective it runs; looked for again while not found)
+        static void ReadCount(CountDef d)
+        {
+            if (d.Runtime == null)
+            {
+                GameHubQuestObjectiveRuntimeBase rt;
+                if (d.Ptr != IntPtr.Zero && _runtimes.TryGetValue(d.Ptr, out rt)) d.Runtime = rt;
+                else if (d.Name.Length > 0 && _runtimesByName.TryGetValue(d.Name, out rt)) d.Runtime = rt;
+            }
+            var r = d.Runtime;
+            if (r == null) { d.Count.Have = double.NaN; d.Count.Done = null; return; }
+            try { d.Count.Have = CountOf(d.Count.Kind, r); } catch { d.Count.Have = double.NaN; }
+            d.Count.Done = Fulfilled(r);
+        }
+
         /// <summary>The active quest's team rules for this run (null: no quest, or it could not be read). Read when the quest
         /// changes; the objectives are logged then.</summary>
         public static QuestTeam Team(Snapshot s)
@@ -340,7 +434,7 @@ namespace YazsCompanion
             IntPtr p = IntPtr.Zero; try { if (q != null) p = q.Pointer; } catch { }
             if (p == IntPtr.Zero)
             {
-                if (_quest != IntPtr.Zero || (!_none && s != null && s.Squad.Count > 0)) { _none = true; _quest = IntPtr.Zero; _team = null; _rules = null; _defs.Clear(); _said = null; Plugin.Logger.LogInfo("[quest] no active quest this run - the rescue advice follows the squad and the clock alone"); }
+                if (_quest != IntPtr.Zero || (!_none && s != null && s.Squad.Count > 0)) { _none = true; _quest = IntPtr.Zero; _team = null; _rules = null; _defs.Clear(); _story = null; _counts.Clear(); _said = null; Plugin.Logger.LogInfo("[quest] no active quest this run - the rescue advice follows the squad and the clock alone"); }
                 return null;
             }
             if (p == _quest)
@@ -392,10 +486,12 @@ namespace YazsCompanion
             var team = new QuestTeam();
             var rules = new QuestRules();
             _rules = rules; _defs.Clear(); _runtimes.Clear(); _runtimesByName.Clear(); _runtimeCount = -1; _rulesSaid = null;
+            var story = new QuestStory(); _story = story; _counts.Clear(); _storySaid = null;       // 0.15.0 (C15-09)
             var sb = new StringBuilder("[quest] ");
             try
             {
-                team.Quest = G.Asset(q); rules.Quest = team.Quest;
+                team.Quest = G.Asset(q); rules.Quest = team.Quest; story.Quest = team.Quest;
+                try { MapRuntimes(q); } catch { }       // 0.15.0 (C15-09): the counted objectives' counts at the run's start
                 sb.Append(team.Quest.Length > 0 ? team.Quest : "(unnamed quest)");
                 try { string n = QuestName(q); if (!string.IsNullOrEmpty(n)) sb.Append(" \"").Append(ItemRules.RichTag.Replace(n, "")).Append('"'); } catch { }
                 Il2CppSystem.Collections.Generic.List<GameHubQuestObjectiveBase> list = null; string from = "objectives";
@@ -428,6 +524,7 @@ namespace YazsCompanion
                     if (what == null) { try { what = Without(o, rules); } catch (Exception e) { what = "unreadable (" + e.GetType().Name + ") - advice unchanged"; } }
                     if (what == null) { try { what = Upgrade(o, team, rules, s); } catch (Exception e) { what = "unreadable (" + e.GetType().Name + ") - advice unchanged"; } }
                     if (what == null) { try { what = Counters(o, rules); } catch (Exception e) { what = "unreadable (" + e.GetType().Name + ") - advice unchanged"; } }
+                    if (what == null) { try { what = Counted(o, story); } catch (Exception e) { what = "unreadable (" + e.GetType().Name + ") - advice unchanged"; } }
                     if (what == null) what = "advice unchanged";
                     sb.Append(' ').Append(i).Append(". ").Append(cls.Replace("GameHubQuestObjective", "")).Append(timing.Length > 0 ? " (" + timing + ")" : "").Append(" ").Append(what).Append(';');
                 }
@@ -437,8 +534,10 @@ namespace YazsCompanion
                 sb.Append(' ').Append(fit).Append(';');
                 sb.Append(" | team rule: ").Append(team.Rules ? team.Words : team.HasRule ? team.Words + ", not followed (" + (team.AnyOf ? "objectives match Any" : team.Failed ? "failed already" : team.NotThisRun != null ? "this run does not fit the quest" : team.Muted) + ")" : "none");
                 if (rules.List.Count > 0) sb.Append(" | rules for the cards: ").Append(rules.List.Count);
+                if (story.Counts.Count > 0) sb.Append(" | counted: ").Append(story.Counts.Count).Append(story.Counts.Any(c => c.Story) ? " (story progress on the readout)" : "");
             }
             catch (Exception e) { sb.Append(" - not read: ").Append(e.GetType().Name).Append(' ').Append(e.Message); }
+            if (story.Counts.Count == 0) _story = null;
             Plugin.Logger.LogInfo(sb.ToString());
             return team;
         }
@@ -487,6 +586,53 @@ namespace YazsCompanion
             return rules;
         }
 
+        // ================================================================ 0.15.0 (C15-09): what the game counts, progress only
+        /// <summary>The active quest's counted objectives (story events, the Boss Rush boss, event counts, kills of a rank) with the
+        /// counts the game keeps, read for this snapshot (null: no quest, or nothing counted in it). A change of a count is logged once
+        /// ('[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only'). No card moves for it.</summary>
+        public static QuestStory Story(Snapshot s)
+        {
+            QuestTeam team = null;
+            try { team = Team(s); }
+            catch (Exception e) { if (!_warned) { _warned = true; Plugin.Logger.LogWarning("[quest] not read: " + e.GetType().Name + " " + e.Message + " (said once a run)"); } }
+            var story = _story;
+            if (team == null || story == null || story.Counts.Count == 0) return null;
+            story.Failed = team.Failed; story.NotThisRun = team.NotThisRun;
+            try
+            {
+                GameHubQuestBase q = null; try { q = Active(); } catch { }
+                if (q != null) MapRuntimes(q);
+                foreach (var d in _counts) ReadCount(d);
+            }
+            catch (Exception e) { if (!_countWarned) { _countWarned = true; Plugin.Logger.LogWarning("[quest] counts not read: " + e.GetType().Name + " " + e.Message + " (said once a run)"); } }
+            string key = story.Key();
+            if (key != _storySaid)
+            {
+                _storySaid = key;
+                Plugin.Logger.LogInfo("[quest] " + (story.Quest.Length > 0 ? story.Quest : "the quest") + " -> " + story.Said());
+            }
+            return story;
+        }
+
+        /// <summary>For the readout's cheap fingerprint (G.QuickKey, every two seconds): the story objectives' counts as they stand, so a
+        /// story step rebuilds the QUEST row. The runtimes found by the last Story(); 0 = nothing to count. Never throws.</summary>
+        public static long StoryHash()
+        {
+            try
+            {
+                if (_story == null || _counts.Count == 0) return 0;
+                long h = 17;
+                foreach (var d in _counts)
+                {
+                    if (!d.Count.Story || d.Runtime == null) continue;
+                    int n = -1; try { n = CountOf(d.Count.Kind, d.Runtime); } catch { }
+                    unchecked { h = h * 31 + n + 2; }
+                }
+                return h;
+            }
+            catch { return 0; }
+        }
+
         /// <summary>An item the health-item objective counts (the game's own static test; null: unreadable).</summary>
         internal static bool? IsHealthItem(ItemBase it)
         {
@@ -507,6 +653,7 @@ namespace YazsCompanion
             int n = 0; try { n = list == null ? 0 : list.Count; } catch { }
             if (n == _runtimeCount && _runtimes.Count > 0) return;
             _runtimeCount = n; _runtimes.Clear(); _runtimesByName.Clear();
+            foreach (var cd in _counts) cd.Runtime = null;          // 0.15.0 (C15-09): found again in the new list
             foreach (var rt in G.Each(list))
             {
                 if (rt == null) continue;

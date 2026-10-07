@@ -9,7 +9,8 @@
 //   P12 the rewordings: a weapon level under "abilities first", a type short of its 10-tag effect, the quest's item, a hurting
 //       squad, an unread squad on a Research Pod, a guide note after its tier; the QUEST row counts as the cards do.
 //   R3  SELECT LOADOUT: a survival weight under 1 says survival picks count LESS (it said "always help").
-//   S   the sources: the DISPLAY tab's WHY row, the cfg's migration of an old RerollHint = false, the README's status block.
+//   S   the sources: the DISPLAY tab's WHY row, the cfg's migration of an old RerollHint = false, the 0.14.0 release notes (the
+//       README's status block up to 0.15.0, the CHANGELOG's 0.14.0 entry since).
 // Generic names only (the repository is public): the game's card names, the bench's own build names and invented lent names.
 using System;
 using System.Collections.Generic;
@@ -182,15 +183,17 @@ namespace YazsCompanion.Bench
         static void Sources()
         {
             string menu = Src("YazsCompanion.Mod/Menu.cs"), plugin = Src("YazsCompanion.Mod/Plugin.cs"), readme = Src("README.md");
-            Check("S", "the DISPLAY tab switches the WHY band (di:why, eleven rows) and the Card verdicts help says it hides it too",
-                menu != null && menu.Contains("\"di:why\"") && menu.Contains("Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value") && menu.Contains("eleven rows (the ADVICE tab's geometry)") && menu.Contains("Off also hides the WHY band"));
+            Check("S", "the DISPLAY tab switches the WHY band (di:why, in the tab's scroller) and the Card verdicts help says it hides it too",
+                menu != null && menu.Contains("\"di:why\"") && menu.Contains("Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value") && menu.Contains("Scroll(\"display\", x, top, w, room, false, 40f") && menu.Contains("Off also hides the WHY band"));
             Check("S", "an older cfg with RerollHint = false and no ActionHints line: the new hints start off (read before the bind)",
                 plugin != null && plugin.IndexOf("bool hadHints", StringComparison.Ordinal) > 0 && plugin.IndexOf("bool hadHints", StringComparison.Ordinal) < plugin.IndexOf("Config.Bind(\"Advice\", \"ActionHints\"", StringComparison.Ordinal)
                 && plugin.Contains("if (!hadHints && !AdviceRerollHint.Value)") && plugin.Contains("AdviceActionHints.Value = HintActions.None;"));
-            int status = readme == null ? -1 : readme.IndexOf("**0.14.0**", StringComparison.Ordinal), next = readme == null ? -1 : readme.IndexOf("\n## ", status < 0 ? 0 : status, StringComparison.Ordinal);
-            string block = status >= 0 && next > status ? readme.Substring(status, next - status) : "";
-            Check("S", "the README's 0.14.0 status block names the wide menus (on by default), the chest floor 2.5, AVOID in place of the place",
-                block.Contains("WideMenus") && block.Contains("2.5") && block.Contains("AVOID   "));
+            // 0.15.0 (C15-10): the release history moved from the README's status blocks to CHANGELOG.md (DocCases.cs checks the split)
+            string log = Src("CHANGELOG.md");
+            int status = log == null ? -1 : log.IndexOf("\n## 0.14.0 ", StringComparison.Ordinal), next = log == null || status < 0 ? -1 : log.IndexOf("\n## ", status + 1, StringComparison.Ordinal);
+            string block = status >= 0 ? (next > status ? log.Substring(status, next - status) : log.Substring(status)) : "";
+            Check("S", "the CHANGELOG's 0.14.0 entry names the wide menus (on by default), the chest floor 2.5, AVOID in place of the place",
+                block.Contains("WideMenus") && block.Contains("2.5") && block.Contains("AVOID   ") && readme != null && !readme.Contains("**0.14.0**"));
         }
     }
 }

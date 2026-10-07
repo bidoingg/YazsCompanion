@@ -27,6 +27,8 @@ namespace YazsCompanion
         /// <summary>Glyphs between a state and its next step / between two items; the sidebar swaps in '»' (0.14.0) or ASCII when
         /// the game's font lacks them.</summary>
         public static string Arrow = " › ", Sep = "  ·  ";
+        /// <summary>0.15.0 (C15-07, decision Q3): after "later" when a lent build's own style, not the player's LevelUpStyle, holds the weapon back.</summary>
+        const string LentNote = " - the build's style";
         public string Signature = "";
         public readonly List<PlanLine> Lines = new List<PlanLine>();      // one per row, in display order
         public IEnumerable<string> Rows { get { return Lines.Select(l => l.Row); } }
@@ -138,7 +140,9 @@ namespace YazsCompanion
                     bool lifted = false;
                     var w = current.W;
                     try { weaponScore = Ranker.WeaponLevelScore(sv, s, w, out lifted); } catch { weaponScore = double.MinValue; }
-                    weapon = Ranker.StyleOf(sv) == BuildStyle.Ability && !lifted ? N(Show(w)) + C(Dim, " later") : N(Show(w) + " " + current.Level + "/" + max);
+                    // 0.15.0 (C15-07, decision Q3): a lent build's own style that Auto follows, where LevelUpStyle says otherwise, says whose
+                    StyleSource from; var style = Ranker.StyleOf(sv, out from);
+                    weapon = style == BuildStyle.Ability && !lifted ? N(Show(w)) + C(Dim, " later" + (Ranker.LentStyleSays(style, from) ? LentNote : "")) : N(Show(w) + " " + current.Level + "/" + max);
                 }
                 else
                 {
@@ -229,6 +233,17 @@ namespace YazsCompanion
                 w = N(Show(current.W) + " " + current.Level + "/" + max);
                 if (next != null) w += C(current.Level < max ? Dim : Gold, N(Arrow + Show(next.W)));
                 else if (current.Level >= max) w += C(Dim, locked ? "  next tier locked in the Skill Tree" : "  max tier");
+                // 0.15.0 (C15-07, decision Q3): a weapon level that waits on a lent build's own "abilities first" says whose style that is
+                if (current.Level < max)
+                {
+                    StyleSource from; var style = Ranker.StyleOf(sv, out from);
+                    if (style == BuildStyle.Ability && Ranker.LentStyleSays(style, from))
+                    {
+                        bool lifted = true;
+                        try { Ranker.WeaponLevelScore(sv, s, current.W, out lifted); } catch { lifted = true; }
+                        if (!lifted) w += C(Dim, "  later" + LentNote);
+                    }
+                }
             }
             Add(sv.Name, sv.Name + ".weapon", Tag(sv), w, true);
 
@@ -263,19 +278,30 @@ namespace YazsCompanion
 
         // 0.14.0 (C3): what the active quest still asks, while one of its rules changes the advice ("QUEST  Taser to tier 3, max
         // level", "QUEST  a health item (0 of 1)"; QuestRules.Row) - the team rule stays on the SOS row
+        // 0.15.0 (C15-09): then the story objective's progress, dim and info only ("QUEST  story objective 3 of 5"; QuestStory.Row),
+        // behind [General] QuestProgress - the row no longer waits for a rule that changes the advice when the quest is a story one.
+        // The readout is hidden on every selection screen, so this never stands next to a card.
         void QuestLine(Snapshot s)
         {
+            var shown = new List<string>();
             var r = s.Rules;
-            if (r == null) return;
-            var items = r.Row(2);
-            if (items.Count == 0) return;
-            Add("run", "quest", "QUEST", Join(items.Select(x => N(Names.Text(x))).ToList()));
+            if (r != null)
+            {
+                var items = r.Row(2);
+                shown.AddRange(items.Select(x => N(Names.Text(x))));
+            }
+            string story = shown.Count < 2 && StoryShown() ? StoryRow(s) : null;
+            if (story != null) shown.Add(C(Dim, N(story)));
+            if (shown.Count == 0) return;
+            Add("run", "quest", "QUEST", Join(shown));
         }
+        static bool StoryShown() { try { return Plugin.QuestProgress == null || Plugin.QuestProgress.Value; } catch { return true; } }
+        static string StoryRow(Snapshot s) { try { var st = s.Story; return st == null ? null : st.Row(); } catch { return null; } }
 
         // the run's damage type tag points (two highest types) and, when it is not the first one, the type to build up at the next Research Pod
         void TagsLine(Snapshot s)
         {
-            string pts = s.Tags.PointsText(Compact ? 1 : 2);
+            string pts = s.Tags.PlanText(Compact ? 1 : 2);          // 0.15.0 (C15-03 d): "Kinetic 31 - effect on"
             if (pts.Length == 0) return;
             string focus = s.Tags.Focus();
             bool first = focus != null && pts.StartsWith(focus + " ", StringComparison.OrdinalIgnoreCase);
@@ -350,7 +376,7 @@ namespace YazsCompanion
                     p.Add("squad", "SWAT.plan", "SWAT", N("Automatic Turret 3/4"), true);
                     p.Add("squad", "Engineer.plan", "ENGINEER", Join(new List<string> { N("Tesla 3/4"), N("Electric Turret 2/4") }), true);
                     p.Add("squad", "Huntress.plan", "HUNTRESS", Join(new List<string> { N("Multishot 1/4"), C(Gold, N("evolve Arrow Rain")) }), true);
-                    p.Add("run", "tags", "TAGS", "Kinetic 31" + C(Dim, Sep + "next Pod: Explosive"));
+                    p.Add("run", "tags", "TAGS", "Kinetic 31 - effect on" + C(Dim, Sep + "next Pod: Explosive"));
                     p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
                 }
                 p.LendNames();
@@ -376,7 +402,7 @@ namespace YazsCompanion
                 p.Add("Engineer", "Engineer.ability", "", Join(new List<string> { N("Electric Turret 2/4"), Nx("Energy Shield") }));
                 p.Add("Huntress", "Huntress.weapon", "HUNTRESS", N("Multishot 1/4") + C(Dim, N(a + "Explosive Arrows")), true);
                 p.Add("Huntress", "Huntress.ability", "", Join(new List<string> { N("Arrow Rain 4/4") + C(Gold, a + N("Storm") + " / " + N("Barrage")), Nx("Bear Trap") }));
-                p.Add("run", "tags", "TAGS", "Kinetic 31, Electric 22" + C(Dim, Sep + "next Pod: Explosive"));
+                p.Add("run", "tags", "TAGS", "Kinetic 31, Electric 22 - effects on" + C(Dim, Sep + "next Pod: Explosive"));
                 p.Add("run", "grab", "GRAB", "Accumulator, Bloody Axe");
             }
             p.LendNames();

@@ -54,7 +54,6 @@ namespace YazsCompanion
         const string FrameName = "YazsRerollFrame", LineName = "YazsRerollHint";
         // canvas units at scale 1 (the card badges' sizes: the reason line's font, the ribbon's tips)
         const float Font = 40f, LineH = 62f, Tip = 36f, Pad = 26f, MaxW = 1800f, Gap = ScreenBand.Gap, PlaceDelay = 0.6f;
-        const float MinTextPx = 16f, MaxScale = 1.3f;
 
         sealed class Avail
         {
@@ -601,19 +600,24 @@ namespace YazsCompanion
             try { var le = rt.gameObject.AddComponent(Il2CppType.Of<LayoutElement>()).TryCast<LayoutElement>(); if (le != null) le.ignoreLayout = true; } catch { }
         }
 
-        // the card badges' rule: the text at least MinTextPx tall, at most x1.3 (BadgeScale in the config overrides it)
+        // the card text's rule (CardTextSize, ScreenBand.cs): on Auto the line is enlarged until its text is 16 px, up to x1.3 (x1.6 on
+        // a canvas taller than 16:9, like the Deck's); a "Card text size" picked in the menu ([General] BadgeScale, a share of Auto)
+        // scales it as much as it scales the cards' reason lines against their Auto; never under 15 px. 0.15.0 (C15-06): up to
+        // 0.14.0 a picked size was the line's own s (0.5 - 1.3) with no floor.
         static float Scale(RectTransform view)
         {
-            float fixedScale = 0; try { fixedScale = Plugin.BadgeScale.Value; } catch { }
-            if (fixedScale > 0) return Mathf.Clamp(fixedScale, 0.5f, MaxScale);
+            float setting = 0; try { setting = Plugin.BadgeScale.Value; } catch { }
+            float screenH = UnityEngine.Screen.height, h = 0f;
             try
             {
                 var canvas = view.GetComponentInParent<Canvas>();
                 var crt = canvas == null ? null : canvas.rootCanvas.transform.TryCast<RectTransform>();
-                float h = crt == null ? 0 : crt.rect.height; if (h <= 0) return 1f;
-                return Mathf.Clamp(MinTextPx / (Font * UnityEngine.Screen.height / h), 1f, MaxScale);
+                h = crt == null ? 0 : crt.rect.height;
             }
-            catch { return 1f; }
+            catch { h = 0f; }
+            if (!(h > 0)) h = CardTextSize.CanvasUnits(UnityEngine.Screen.width, screenH);
+            float factor = CardTextSize.Factor(setting, CardTextSize.ReasonPx1OnCanvas(screenH, h), h);
+            return CardTextSize.Follow(Font * screenH / h, h, factor);
         }
 
         // on appear: the frame settles onto the button, the line unfolds from its left tip, types on, and the tip pings once;

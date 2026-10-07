@@ -97,11 +97,16 @@ namespace YazsCompanion
         {
             string first = order.Count > 0 ? order[0].Name : null, second = order.Count > 1 ? order[1].Name : null;
             try { Wording.Pair(order.ConvertAll(c => c.Say)); } catch { }
+            try { Wording.Ranks(order.ConvertAll(c => c.Say), order.ConvertAll(c => c.Name)); } catch { }      // 0.15.0 (C15-03 a): the WHY band's rivals
             var rooms = new List<int>(order.Count);
+            // 0.15.0 (the review of 10-06): the line's room follows the card text's size on this screen - 56 characters at the PC's
+            // size, 42 at the Deck's x1.56 (the rect is 900 units at most) - so a larger size picks a shorter form, not an ellipsis
+            int width = Wording.DeckWidth;
+            try { width = Badge.LineChars(); } catch { }
             foreach (var c in order)
             {
                 int room = Wording.Budget;
-                try { room = Wording.RoomBeside(Synergy.ReasonPrefixWidth(c.Rank, c.Score)); } catch { }
+                try { room = Wording.RoomBeside(Synergy.ReasonPrefixWidth(c.Rank, c.Score), width); } catch { }
                 rooms.Add(room);
                 try { c.Display = Wording.Card(c.Say, c.Rank, first, second, room, LendNames); }
                 catch (Exception e) { c.Display = null; if (!_sayWarned) { _sayWarned = true; Plugin.Logger.LogWarning("[rank] the words of " + c.Name + " failed (" + e.GetType().Name + " " + e.Message + ") - its headline instead"); } }
@@ -166,28 +171,26 @@ namespace YazsCompanion
         }
 
         // ---------------------------------------------------------------- names and styles
-        static string Norm(string s)
-        {
-            var sb = new System.Text.StringBuilder();
-            foreach (var ch in s ?? "") if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
-            return sb.ToString();
-        }
-        /// <summary>Same name, forgiving punctuation and the "Ability: " prefix of an evolution.</summary>
-        internal static bool SameName(string a, string b)
-        {
-            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
-            string na = Norm(a), nb = Norm(b);
-            if (na == nb) return true;
-            int ia = a.IndexOf(':'), ib = b.IndexOf(':');
-            string ta = Norm(ia >= 0 ? a.Substring(ia + 1) : a), tb = Norm(ib >= 0 ? b.Substring(ib + 1) : b);
-            return ta.Length > 2 && ta == tb;
-        }
+        /// <summary>Same name, forgiving punctuation and the "Ability: " prefix of an evolution; 0.15.0: else the same powerup by its
+        /// asset key, so a display name the game renames in a patch never breaks a match (Builds.SameName: pure, the bench runs it).</summary>
+        internal static bool SameName(string a, string b) { return Builds.SameName(a, b); }
 
-        internal static BuildStyle StyleOf(Survivor owner)
+        internal static BuildStyle StyleOf(Survivor owner) { StyleSource from; return StyleOf(owner, out from); }
+
+        /// <summary>The level-up style the advice follows for <paramref name="owner"/>, and where it comes from (0.15.0, C15-07: Builds.StyleFor)
+        /// - a build the player selected brings its own, plain Auto follows [Advice] LevelUpStyle, a build another mod lends that Auto
+        /// follows brings its own unless [Advice] LentBuildStyle = Mine. Up to 0.14.0 the lent build's style won silently while the
+        /// cfg said LevelUpStyle was for survivors on Auto; now the cards, the PLAN and the [ctx] line say whose it is.</summary>
+        internal static BuildStyle StyleOf(Survivor owner, out StyleSource from)
         {
             var b = owner == null ? null : owner.Build;
-            return b != null ? b.Style : Doctrine.Current.Style;
+            var d = Doctrine.Current;
+            // on Auto a survivor's build is always one a pack lends (Builds.AutoFor): the selection is read only when there is a build
+            return Builds.StyleFor(b, b != null && Builds.OnAuto(owner.Name), d.Style, d.LentStyleMine, out from);
         }
+
+        /// <summary>0.15.0 (C15-07): a lent build's own style decides here and the player's LevelUpStyle says otherwise - the words say so.</summary>
+        internal static bool LentStyleSays(BuildStyle style, StyleSource from) { return Builds.LentStyleSaid(style, from, Doctrine.Current.Style); }
         static string StyleName(BuildStyle st) { return st == BuildStyle.Weapon ? "weapon first" : st == BuildStyle.Ability ? "abilities first" : "balanced"; }
 
         // ---------------------------------------------------------------- weapons
@@ -328,7 +331,8 @@ namespace YazsCompanion
             int max = G.MaxLevel(w);
             SkillTreeUpgradeBase node = null; try { node = w.skillTreeRequirement; } catch { }
             int paid = Math.Max(0, G.NodeLevel(node) - 1);
-            var style = StyleOf(owner);
+            StyleSource styleFrom;
+            var style = StyleOf(owner, out styleFrom);
             var facts = G.Facts(w);
             var synWhy = new List<string>();
             double syn = 0.4 * Synergy.TagValue(facts, s.Tags, s.Ctx, synWhy) + 0.4 * Synergy.BoostValue(facts, s.Boosts, s.Ctx, synWhy);
@@ -343,12 +347,14 @@ namespace YazsCompanion
                 WeaponLift lift;
                 try { lift = LiftOf(owner, s, style); }
                 catch (Exception e) { lift = new WeaponLift(); if (!_liftWarned) { _liftWarned = true; Plugin.Logger.LogWarning("rank: weapon lift not judged (" + e.GetType().Name + " " + e.Message + ") - the style's floor"); } }
-                double floor = lift.Floor(style, owner.Build != null && Builds.OnAuto(owner.Name), Doctrine.Current.Style);
+                // a lent build Auto follows (Lent, or Mine: the player's style standing in) - the same test as before StyleOf told the source
+                double floor = lift.Floor(style, styleFrom == StyleSource.Lent || styleFrom == StyleSource.Mine, Doctrine.Current.Style);
                 double reach = s.Ctx.Reach(Math.Max(1, max - lvl));
                 c.Score = Synergy.HeldWeapon(floor, reach, lvl, max, syn);
                 c.LiftedWeapon = lift.On;
                 c.Say = new CardWords { Kind = SayKind.Weapon, Level = lvl, Max = max, Next = lvl == max - 1 && next != null ? G.Name(next.W) : null, Style = style,
-                    Build = owner.Build != null ? owner.Build.Name : null, Lifted = lift.On, LiftLeft = lift.Left, Reach = reach, Clock = s.Ctx.ClockText };
+                    Build = owner.Build != null ? owner.Build.Name : null, Lifted = lift.On, LiftLeft = lift.Left, Reach = reach, Clock = s.Ctx.ClockText,
+                    LentStyle = LentStyleSays(style, styleFrom), MineStyle = styleFrom == StyleSource.Mine };
                 Wording.Tags(c.Say, facts, s.Tags, s.Boosts, s.Ctx, null, 0.4);
                 c.Why.Add((lvl == max - 1 ? "completes the weapon: " : "weapon level: ") + lvl + " to " + (lvl + 1) + " of " + max + (lvl == max - 1 && next != null ? ", then " + G.Name(next.W) : ""));
                 c.Why.Add("style: " + StyleName(style) + (lift.On ? " - " + lift.Note : "") + (reach < 0.6 ? "; little time left to finish it (" + s.Ctx.ClockText + ")" : ""));
@@ -527,8 +533,11 @@ namespace YazsCompanion
             var owned = owner.Abilities();
             c.OwnBuildOpen = lvl < max && !a.Skipped && (owner.Build == null || a.Priority >= 0);
             var ctx = s.Ctx;
+            StyleSource styleFrom;
+            var style = StyleOf(owner, out styleFrom);
             var say = c.Say = new CardWords { Kind = SayKind.Ability, Level = lvl, Max = max, Build = owner.Build != null ? owner.Build.Name : null, Priority = a.Priority,
-                HeadRank = a.HeadSay != null ? a.HeadRank : 0, Head = a.HeadSay, EvoExists = a.EvoA != null || a.EvoB != null, EvoOwned = a.EvoOwned, Clock = ctx.ClockText, Owned = owned.Count };
+                HeadRank = a.HeadSay != null ? a.HeadRank : 0, Head = a.HeadSay, EvoExists = a.EvoA != null || a.EvoB != null, EvoOwned = a.EvoOwned, Clock = ctx.ClockText, Owned = owned.Count,
+                Style = style, LentStyle = LentStyleSays(style, styleFrom), MineStyle = styleFrom == StyleSource.Mine };      // 0.15.0 (C15-07): the WHY band says a lent build's style
             Wording.Tags(say, G.Facts(p), s.Tags, s.Boosts, ctx);      // 0.14.0: the tag facts for the WHY band (the card's own line reads the head)
             double score, once = 0;
             if (lvl == 0)
@@ -552,7 +561,7 @@ namespace YazsCompanion
                 // to nothing at about eleven, well before the "little time left" penalty above sets in. A plain weapon level
                 // is 4.4 to 5.0 as a rule; squeezed in under 6.1 below, the lift never passes a weapon tier-up (6.2 and more),
                 // a recruit's first weapon or an evolution. The other styles, and an ability the build skips, are left alone.
-                if (StyleOf(owner) == BuildStyle.Balanced && owned.Count < 4 && !a.Skipped) once = 1.5 * Math.Max(0, Math.Min(1, (ctx.Reach(10) - 0.4) / 0.6));
+                once = Synergy.OnceEarly(style, owned.Count, a.Skipped, ctx.Reach(10));         // 0.15.0: pure, so the bench orders a hand by style (C15-07)
                 if (once >= 0.3 && !c.Why.Any(w => w.Contains("once early"))) c.Why.Add("style: balanced - before another weapon level");     // "take each once early" already says it
             }
             else
@@ -574,7 +583,7 @@ namespace YazsCompanion
             }
             c.Score = SoftCap(score);
             // the lift, squeezed above 5.6 so that two new abilities keep their order and none reaches a tier-up's 6.2
-            if (once > 0) { double lifted = c.Score + once; c.Score = Math.Max(c.Score, lifted <= 5.6 ? lifted : 5.6 + (lifted - 5.6) * 0.25); }
+            c.Score = Synergy.WithOnce(c.Score, once);
             c.Why.AddRange(Synergy.ReasonsUnder(a.Head, a.HeadFrom, a.Why));      // the head already says the line it was cut from
         }
 
@@ -588,7 +597,8 @@ namespace YazsCompanion
             var fitWhy = new List<string>();
             double fit = Synergy.EvolutionFit(G.Facts(evo), G.Facts(baseAbility), s.Tags, s.Boosts, s.Ctx, fitWhy);
             c.Score = 7.6 + parent.Score * 0.1 + fit * 0.4;
-            var say = c.Say = new CardWords { Kind = SayKind.Evolution, Base = baseName, Build = build != null ? build.Name : null, Pick = pick };
+            var say = c.Say = new CardWords { Kind = SayKind.Evolution, Base = baseName, Build = build != null ? build.Name : null, Pick = pick,
+                BasePriority = build != null && !parent.Skipped ? parent.Priority : -1 };        // 0.15.0 (C15-03 c): "evolves the build's main ability"
             Wording.Tags(say, G.Facts(evo), s.Tags, s.Boosts, s.Ctx, G.Facts(baseAbility));
             if (pick != null)
             {

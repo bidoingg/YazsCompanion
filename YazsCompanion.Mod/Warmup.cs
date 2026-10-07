@@ -5,7 +5,8 @@
 // separate frames: the plan of an empty squad (its GRAB row scores every item in the game), then the plan of a
 // stand-in survivor made from the game's class data (weapon line, abilities, recruits - the survivor side of the
 // code), then (0.13.0) one badge advice for the run setup screen. The results are thrown away; what stays is the parsed text,
-// the item and badge facts and the compiled code.
+// the item and badge facts and the compiled code. Last (0.15.0) the drift guard (DataDrift, GameState.cs): the kits' names
+// against the game's class data, said once a session when a game patch renamed one.
 // Never during a run; everything here may fail without consequence (the first run then pays, as it used to).
 using System;
 using UnityEngine;
@@ -16,11 +17,12 @@ namespace YazsCompanion
     internal static class Warmup
     {
         static bool _done; static float _at = -1f; static int _tries, _stage;
+        static float _dataAt = -1f;     // 0.15.0: the drift guard when the warm-up ended without it (a run was on, no class data yet)
 
         /// <summary>Once a frame from GameMaster.Update; does its work once per session, on the main menu only.</summary>
         public static void Tick()
         {
-            if (_done) return;
+            if (_done) { if (!DataDrift.Done) DataLater(); return; }
             try
             {
                 if (!Menu.OnMainMenu) { _at = -1f; return; }                  // the clock starts when the main menu is up
@@ -54,16 +56,37 @@ namespace YazsCompanion
                         _stage = 2; _at = now + 0.5f;
                         return;
                     }
-                    // 0.13.0: one badge advice with a stand-in leader - the badge facts, the kits and the code are warm before the
-                    // first visit of the run setup screen (its own try: the first visit then pays, as it used to)
-                    string loadout;
-                    try { loadout = LoadoutState.Warm(); } catch (Exception e) { loadout = "skipped (" + e.Message + ")"; }
-                    Perf.End("warmup", perf);
+                    if (_stage == 2)
+                    {
+                        // 0.13.0: one badge advice with a stand-in leader - the badge facts, the kits and the code are warm before the
+                        // first visit of the run setup screen (its own try: the first visit then pays, as it used to)
+                        string loadout;
+                        try { loadout = LoadoutState.Warm(); } catch (Exception e) { loadout = "skipped (" + e.Message + ")"; }
+                        Perf.End("warmup", perf);
+                        Plugin.Logger.LogInfo("[warmup] badge advice on the main menu: " + loadout);
+                        _stage = 3; _at = now + 0.5f;
+                        return;
+                    }
+                    // 0.15.0: the drift guard - the kits' names against the game's class data, once a session ([data] / [builds] lines)
                     _done = true;
-                    Plugin.Logger.LogInfo("[warmup] badge advice on the main menu: " + loadout);
+                    DataDrift.Run();
                 }
             }
             catch (Exception e) { _done = true; Plugin.Logger.LogInfo("[warmup] skipped: " + e.Message); }
+        }
+
+        // the drift guard on a later visit of the main menu, when the warm-up could not run it (never during a run)
+        static void DataLater()
+        {
+            try
+            {
+                if (!Menu.OnMainMenu || Menu.IsOpen) { _dataAt = -1f; return; }
+                float now = Time.realtimeSinceStartup;
+                if (_dataAt < 0f) { _dataAt = now + 3f; return; }
+                if (now < _dataAt) return;
+                if (!DataDrift.Run()) _dataAt = now + 5f;
+            }
+            catch { }
         }
 
         // a survivor with nothing picked yet, from the first unlocked class: enough to walk the weapon line, the abilities

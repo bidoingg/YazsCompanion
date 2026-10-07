@@ -26,6 +26,16 @@
 //      HintCases.cs.
 //  14. (0.14.0) the integration review of the round: the WHY band under a quest, the vs sentence, two equal lines told apart,
 //      lent short names, the rewordings, the loadout's survival words, the sources: ReviewCases.cs.
+//  15. (0.15.0) the size of the text on the selection screens (CardTextSize in ScreenBand.cs: Auto on the PC, the Steam Deck and
+//      1024 x 768, the 15 px floor at every step, the WHY band and the hint following a picked size, the menu row) and the menu's
+//      room (the ADVICE and DISPLAY rows in the scroller): GeometryCases.cs.
+//  16. (0.15.0) the game-data drift guard: every name the Companion keeps exact on the fixture's game build (right after 1), the
+//      asset fallback after a rename, the run-time [data] check and its [builds] lines: DriftCases.cs.
+//  17. (0.15.0) a lent build's level-up style (decision Q3): whose style, BuildsOwn = 0.14.0's order, Mine orders as the player's style,
+//      the words on the cards, the WHY band and the readout, the ADVICE row, the cfg text, the badge advice: RankCases.cs.
+//  18. (0.15.0) the Training Yard purchase log (TreeDiff: bought / refunded between two reads, 'advice #n' against the advice shown,
+//      'not advised', a points reset, other tabs) and the sources of the proof lines (first input, ribbon, the wide Off / back
+//      step of the pause walk): TreeCases.cs.
 // Usage: ItemBench [gamedata.json] --probe path\to\probe.json
 using System;
 using System.Collections.Generic;
@@ -93,6 +103,8 @@ namespace YazsCompanion.Bench
             }
             Console.WriteLine("\n\n################ 0.10 checks (" + Powers.Count + " powerups, " + Items.Count + " items from the probe)");
             int bad = Validate();
+            int exact = Drift.Exact(probePath);                 // 0.15.0 C15-02: every name letter for letter on the fixture's game build (DriftCases.cs)
+            bad += exact;
             bad += Forks();
             Clock();
             Modes();
@@ -110,6 +122,10 @@ namespace YazsCompanion.Bench
             bad += QuestCases.Run(probePath);                           // 0.14.0 C3: the active quest's objectives as advice (QuestCases.cs)
             bad += HintCases.Run(Items);                                // 0.14.0 C4: action hints, WHY on highlight, CLOSE CALL, the band manager (HintCases.cs)
             bad += ReviewCases.Run();                                   // 0.14.0: the integration review's findings replayed (ReviewCases.cs)
+            bad += GeometryCases.Run();                                 // 0.15.0 C15-05 / C15-06: the card text size and the menu's room (GeometryCases.cs)
+            bad += Drift.Run(probePath, exact);                         // 0.15.0 C15-02: the asset fallback, the run-time drift guard (DriftCases.cs)
+            bad += RankCases.Run();                                     // 0.15.0 C15-07: a lent build's level-up style shown and switchable (RankCases.cs)
+            bad += TreeCases.Run();                                     // 0.15.0 C15-08: the Training Yard purchase log and the proof lines (TreeCases.cs)
             return bad == 0 ? 0 : 3;
         }
 

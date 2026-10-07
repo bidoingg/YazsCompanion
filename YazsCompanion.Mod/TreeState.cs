@@ -107,6 +107,24 @@ namespace YazsCompanion
             string tier; return Knowledge.Current.AbilityTier.TryGetValue(G.Name(ability), out tier) ? tier : "";
         }
 
+        // ---- 0.15.0 (C15-08): the purchase log. The levels of the last read of a tab are kept until the next read of the same tab
+        // and survivor; what changed in between was bought or refunded (TreeDiff, TreePlan.cs - pure, in the bench).
+        static Dictionary<string, int> _levels; static IntPtr _levelsTab; static string _levelsTree;
+
+        /// <summary>Logs '[yard] bought &lt;node&gt; a&gt;b (advice #n | not advised)' and '[yard] refunded &lt;node&gt; a&gt;b' for every level
+        /// that changed since the last read of the same tab and survivor, a purchase matched against <paramref name="shown"/> (the advice
+        /// worked out from that read: what was on screen when the player bought); then this read becomes the record. A first read,
+        /// another tab or another survivor logs nothing and starts the record again. Every purchase is logged, not once a session.</summary>
+        public static void LogChanges(IntPtr tab, string tree, List<TNode> nodes, TAdvice shown)
+        {
+            if (_levels != null && tab == _levelsTab && tree == _levelsTree)
+                foreach (var ch in TreeDiff.Diff(_levels, nodes, shown)) Plugin.Logger.LogInfo("[yard] " + ch.Line);
+            _levels = TreeDiff.Levels(nodes); _levelsTab = tab; _levelsTree = tree;
+        }
+
+        /// <summary>The record is void (the view went, the advice was switched off): the next read starts a new one.</summary>
+        public static void ForgetLevels() { _levels = null; _levelsTab = IntPtr.Zero; _levelsTree = null; }
+
         /// <summary>The number next to the points diamond; falls back to the survivor's own counter.</summary>
         public static int Points(UIViewSkillTree view, UISkillTreeSkillsContainer container)
         {

@@ -356,11 +356,55 @@ namespace YazsCompanion.Bench
                     JsonElement e;
                     if (!doc.RootElement.TryGetProperty("badges", out e) || e.ValueKind != JsonValueKind.Array) { Console.WriteLine("\n  (probe.json has no badges section yet: no drift against the live game to show)"); return; }
                 }
-                var live = Loadout.ReadInventory(json);
+                var live = Loadout.ReadInventory(InventoryOfProbe(json));
                 string drift = Loadout.Drift(Fixture(), live);
                 Console.WriteLine("\n  probe.json badges: " + live.Count + ", hash " + Loadout.ShortHash(Loadout.Hash(live)) + (drift.Length == 0 ? " = the fixture" : " - drift: " + drift));
             }
             catch (Exception ex) { Console.WriteLine("\n  probe.json badges unreadable: " + ex.Message); }
+        }
+
+        // 0.15.0 (C15-02, the first fixture with a badges section): the probe writes badge objects of its own (Probe.Badges: baseId,
+        // sortOrder, bonuses as { stat, type, value }), not the `[loadout] inventory` objects ReadInventory reads (id, sort, stats as
+        // [stat, type, value]; class only for an unknown kind) - read as they were, every badge came out as id 0 and the "drift" was
+        // noise. An object that already has an id is taken as it is.
+        static string InventoryOfProbe(string probeJson)
+        {
+            using (var doc = JsonDocument.Parse(probeJson))
+            using (var ms = new MemoryStream())
+            {
+                using (var w = new Utf8JsonWriter(ms))
+                {
+                    w.WriteStartObject(); w.WriteStartArray("badges");
+                    foreach (var b in doc.RootElement.GetProperty("badges").EnumerateArray())
+                    {
+                        JsonElement v;
+                        if (b.ValueKind != JsonValueKind.Object) continue;
+                        if (b.TryGetProperty("id", out v)) { b.WriteTo(w); continue; }
+                        w.WriteStartObject();
+                        w.WriteNumber("id", b.TryGetProperty("baseId", out v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : -1);
+                        w.WriteNumber("sort", b.TryGetProperty("sortOrder", out v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0);
+                        foreach (var k in new[] { "asset", "name", "kind", "owner" }) if (b.TryGetProperty(k, out v) && v.ValueKind == JsonValueKind.String) w.WriteString(k, v.GetString());
+                        if (b.TryGetProperty("kind", out v) && v.ValueKind == JsonValueKind.String && v.GetString() == "Unknown" && b.TryGetProperty("class", out v) && v.ValueKind == JsonValueKind.String) w.WriteString("class", v.GetString());
+                        foreach (var k in new[] { "rank", "max" }) if (b.TryGetProperty(k, out v) && v.ValueKind == JsonValueKind.Number) w.WriteNumber(k, v.GetInt32());
+                        w.WriteStartArray("stats");
+                        if (b.TryGetProperty("bonuses", out v) && v.ValueKind == JsonValueKind.Array)
+                            foreach (var x in v.EnumerateArray())
+                            {
+                                JsonElement s, t, n;
+                                w.WriteStartArray();
+                                w.WriteStringValue(x.TryGetProperty("stat", out s) && s.ValueKind == JsonValueKind.String ? s.GetString() : "");
+                                if (x.TryGetProperty("type", out t)) t.WriteTo(w); else w.WriteStringValue("");
+                                w.WriteNumberValue(x.TryGetProperty("value", out n) && n.ValueKind == JsonValueKind.Number ? n.GetDouble() : 0);
+                                w.WriteEndArray();
+                            }
+                        w.WriteEndArray();
+                        foreach (var k in new[] { "tags", "points" }) if (b.TryGetProperty(k, out v)) { w.WritePropertyName(k); v.WriteTo(w); }
+                        w.WriteEndObject();
+                    }
+                    w.WriteEndArray(); w.WriteEndObject();
+                }
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
         }
 
         // ------------------------------------------------------------------------------------------------ M: the model
@@ -666,6 +710,21 @@ namespace YazsCompanion.Bench
             Check("V3 slot mirror (B1): all four swapped out -> rust", v1.Slots.Count == 4 && v1.Slots.All(m => m.Kind == MarkKind.SwapOut), string.Join(",", v1.Slots));
             string swaps = string.Join(", ", v1.Swaps.Select(s => a1.RowOf(s.Key).Badge.Short + ">" + a1.RowOf(s.Value).Badge.Short));
             Check("V4 B1: 4 swaps in the order of the log line", swaps == "Thunder>Gunner, Leveling>Critical, Growth>Power, Speed>Tough", v1.EquippedLine());
+            // 0.15.x (C-m6 of the 10-07 review): a SWAP OUT WHY leads with the comparison - "Critical scores more here (+1.5)" - and its own
+            // merit goes to the dim line 2 (live 10-06 it read "SWAP OUT  survival picks always help", an argument for keeping it)
+            var swapBad = new List<string>(); string swapSeen = "";
+            foreach (var s in v1.Swaps)
+            {
+                var m = v1.MarkOf(s.Key); string l1 = LoadoutView.Visible(m.Why1), merit = Loadout.WhyOf(a1.RowOf(s.Key), a1, k);
+                double gain = (Loadout.Centi(a1.PickOf(s.Value).Score) - Loadout.Centi(a1.RowOf(s.Key).Score)) / 100.0;
+                string want = "SWAP OUT  " + a1.RowOf(s.Value).Badge.Short + " scores more here (+" + (gain >= 10 ? Math.Round(gain).ToString("0", CultureInfo.InvariantCulture) : gain.ToString("0.0", CultureInfo.InvariantCulture)) + ")";
+                if (swapSeen.Length == 0) swapSeen = l1 + " | " + m.Why2;
+                if (l1 != want) swapBad.Add("'" + l1 + "' (want '" + want + "')");
+                if (!m.Why2.StartsWith("level ", StringComparison.Ordinal) || !m.Why2.Contains(merit.Length > 44 ? merit.Substring(0, 20) : merit)) swapBad.Add("line 2 '" + m.Why2 + "' (want the level and '" + merit + "')");
+                if (l1.Contains(merit) || m.Why2.Contains("replaced by")) swapBad.Add("the merit or 'replaced by' left on line 1: '" + l1 + "' | '" + m.Why2 + "'");
+            }
+            Check("V4 SWAP OUT WHY (B1): line 1 '<the badge in> scores more here (+gain)', line 2 'level N · <its own merit>' (C-m6)", v1.Swaps.Count == 4 && swapBad.Count == 0,
+                swapBad.Count == 0 ? swapSeen : string.Join(" || ", swapBad.Take(4)));
             var matched = LoadoutView.Of(a1, a1.Equip, new int[0], 4, LoadoutDetail.Full, k);
             Check("V4 equipped = the advice: Matches, no swaps, no frames, '4 of 4 as advised'", matched.Matches && matched.Swaps.Count == 0 && !matched.Grid.Any(m => m.Frame) && matched.EquippedLine().Contains("4 of 4 as advised")
                 && matched.Slots.All(m => m.Kind == MarkKind.Keep && m.Number > 0) && matched.Rows.Count > 1 && matched.Rows[1].Kind == "match", matched.EquippedLine());
@@ -834,6 +893,21 @@ namespace YazsCompanion.Bench
             // L6 LoadoutSize 2.0
             var big = Mock(1440, new R4(-660, 0, 4500, 2160), size: 2.0f, rows: 3, detail: LoadoutDetail.Full); var obig = LoadoutLayout.Choose(big); L7("size 2.0", big, obig, l7);
             Check("L6 LoadoutSize 2.0: shrink, then YARD and SWAP dropped; markers capped at 0.60 w", obig.SumRows == 1 && obig.Dropped.Contains("yard") && obig.Dropped.Contains("swap") && obig.MarkerUnits <= 0.60f * 143 + 1e-3, say(obig));
+            // 0.15.x (C-m3 of the 10-07 review): with one summary row (live 10-06 on the Deck: 'summary under-slots 1267x110 (1 row)') the second
+            // row - SWAP OUT Bomber · Tough - was gone without a word; it joins the EQUIP row when both fit at the floor, else the drawn line says so
+            string uiSrc = null;
+            try { var p = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "YazsCompanion.Mod", "LoadoutUi.cs")); uiSrc = File.Exists(p) ? File.ReadAllText(p) : null; } catch { uiSrc = null; }
+            Check("L6b one summary row: the dropped SWAP OUT row joins the EQUIP row when both fit the band at the floor, else the [loadout] drawn line names the drop (C-m3)",
+                uiSrc != null && uiSrc.Contains("if (_lo.Dropped.Contains(\"swap\") && rows.Count > 1) { second = rows[1]; rows.RemoveAt(1); }") && uiSrc.Contains("if (jw > 0f && jw * minU / f <= width) { texts[0] = joined;")
+                && uiSrc.Contains(" row dropped (one row fits; joined it needs ") && uiSrc.Contains("LoadoutLayout.Drawn(_lo, _unitPx) + (detail >= LoadoutDetail.NumbersAndReason ? _sumNote : \"\")"),
+                uiSrc == null ? "LoadoutUi.cs not found" : "");
+            // 0.15.x (C-m5 of the 10-07 review): the CHOSEN BADGES markers on one layer drawn after every slot (the next slot cut the '3' and
+            // the rust diamonds since 0.13.0), each on a stand-in that follows its slot every frame; the layer goes with the screen
+            Check("V3b the slot markers hang on a layer over the slot row (after the last slot, out of its layout), stand-ins following the slots each frame, destroyed with the screen (C-m5)",
+                uiSrc != null && uiSrc.Contains("Show(s.Button, s.ButtonPtr, bp, _slotMarkerLocal, sm.Kind, sm.Number, sm.Pin, false, SlotHost(s.Button, s.ButtonPtr))")
+                && uiSrc.Contains("if (after >= 0) layer.SetSiblingIndex(after + 1);") && uiSrc.Contains("le.ignoreLayout = true") && uiSrc.Contains("FollowSlots();")
+                && uiSrc.Contains("if (Alive(_slotLayer)) UnityEngine.Object.Destroy(_slotLayer.gameObject);") && uiSrc.Contains("var on = host ?? brt;"),
+                uiSrc == null ? "LoadoutUi.cs not found" : "");
             // the container rule of the measurement (2.4): backgrounds and the BADGES COLLECTION frame out, the stats box stays an obstacle
             List<R4> obs, cont;
             var measured = new[] { new R4(0, 0, 3840, 2160), new R4(393, 297, 2025, 1642), new R4(2108, 1207, 3240, 1650), new R4(420, 1250, 1995, 1254), new R4(2152, 817, 2560, 870), new R4(2100, 380, 3100, 620) };

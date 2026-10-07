@@ -13,8 +13,14 @@
 // (ScreenBand.Why, pure): the band under the cards - clear of the selected card's lines as its hover animation grows it, of
 // the action hint's line (RerollHint.cs) and of the team panel, above or below the game's divider rule over the buttons, never
 // across it - or the band under the action buttons when that one holds more of it; at least 15 px, up to three lines, never
-// over a card's text, a button or the divider's diamond. One '[why] ...' line per card and
-// offer with what was drawn; the [card] lines are not touched. [General] ShowWhy switches it (with ShowBadges).
+// over a card's text, a button or the divider's diamond. 0.15.0 (C15-12, the user's decision Q4): on a screen wider than 16:9
+// whose side wings WideMenus opened, a PANEL in the wing beside the selected card instead - up to four reasons at the cards' own
+// reason size, one reason a line (a wrapped one grows the panel upward: 0.15.x, C-M1), its bottom on the card's reason line, clear of
+// the cards, the buttons, the divider, the team panel and the skip reward (ScreenBand.Side, pure); 16:9, the Steam Deck and
+// WideMenus off keep the band. Also Q4: the band's
+// lines are measured as drawn, so the end diamond no longer stands over the last glyph. One '[why] ...' line per card and
+// offer with what was drawn ('(side wing left, header + 3 lines, 20.5 px, 3 of 3 shown ...'); the [card] lines are not touched.
+// [General] ShowWhy switches it (with ShowBadges).
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -64,14 +70,7 @@ namespace YazsCompanion
             float lowest = float.NaN; anchor = float.NaN; span = new R4();
             float sx0 = float.MaxValue, sx1 = float.MinValue;
             if (cards == null) return lowest;
-            // the cards at rest: the scale of an unselected one (the prefab's 0.95 when the selected card is alone)
-            float rest = float.MaxValue;
-            if (selected != IntPtr.Zero)
-                foreach (var c in cards)
-                {
-                    try { if (c.Button == null || c.Button.Pointer == selected || !c.Button.gameObject.activeInHierarchy) continue; float sc = c.Button.transform.localScale.y; if (sc > 0.05f) rest = Mathf.Min(rest, sc); } catch { }
-                }
-            if (rest == float.MaxValue) rest = RestingRootScale;
+            float rest = RestScale(cards, selected);
             foreach (var c in cards)
             {
                 try
@@ -99,6 +98,68 @@ namespace YazsCompanion
             }
             if (sx1 > sx0) span = new R4(sx0, 0, sx1, 1);
             return lowest;
+        }
+
+        // the cards at rest: the scale of an unselected one (the prefab's 0.95 when the selected card is alone)
+        static float RestScale(List<Card> cards, IntPtr selected)
+        {
+            float rest = float.MaxValue;
+            if (selected != IntPtr.Zero)
+                foreach (var c in cards)
+                {
+                    try { if (c.Button == null || c.Button.Pointer == selected || !c.Button.gameObject.activeInHierarchy) continue; float sc = c.Button.transform.localScale.y; if (sc > 0.05f) rest = Mathf.Min(rest, sc); } catch { }
+                }
+            return rest == float.MaxValue ? RestingRootScale : rest;
+        }
+
+        /// <summary>Each card's extent (0.15.0, C15-12: what the WHY panel in a wing keeps clear of): its rect, the game's ribbon under it,
+        /// our RECOMMENDED ribbon and reason line; the card <paramref name="selected"/> at its hover size, grown about its centre as
+        /// CardsBottom grows it. <paramref name="anchor"/>: the selected card's centre, <paramref name="low"/>: its lowest line (NaN:
+        /// no card selected among them).</summary>
+        public static List<R4> CardRects(List<Card> cards, RectTransform view, Il2CppStructArray<Vector3> corners, IntPtr selected, out float anchor, out float low)
+        {
+            var list = new List<R4>(); anchor = float.NaN; low = float.NaN;
+            if (cards == null) return list;
+            float rest = RestScale(cards, selected);
+            foreach (var c in cards)
+            {
+                try
+                {
+                    var root = c.Button == null ? null : c.Button.transform.TryCast<RectTransform>();
+                    if (root == null || !root.gameObject.activeInHierarchy) continue;
+                    var r = Rect(root, view, corners);
+                    float x0 = r.X0, x1 = r.X1, y1 = r.Y1 + RibbonOverhang;
+                    foreach (var n in new[] { "YazsReason", "YazsRibbon" })
+                    {
+                        var t = root.Find(n); var rt = t == null ? null : t.TryCast<RectTransform>();
+                        if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+                        var q = Rect(rt, view, corners); x0 = Mathf.Min(x0, q.X0); x1 = Mathf.Max(x1, q.X1); y1 = Mathf.Max(y1, q.Y1);
+                    }
+                    var e = new R4(x0, r.Y0, x1, y1);
+                    if (selected != IntPtr.Zero && c.Button.Pointer == selected)
+                    {
+                        float now = root.localScale.y, cx = (r.X0 + r.X1) / 2f, cy = (r.Y0 + r.Y1) / 2f;
+                        float k = now > 0.05f ? Mathf.Max(1f, HoverGrow * rest / now) : HoverGrow;
+                        e = new R4(cx + (e.X0 - cx) * k, cy + (e.Y0 - cy) * k, cx + (e.X1 - cx) * k, cy + (e.Y1 - cy) * k);
+                        anchor = cx; low = e.Y1;
+                    }
+                    list.Add(e);
+                }
+                catch { }
+            }
+            return list;
+        }
+
+        /// <summary>The whole screen (the root canvas) in the view's space: wider than the view on a screen wider than 16:9.</summary>
+        public static R4 CanvasRect(RectTransform view, Il2CppStructArray<Vector3> corners)
+        {
+            try
+            {
+                var canvas = view.GetComponentInParent<Canvas>(); var crt = canvas == null ? null : canvas.rootCanvas.transform.TryCast<RectTransform>();
+                if (crt != null) return Rect(crt, view, corners);
+            }
+            catch { }
+            return new R4(0, 0, view.rect.width, view.rect.height);
         }
 
         /// <summary>The bottom of the screen (the root canvas) in the view's space.</summary>
@@ -210,18 +271,21 @@ namespace YazsCompanion
     {
         const string BlockName = "YazsWhy";
         const float EntranceDelay = 0.6f, RerollDelay = 0.35f, HideDelay = 0.08f;
-        const float PreferPx = 22f, CardFont = 40f, CardScale = 0.77f, Tip = 36f, PadUnits = 22f;
+        const float CardFont = 40f, CardScale = 0.77f, Tip = 36f, PadUnits = 22f;      // the band's ceiling of 22 px: CardTextSize.WhyPreferPx
 
         static UIGameplayUpgradeSelection _sel; static IntPtr _selPtr;
         static Screen _screen; static List<Card> _cards; static string _clock = "";
         static float _readyAt = -1f;                     // the screen has flown in from then on
         static IntPtr _selected;                         // the card button the game reports selected (OnSelected), Zero after OnDeselected
+        // the pause walk's hover tour (Advisor.DebugTourDue, 10-07 review C-m7 / C-m8): the card of the last '[why]' line and when; the selection
+        internal static IntPtr LastSaid; internal static float LastSaidAt = -1f;
+        internal static IntPtr SelectedNow { get { return _selected; } }
         static Card _on;                                 // the card the band speaks for (null: none)
         static float _placeAt = -1f, _hideAt = -1f;
         static bool _shown;
         static RectTransform _block; static TextMeshProUGUI _text; static CanvasGroup _group;
         static readonly HashSet<IntPtr> _said = new HashSet<IntPtr>();       // the cards of this offer whose band is logged
-        static bool _noRoomSaid, _geoSaid, _firstSelect, _warned;
+        static bool _noRoomSaid, _geoSaid, _firstSelect, _warned, _sideSaid;
         static readonly Il2CppStructArray<Vector3> _corners = new Il2CppStructArray<Vector3>(4);
 
         static bool On { get { try { return Plugin.ShowBadges.Value && Plugin.ShowWhy.Value; } catch { return false; } } }
@@ -236,7 +300,7 @@ namespace YazsCompanion
                 var p = Ptr(sel);
                 if (_selPtr != p) { Hide(); _block = null; _text = null; _group = null; }
                 _sel = sel; _selPtr = p; _screen = screen; _cards = cards; _clock = clock ?? "";
-                _said.Clear(); _noRoomSaid = false; _geoSaid = false; _on = null; _placeAt = -1f; _hideAt = -1f;
+                _said.Clear(); _noRoomSaid = false; _geoSaid = false; _sideSaid = false; _on = null; _placeAt = -1f; _hideAt = -1f;
                 _readyAt = Time.realtimeSinceStartup + (replaced ? RerollDelay : EntranceDelay);
                 if (!On) { Hide(); return; }
                 var c = CardAt(_selected);
@@ -351,12 +415,17 @@ namespace YazsCompanion
                 foreach (var b in buttons) { x0 = Mathf.Min(x0, b.X0); x1 = Mathf.Max(x1, b.X1); }
                 if (float.IsNaN(anchor)) anchor = (x0 + x1) / 2f;
 
-                // the text: the cards' own size (their reason line) within 15 - 22 px
                 float reasonPx = ReasonPx(c, unitPx);
-                float font = Mathf.Clamp(reasonPx, ScreenBand.MinPx, PreferPx) / unitPx, minFont = ScreenBand.MinPx / unitPx;
                 if (!Ensure(view)) { Said(c, "no label to clone"); return; }
                 if (!_shown && _group != null) _group.alpha = 0f;          // measured live, shown only once placed (all in this frame)
                 _block.gameObject.SetActive(true);
+
+                // 0.15.0 (C15-12): on a screen wider than 16:9 whose wings WideMenus opened, a panel in the wing beside the card
+                if (SidePanel(c, view, block, buttons, obstacles, reasonPx, unitPx)) return;
+
+                // the text: the cards' own size (their reason line) within 15 - 22 px; a "Card text size" picked in the menu moves the
+                // 22 px ceiling as much as it moves the reason lines against their Auto (0.15.0, C15-06: CardTextSize.WhyPx)
+                float font = CardTextSize.WhyPx(reasonPx, SizeFactor()) / unitPx, minFont = ScreenBand.MinPx / unitPx;
                 var widths = Widths(items, font, out float leadW, out float sepW, block.Lead);
                 float total = leadW + widths.Sum() + sepW * Math.Max(0, items.Count - 1);
                 float chrome = 2f * (TipOf(font) / 2f + PadUnits * font / 30f);
@@ -376,66 +445,163 @@ namespace YazsCompanion
                 float tip = TipOf(font), pad = PadUnits * font / 30f;
                 chrome = 2f * (tip / 2f + pad);
                 float indent = leadW;                                         // every line starts after the lead (a hanging indent)
-                var lines = WhyText.Pack(widths, 0f, sepW, spot.Seg.W - chrome - indent, spot.Lines);
+                float room = spot.Seg.W - chrome - ScreenBand.Slack(font);    // the text's room: the end diamonds and the pads stay outside it
+                var lines = WhyText.Pack(widths, 0f, sepW, room - indent, spot.Lines);
+                // each line measured as drawn, the separators' spaces included (Q4: the summed pieces came out short and the last glyph
+                // stood under the end diamond); a line still too long loses items from its end
+                float widest = ScreenBand.FitLines(lines, items, Separator, s => Width(s, font), indent, room);
                 if (lines.Count == 0) { Hide(); Said(c, "no item fits the band (" + spot.Seg.Size + ")"); return; }
 
                 // the words: the lead, then the items; later lines hang under the first item
                 var sb = new System.Text.StringBuilder();
-                string sep = "<color=" + Theme.DimHex + ">  /  </color>";
+                string sep = "<color=" + Theme.DimHex + ">" + Separator + "</color>";
                 sb.Append("<b><color=").Append(Theme.GoldHex).Append('>').Append(block.Lead).Append("</color></b><indent=").Append(indent.ToString("0.#", CultureInfo.InvariantCulture)).Append('>');
-                float widest = 0f; int shownItems = 0;
                 var drawn = new List<string>();
                 for (int li = 0; li < lines.Count; li++)
                 {
                     if (li > 0) sb.Append('\n');
-                    float w = indent;
                     for (int j = 0; j < lines[li].Count; j++)
                     {
                         int i = lines[li][j];
-                        if (j > 0) { sb.Append(sep); w += sepW; }
-                        sb.Append(items[i]); w += widths[i]; shownItems++; drawn.Add(items[i]);
+                        if (j > 0) sb.Append(sep);
+                        sb.Append(items[i]); drawn.Add(items[i]);
                     }
-                    widest = Mathf.Max(widest, w);
                 }
                 sb.Append("</indent>");
 
-                float width = Mathf.Min(spot.Seg.W, widest + chrome + 4f), height = ScreenBand.BlockHeight(lines.Count, font);
+                float width = ScreenBand.BlockWidth(widest, chrome, font, spot.Seg.W), height = ScreenBand.BlockHeight(lines.Count, font, spot.Pad);
                 float left = ScreenBand.Left(spot.Seg, anchor, width), top = spot.Seg.Y0 + Mathf.Max(0f, (spot.Seg.H - height) / 2f);
-                var vr = view.rect;
-                _block.anchoredPosition = new Vector2(left + vr.xMin - vr.center.x, (vr.yMax - (top + height)) - vr.center.y);
-                _block.sizeDelta = new Vector2(width, height);
-                Ui.Stretch(_block.Find("Bar").TryCast<RectTransform>(), tip / 2, 0, tip / 2, 0);
-                var rule = _block.Find("Rule").TryCast<RectTransform>(); rule.sizeDelta = new Vector2(-tip, Mathf.Max(3f, 0.1f * font));
-                foreach (var n in new[] { "TipL", "TipR" }) { var d = _block.Find(n).TryCast<RectTransform>(); d.sizeDelta = new Vector2(tip * 0.7071f, tip * 0.7071f); }
-                Ui.Stretch(_text.rectTransform, tip / 2 + pad, 0, tip / 2 + pad, 0);
-                _text.fontSize = font;
-                _text.text = sb.ToString();
-                bool appear = !_shown;
-                _block.gameObject.SetActive(true); _block.SetAsLastSibling();
-                _shown = true;
-                if (appear && _group != null) { _group.alpha = 0f; Fx.Run("why:in", 0f, 0.12f, k => { if (_group != null) _group.alpha = Fx.Smooth(k); }); }
-                else if (_group != null) { Fx.Cancel("why:in"); _group.alpha = 1f; }
-
-                // what was drawn, once per card and offer; where (every band measured) with the offer's first
-                var key = Ptr(c.Button);
-                if (_said.Add(key))
-                {
-                    bool geo = !_geoSaid; _geoSaid = true;
-                    Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": #" + c.Rank + " " + c.Name + " " + c.Score.ToString("0.00", CultureInfo.InvariantCulture) + " - " + block.Lead
-                        + " '" + string.Join("' | '", drawn) + "' (" + spot.At + ", " + lines.Count + " line" + (lines.Count > 1 ? "s" : "") + ", " + (font * unitPx).ToString("0.#", CultureInfo.InvariantCulture) + " px, "
-                        + shownItems + " of " + items.Count + " shown" + (geo ? "; " + width.ToString("0") + " x " + height.ToString("0") + " units at " + left.ToString("0") + "," + top.ToString("0") + "; " + spot.Bands : "") + ")");
-                }
+                Draw(view, left, top, width, height, font, 0.5f, sb.ToString());
+                Log(c, block, drawn, spot.At, lines.Count, font * unitPx, items.Count, width, height, left, top, spot.Bands);
             }
             catch (Exception e) { Warn("the band", e); Hide(); }
+        }
+
+        const string Separator = "  /  ";
+
+        // 0.15.0 (C15-12, the user's decision Q4 of 10-06): the WHY in a PANEL in the wing beside the selected card, on a screen wider
+        // than 16:9 whose wings WideMenus opened - the lead's line, then up to four reasons at the cards' own reason size (20.5 px on the PC), one reason a line,
+        // a long one wrapped with its next line a little further in (ScreenBand.Side / Wrap), the panel growing upward for it (0.15.x, C-M1 of
+        // the 10-07 review: up to 0.15.0 a wrapped reason took a reason's place - 24 of 104 live panels dropped one). Its words: WhyBlock.SideItems,
+        // the "vs #1" sentence without the first card's own line (it stands under that card). False: no wings (16:9; 16:10 - the Steam
+        // Deck -; WideMenus off; a frame-keeping menu) or none wide enough - the band under the cards then.
+        static bool SidePanel(Card c, RectTransform view, WhyBlock block, List<R4> buttons, List<R4> obstacles, float reasonPx, float unitPx)
+        {
+            float wing;
+            if (!WideMenus.RunWings(out wing)) return false;
+            var items = new List<string>();
+            foreach (var it in block.SideItems) { string s = Wording.Safe(Names.Text(it)); if (s.Length > 0) items.Add(s); }
+            if (items.Count == 0) return false;
+            float anchor, low;
+            var cards = SelectBands.CardRects(_cards, view, _corners, Ptr(c.Button), out anchor, out low);
+            float font = ScreenBand.SidePx(reasonPx) / unitPx, tip = TipOf(font), pad = PadUnits * font / 30f, chrome = 2f * (tip / 2f + pad);
+            var vr = view.rect;
+            var all = new List<R4>(buttons); all.AddRange(obstacles); all.AddRange(SelectBands.Dividers(view, _corners));
+            var side = ScreenBand.Side(new WhySideIn
+            {
+                View = new R4(0, 0, vr.width, vr.height), Canvas = SelectBands.CanvasRect(view, _corners), Cards = cards.ToArray(), AnchorX = anchor, ReasonBottom = low,
+                Obstacles = all.ToArray(), FontUnits = font, TipUnits = tip, ChromeUnits = chrome,
+            });
+            if (side.At == "none") { SideSaid(wing, side.Wings); return false; }
+
+            // the words: the lead on its own line (the review of 10-06: as a hanging indent "CLOSE CALL" took five ems off every line),
+            // then one reason a line at the panel's whole width, a reason's own next line further in
+            _text.fontSize = font;
+            var memo = new Dictionary<string, float>();
+            Func<string, float> measure = s => { float w; if (!memo.TryGetValue(s, out w)) { w = Width(s, font); memo[s] = w; } return w; };
+            float leadW = measure("<b>" + block.Lead + "</b>"), cont = ScreenBand.ContEms * font;
+            var lines = ScreenBand.Wrap(items, measure, side.Width - chrome - ScreenBand.Slack(font), cont, side.Lines, ScreenBand.SideMaxItems);
+            if (lines.Count == 0) { SideSaid(wing, side.Wings + "; its first reason does not fit " + side.Width.ToString("0") + " units"); return false; }
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<b><color=").Append(Theme.GoldHex).Append('>').Append(block.Lead).Append("</color></b>");
+            var drawn = new List<string>(); int last = -1;
+            foreach (var l in lines)
+            {
+                sb.Append('\n');
+                if (l.Cont) sb.Append("<indent=").Append(cont.ToString("0.#", CultureInfo.InvariantCulture)).Append('>').Append(l.Text).Append("</indent>");
+                else sb.Append(l.Text);
+                if (l.Item != last) { drawn.Add(items[l.Item]); last = l.Item; }
+            }
+            float widest = Mathf.Max(leadW, ScreenBand.Widest(lines, 0f, cont));
+            float width = ScreenBand.BlockWidth(widest, chrome, font, side.Width), height = ScreenBand.BlockHeight(lines.Count + 1, font);
+            float left = side.Left ? side.Room.X1 - width : side.Room.X0, top = side.Room.Y1 - height;      // beside the card, its bottom on the reason line
+            Draw(view, left, top, width, height, font, 1f - ScreenBand.TipFromTop(font) / height, sb.ToString());
+            Log(c, block, drawn, side.At, lines.Count + 1, font * unitPx, items.Count, width, height, left, top, "wings " + wing.ToString("0") + " units a side: " + side.Wings);
+            return true;
+        }
+
+        // the wings were open but held no panel: said once an offer
+        static void SideSaid(float wing, string why)
+        {
+            if (_sideSaid) return;
+            _sideSaid = true;
+            Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": no panel in the wings (" + wing.ToString("0") + " units a side: " + why + ") - the band under the cards");
+        }
+
+        // the block at (left, top) of the view (y down) with its chrome for the font: the plate, the gold rule along its top, the end
+        // diamonds at <tipAy> of its height (0.5: the band's middle; the side panel: its first line), the text inside the diamonds and
+        // the pads; shown (faded in the first time)
+        static void Draw(RectTransform view, float left, float top, float width, float height, float font, float tipAy, string text)
+        {
+            float tip = TipOf(font), pad = PadUnits * font / 30f;
+            var vr = view.rect;
+            _block.anchoredPosition = new Vector2(left + vr.xMin - vr.center.x, (vr.yMax - (top + height)) - vr.center.y);
+            _block.sizeDelta = new Vector2(width, height);
+            Ui.Stretch(_block.Find("Bar").TryCast<RectTransform>(), tip / 2, 0, tip / 2, 0);
+            var rule = _block.Find("Rule").TryCast<RectTransform>(); rule.sizeDelta = new Vector2(-tip, Mathf.Max(3f, 0.1f * font));
+            for (int i = 0; i < 2; i++)
+            {
+                var d = _block.Find(i == 0 ? "TipL" : "TipR").TryCast<RectTransform>();
+                d.sizeDelta = new Vector2(tip * 0.7071f, tip * 0.7071f);
+                d.anchorMin = d.anchorMax = new Vector2(i, Mathf.Clamp01(tipAy));
+            }
+            Ui.Stretch(_text.rectTransform, tip / 2 + pad, 0, tip / 2 + pad, 0);
+            _text.fontSize = font;
+            _text.text = text;
+            bool appear = !_shown;
+            _block.gameObject.SetActive(true); _block.SetAsLastSibling();
+            _shown = true;
+            if (appear && _group != null) { _group.alpha = 0f; Fx.Run("why:in", 0f, 0.12f, k => { if (_group != null) _group.alpha = Fx.Smooth(k); }); }
+            else if (_group != null) { Fx.Cancel("why:in"); _group.alpha = 1f; }
+        }
+
+        // what was drawn, once per card and offer; where (every band or wing measured) with the offer's first
+        static void Log(Card c, WhyBlock block, List<string> drawn, string at, int lines, float px, int total, float width, float height, float left, float top, string where)
+        {
+            if (!_said.Add(Ptr(c.Button))) return;
+            bool geo = !_geoSaid; _geoSaid = true;
+            LastSaid = Ptr(c.Button); LastSaidAt = Time.realtimeSinceStartup;
+            if (geo) Shots.Later(0.4f, "why");      // 10-07 review (C-m7): the offer's first WHY as drawn ([Debug] Screenshots)
+            Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": #" + c.Rank + " " + c.Name + " " + c.Score.ToString("0.00", CultureInfo.InvariantCulture) + " - " + block.Lead
+                + " '" + string.Join("' | '", drawn) + "' (" + at + ", " + LinesSaid(at, lines) + ", " + px.ToString("0.#", CultureInfo.InvariantCulture) + " px, "
+                + drawn.Count + " of " + total + " shown" + (geo ? "; " + width.ToString("0") + " x " + height.ToString("0") + " units at " + left.ToString("0") + "," + top.ToString("0") + "; " + where : "") + ")");
+        }
+
+        /// <summary>The [why] line's count: the band's lines ("2 lines", its lead inline), the side panel's as "header + 3 lines" (0.15.x, the
+        /// 10-07 review: "4 lines" counted the WHY / CLOSE CALL header, so a full panel read "5 lines" against the user's "up to 4 lines").</summary>
+        static string LinesSaid(string at, int lines)
+        {
+            if (at != null && at.StartsWith("side", StringComparison.Ordinal)) { int n = Math.Max(0, lines - 1); return "header + " + n + " line" + (n == 1 ? "" : "s"); }
+            return lines + " line" + (lines > 1 ? "s" : "");
         }
 
         static void Said(Card c, string why)
         {
             if (c == null || !_said.Add(Ptr(c.Button))) return;
+            LastSaid = Ptr(c.Button); LastSaidAt = Time.realtimeSinceStartup;
             Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": #" + c.Rank + " " + c.Name + " - no band: " + why);
         }
 
         static float TipOf(float font) { return Tip * font / CardFont * 1.2f; }
+
+        // the "Card text size" pick against Auto on this screen (1 on Auto), from the screen's model of the cards
+        static float SizeFactor()
+        {
+            float setting = 0f; try { setting = Plugin.BadgeScale.Value; } catch { }
+            if (!(setting > 0f)) return 1f;
+            float w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            return CardTextSize.Factor(setting, CardTextSize.ReasonPx1(w, h), CardTextSize.CanvasUnits(w, h));
+        }
 
         // the cards' reason line in pixels (the band's preferred size): the drawn line's font and scale, else the card's own 40 x 0.77
         static float ReasonPx(Card c, float unitPx)
@@ -445,7 +611,7 @@ namespace YazsCompanion
                 var root = c.Button == null ? null : c.Button.transform;
                 var t = root == null ? null : root.Find("YazsReason"); var tmp = t == null ? null : t.GetComponent<TextMeshProUGUI>();
                 var view = _sel.transform;
-                if (tmp != null && view.lossyScale.y > 0) return tmp.fontSize * (tmp.transform.lossyScale.y / view.lossyScale.y) * unitPx;
+                if (tmp != null && view.lossyScale.y > 0) return Mathf.Max(tmp.fontSize, Badge.ReasonFontNow) * (tmp.transform.lossyScale.y / view.lossyScale.y) * unitPx;      // 0.15.0: as sized, not as a long line shrank (Badge.Fit)
             }
             catch { }
             return CardFont * CardScale * unitPx;
@@ -458,7 +624,7 @@ namespace YazsCompanion
             var list = new List<float>(items.Count);
             foreach (var it in items) list.Add(Width(it, font));
             leadW = Width("<b>" + lead + "</b>", font) + font * 0.6f;
-            sepW = Width("  /  ", font);
+            sepW = Width("x" + Separator + "x", font) - Width("xx", font);      // between two glyphs: TMP leaves trailing spaces out of a width (Q4)
             return list;
         }
 

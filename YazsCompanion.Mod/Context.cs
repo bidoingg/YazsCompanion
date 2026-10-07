@@ -12,6 +12,7 @@
 // cards in One Hit; no XP, luck or pickup range cards in Extermination) - the game already withholds those, so
 // the mode only has to steer what is left: the horizon, boss damage, crowd control, how much survival weighs.
 using System;
+using System.Collections.Generic;
 
 namespace YazsCompanion
 {
@@ -35,9 +36,13 @@ namespace YazsCompanion
         public string TagPlan = "Auto";
         /// <summary>SOS late in a timed run: 0 = by the clock (Liberate once a recruit can no longer be built), 1 = always recruit, 2 = Liberate from the halfway mark.</summary>
         public int Recruit = 0;
-        /// <summary>How level-ups are split between the weapon and the abilities for survivors on Auto (a selected build
-        /// brings its own style). The human guides disagree on "weapon first", so the default sits between them.</summary>
+        /// <summary>How level-ups are split between the weapon and the abilities for survivors on plain Auto (a selected build
+        /// brings its own style; a lent build Auto follows too, unless <see cref="LentStyleMine"/>). The human guides disagree on
+        /// "weapon first", so the default sits between them.</summary>
         public BuildStyle Style = BuildStyle.Balanced;
+        /// <summary>0.15.0 (C15-07): [Advice] LentBuildStyle = Mine - <see cref="Style"/> also for a build another mod lends while Auto
+        /// follows it (false, the default: that build's own style, said on the cards; Builds.StyleFor).</summary>
+        public bool LentStyleMine;
 
         public static Doctrine Current = new Doctrine();
         public double SynergyWeight { get { return Synergy <= 0 ? 0 : Synergy == 1 ? 1.0 : 1.6; } }
@@ -52,7 +57,7 @@ namespace YazsCompanion
         public int Wave, Waves;                 // Extermination: the wave now and how many there are (0 = unknown)
         public int Horde;                       // horde level
         public int LevelUps;                    // level-up screens seen this run
-        public double LevelRate;                // level-ups per minute, recent
+        public double LevelRate;                // level-ups per minute: the mode's measured pace blended with this run's, smoothed (LevelPace; 0 = not known)
         public double Health = 1;               // the squad's health, 0..1
         public Doctrine D = Doctrine.Current;
 
@@ -104,12 +109,15 @@ namespace YazsCompanion
 
         public string Phase { get { double p = Progress; return p < 0.3 ? "early" : p < 0.7 ? "mid" : "late"; } }
 
-        /// <summary>Level-ups still to come, from the recent pace (a run averages two to four a minute early, fewer later).</summary>
+        /// <summary>Level-ups still to come, from the run's pace (LevelPace: the mode's measured pace blended with this run's own, smoothed).
+        /// 0.15.0 (C15-04): with no pace handed in, the mode's measured pace blended with the level-ups seen - up to 0.14.0 a flat 2.5 a
+        /// minute, whatever the mode (Hardcore runs at 4.7).</summary>
         public double ExpectedLevelUps
         {
             get
             {
-                double rate = LevelRate > 0 ? LevelRate : (Seconds > 60 && LevelUps > 0 ? LevelUps / (Seconds / 60.0) : 2.5);
+                double rate = LevelRate > 0 ? LevelRate
+                    : LevelPace.Blend(LevelPace.Prior(Mode), LevelUps > 0 && Seconds > 0 ? LevelUps / Math.Max(LevelPace.MinWindow, Seconds) * 60.0 : 0, LevelUps);
                 rate = Math.Max(0.6, Math.Min(5.0, rate));
                 return rate * Remaining / 60.0;
             }
@@ -233,6 +241,87 @@ namespace YazsCompanion
             if (p <= 0.35) return a + (b - a) * (p / 0.35);
             if (p <= 0.85) return b + (c - b) * ((p - 0.35) / 0.5);
             return c + (d - c) * ((p - 0.85) / 0.15);
+        }
+    }
+
+    /// <summary>0.15.0 (C15-04): the run's level-up pace, which '~N level-ups to come' (RunContext.ExpectedLevelUps) and every score
+    /// scaled by the clock read. Up to 0.14.0 it was the level-ups of the last three minutes per minute, nothing before 0:45 (a flat
+    /// 2.5 then) - in the user's 10-06 run '~N level-ups to come' read 49, 48, 58, 65, 76 in the first two minutes and 66 - 77 at 3:00,
+    /// a 55 % swing that moved every clock-scaled card with it. Now the mode's measured pace (Prior) counts as <see cref="PriorWeight"/>
+    /// level-ups seen, blended with the windowed rate by the level-ups this run has seen (rate = (prior * k + observed * n) / (k + n)),
+    /// and the blend is smoothed at every level-up with a half-life of <see cref="HalfLife"/> seconds of play, starting from the prior:
+    /// on the same run 54 - 58 from 0:59 to 3:00. Fed at the level-up screens only (GameState's Pace), so a replay of the level-up
+    /// clocks gives exactly what the live run gave. Pure: the bench replays the logged runs (RankCases.cs, N1 - N4).</summary>
+    internal sealed class LevelPace
+    {
+        public const int PriorWeight = 4;           // k: the mode's measured pace counts as four level-ups seen
+        public const double HalfLife = 60;          // seconds of play: the smoothing's half-life
+        public const double Window = 180;           // seconds: the observed rate's window, the last three minutes (as up to 0.14.0)
+        public const double MinWindow = 20;         // seconds: a level-up in the first seconds of a run is not read as 3 a second
+
+        /// <summary>Level-ups per minute a run of the mode brings after its first minute, measured over the user's runs of three minutes
+        /// or more in companion.log.1 + companion.log (2026-09-15 to 10-06; the 30-second scripted series runs left out - they only see the
+        /// fast start): Normal 2.9 (14 runs, 478 level-ups in 161.8 min after 1:00 = 2.95; the 7 runs of 15 min or more: 373 in 129.9 min
+        /// = 2.87 - e.g. 10-04 20:14 60 in 19.9 min, 10-03 12:02 60 in 19.5, 09-19 16:53 52 in 19.8); Hardcore 4.7 (4 runs: 10-04 09:36,
+        /// 10-05 18:00, 10-06 20:33, 09-22 23:13 - 141 in 29.9 min = 4.72); Endless 3.2 (4 runs: 09-19 13:36, 09-20 19:34, 09-22 23:29,
+        /// 10-04 16:04 - 206 in 65.4 min = 3.15, 3.26 over whole runs); BossRush 4.6 (one run, 10-04 19:52: 44 in 9.5 min = 4.62). A mode
+        /// with no measured run (Extermination, OneHit, Infinite): Normal's. mod\tools\advice_audit.py prints the pace per mode; its table
+        /// counts every run, the scripted ones too (Normal 4.31 a minute over 335 runs).</summary>
+        public static double Prior(string mode)
+        {
+            switch (mode)
+            {
+                case "Hardcore": return 4.7;
+                case "Endless": return 3.2;
+                case "BossRush": return 4.6;
+                default: return 2.9;
+            }
+        }
+
+        /// <summary>The prior counted as <see cref="PriorWeight"/> level-ups seen, the observed rate as <paramref name="n"/>.</summary>
+        public static double Blend(double prior, double observed, int n)
+        {
+            if (n <= 0) return prior;
+            return (prior * PriorWeight + observed * n) / (PriorWeight + n);
+        }
+
+        readonly List<double> _at = new List<double>();        // the run clock of every level-up screen seen this run
+        string _mode;                                           // the mode the smoothing below was replayed under (null: start over)
+        int _done;                                              // level-ups already smoothed in
+        double _smooth, _last;                                  // the smoothed rate, the clock of the last level-up smoothed in
+
+        public int Count { get { return _at.Count; } }
+        /// <summary>A new run (the clock went back).</summary>
+        public void Clear() { _at.Clear(); _mode = null; }
+        /// <summary>A level-up screen at <paramref name="seconds"/> of play (a reroll or a replaced offer is the same level-up: not added).</summary>
+        public void Add(double seconds) { _at.Add(seconds); }
+
+        /// <summary>The level-ups per minute in the window up to the <paramref name="i"/>-th level-up, that one counted.</summary>
+        public double Observed(int i)
+        {
+            if (i < 0 || i >= _at.Count) return 0;
+            double t = _at[i], w = Math.Max(MinWindow, Math.Min(Window, t));
+            int n = 0;
+            for (int j = 0; j <= i; j++) if (_at[j] >= t - w) n++;
+            return n / (w / 60.0);
+        }
+
+        /// <summary>Level-ups per minute for the rest of the run under <paramref name="mode"/>: the prior before the first level-up, then
+        /// the blend smoothed at every level-up. Never 0.</summary>
+        public double Rate(string mode)
+        {
+            mode = mode ?? "";
+            double prior = Prior(mode);
+            if (_mode != mode) { _mode = mode; _done = 0; _smooth = prior; _last = 0; }
+            for (; _done < _at.Count; _done++)
+            {
+                double t = _at[_done];
+                double blend = Blend(prior, Observed(_done), _done + 1);
+                double dt = Math.Max(0, t - _last);
+                _smooth += (1 - Math.Pow(0.5, dt / HalfLife)) * (blend - _smooth);
+                _last = Math.Max(_last, t);
+            }
+            return _smooth;
         }
     }
 }

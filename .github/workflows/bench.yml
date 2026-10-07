@@ -1,0 +1,44 @@
+# The Companion's offline bench (tools/ItemBench) on every push to main and every pull request.
+# Building the bench compiles the mod's pure files (the rules, the wording, the builds - no game assembly needed); the run
+# takes every case that needs no game data (--no-data): the game's extracted data (data/gamedata.json, data/probe.json)
+# stays out of this repository, so the item scenarios and the checks over the game's names run on the maintainer's PC,
+# in the bench gate of release.ps1. The job fails on a non-zero exit or any "not as wanted" line.
+name: bench
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bench (the cases without game data)
+        shell: pwsh
+        run: |
+          $out = dotnet run --project tools/ItemBench/ItemBench.csproj -c Release -- --no-data 2>&1
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { "$_" }
+          $bad = @($out | Where-Object { "$_" -match 'not as wanted' })
+          if ($code -ne 0) { Write-Host "::error::the bench exited $code"; exit 1 }
+          if ($bad.Count -gt 0) { Write-Host "::error::$($bad -join ' / ')"; exit 1 }
+
+      - name: Advice audit (self-test)
+        shell: pwsh
+        run: python tools/advice_audit.py --self-test

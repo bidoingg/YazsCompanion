@@ -527,4 +527,132 @@ namespace YazsCompanion
             return sb.ToString();
         }
     }
+
+    // ==================================================================== 0.15.0 (C15-09): what the game counts and the advice does not follow
+    // Four objective kinds hold a count the advice has no rule for: the story's own events (CustomGameplayEvent: an event id the level
+    // raises - "Broken Vials 0/5" on the game's quest box - up to targetCount; the 5 story quests Main_02/04/06/09/13), the Boss Rush
+    // boss (KillBossRushBoss: killed or not; Main_05/08/11/14/15/R1), a game event counted (EventCount: GameEventsManager.GameEvents,
+    // 14 class quests) and kills of a rank (KillEnemyFilter, 2). Up to 0.14.0 they were logged 'advice unchanged' and nothing more: the
+    // user had "Genesis" (Main_06) active for two sessions without a word from the mod. Now the '[quest]' line names each one's id and
+    // count ('1. CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only'), a change of a count is logged once
+    // ('[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only'), and the story kinds get an
+    // info-only QUEST row on the PLAN readout ('QUEST  story objective 3 of 5', dim; [General] QuestProgress). This widens the PLAN rule
+    // "the QUEST row shows only while a rule changes the advice" for story progress on purpose (roadmap 10-06, Companion item 9). No card
+    // moves for any of them. Pure: Quest.cs reads the fields and the runtimes' counts, the bench replays the decoding.
+
+    /// <summary>What a counted objective counts.</summary>
+    internal enum CountKind { Story, BossRushBoss, Event, Kills }
+
+    /// <summary>One counted objective of the active quest, with the count the game keeps (refreshed per snapshot by Quest.cs).</summary>
+    internal sealed class QuestCount
+    {
+        public CountKind Kind;
+        public string Id = "";                  // Story: the eventId; Event: the event's name (GameEventsManager.GameEvents); Kills: the rank filter in words
+        public int Need = 1;                    // targetCount (the Boss Rush boss: 1)
+        public double Have = double.NaN;        // the runtime's own count (_count; the boss: 1 once killed); NaN = not read
+        public bool? Done;                      // the runtime's IsFulfilled (null: not read)
+        /// <summary>A story objective: the readout shows it.</summary>
+        public bool Story { get { return Kind == CountKind.Story || Kind == CountKind.BossRushBoss; } }
+        public bool Met { get { return Done == true || (!double.IsNaN(Have) && Have >= Need); } }
+    }
+
+    /// <summary>The active quest's counted objectives (QuestCount), their progress, the row and the log words.</summary>
+    internal sealed class QuestStory
+    {
+        public string Quest = "";
+        public readonly List<QuestCount> Counts = new List<QuestCount>();
+        public bool Failed;                     // the game counts the quest as failed
+        public string NotThisRun;               // QuestTeam's gate: why this run cannot complete the quest (null: it can)
+
+        static readonly CultureInfo IC = CultureInfo.InvariantCulture;
+        static string N(double v) { return double.IsNaN(v) ? "?" : Math.Round(v).ToString("0", IC); }
+        static string Bare(string cls) { cls = (cls ?? "").Trim(); return cls.StartsWith("GameHubQuestObjective", StringComparison.Ordinal) ? cls.Substring("GameHubQuestObjective".Length) : cls; }
+
+        /// <summary>A counted objective from its class name (with or without the GameHubQuestObjective prefix) and its raw fields; null:
+        /// another class. <paramref name="targetEvent"/> = EventCount's GameEvents name; <paramref name="rankMask"/> = KillEnemyFilter's
+        /// GameHubQuestEnemyRankMask (1 Regular, 2 Elite, 4 SuperElite, 8 ArenaBoss).</summary>
+        public static QuestCount Decode(string cls, int targetCount, string eventId = null, string targetEvent = null, bool requireBoss = false, int rankMask = 15)
+        {
+            int need = Math.Max(1, targetCount);
+            switch (Bare(cls))
+            {
+                case "CustomGameplayEvent": return new QuestCount { Kind = CountKind.Story, Id = string.IsNullOrEmpty(eventId) ? "?" : eventId.Trim(), Need = need };
+                case "KillBossRushBoss": return new QuestCount { Kind = CountKind.BossRushBoss, Id = "the Boss Rush boss", Need = 1 };
+                case "EventCount": return new QuestCount { Kind = CountKind.Event, Id = string.IsNullOrEmpty(targetEvent) ? "?" : targetEvent.Trim(), Need = need };
+                case "KillEnemyFilter": return new QuestCount { Kind = CountKind.Kills, Id = Ranks(rankMask) + (requireBoss ? ", bosses only" : ""), Need = need };
+                default: return null;
+            }
+        }
+
+        /// <summary>KillEnemyFilter's rank mask in words: "rank SuperElite", "rank Elite / SuperElite", "any rank".</summary>
+        public static string Ranks(int mask)
+        {
+            if ((mask & 15) == 15 || mask <= 0) return "any rank";
+            var names = new List<string>();
+            if ((mask & 1) != 0) names.Add("Regular");
+            if ((mask & 2) != 0) names.Add("Elite");
+            if ((mask & 4) != 0) names.Add("SuperElite");
+            if ((mask & 8) != 0) names.Add("ArenaBoss");
+            return "rank " + string.Join(" / ", names);
+        }
+
+        /// <summary>The '[quest]' read line's words for one counted objective: "id main_story_objective_q6 0/5 - progress only".</summary>
+        public static string LogText(QuestCount c)
+        {
+            if (c == null) return "advice unchanged";
+            string count = N(c.Have) + "/" + c.Need;
+            switch (c.Kind)
+            {
+                case CountKind.Story: return "id " + c.Id + " " + count + " - progress only";
+                case CountKind.BossRushBoss: return c.Id + " " + (c.Met ? "1" : double.IsNaN(c.Have) ? "?" : "0") + "/1 - progress only";
+                case CountKind.Event: return "event " + c.Id + " " + count + " - progress only";
+                default: return "kills of " + c.Id + " " + count + " - progress only";
+            }
+        }
+
+        /// <summary>The readout's info-only QUEST row ("story objective 3 of 5", "story objective: the Boss Rush boss"); null: no story
+        /// objective, or the quest cannot complete this run (failed, or the run does not fit its conditions).</summary>
+        public string Row()
+        {
+            if (Failed || NotThisRun != null) return null;
+            QuestCount pick = null;
+            foreach (var c in Counts) if (c.Story && (pick == null || (pick.Met && !c.Met))) pick = c;        // the first open one, else the first
+            return pick == null ? null : RowText(pick);
+        }
+
+        public static string RowText(QuestCount c)
+        {
+            if (c == null || !c.Story) return null;
+            if (c.Kind == CountKind.BossRushBoss) return c.Met ? "story objective: Boss Rush boss killed" : "story objective: the Boss Rush boss";
+            if (double.IsNaN(c.Have)) return c.Met ? "story objective done" : "story objective (needs " + c.Need + ")";
+            return "story objective " + N(Math.Min(c.Have, c.Need)) + " of " + c.Need + (c.Met ? ", done" : "");
+        }
+
+        /// <summary>One counted objective in the log's "[quest] Q -> ..." words: open "story objective main_story_objective_q6: 3 of 5 -
+        /// progress only", met "story objective main_story_objective_q6 met" (the advice audit's time-to-met reads the " met").</summary>
+        public static string SaidOne(QuestCount c)
+        {
+            string what = c.Kind == CountKind.Story ? "story objective " + c.Id : c.Kind == CountKind.BossRushBoss ? "kill " + c.Id : c.Kind == CountKind.Event ? "event " + c.Id : "kills of " + c.Id;
+            if (c.Met) return what + " met";
+            string count = c.Kind == CountKind.BossRushBoss ? (double.IsNaN(c.Have) ? "not read" : "not yet") : N(c.Have) + " of " + c.Need;
+            return what + ": " + count + " - progress only";
+        }
+
+        /// <summary>The counted objectives as they stand, for the log line.</summary>
+        public string Said()
+        {
+            var parts = Counts.Select(SaidOne).ToList();
+            string gate = Failed ? " - not followed (the game counts the quest as failed)" : NotThisRun != null ? " - not followed (" + NotThisRun + ")" : "";
+            return (parts.Count == 0 ? "nothing counted" : string.Join("; ", parts)) + gate;
+        }
+
+        /// <summary>A change worth a log line and a readout rebuild: a count, a met objective, the gate.</summary>
+        public string Key()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(Failed ? 'f' : '-').Append(NotThisRun == null ? '-' : 'n');
+            foreach (var c in Counts) sb.Append('|').Append((int)c.Kind).Append(c.Met ? 'm' : '-').Append(N(c.Have));
+            return sb.ToString();
+        }
+    }
 }

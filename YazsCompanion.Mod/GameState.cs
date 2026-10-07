@@ -3,6 +3,7 @@
 // empty. Powerups are therefore regrouped here by the class they belong to.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using CT = GamePlayer.CharacterType;
 
@@ -127,6 +128,11 @@ namespace YazsCompanion
         // snapshot (null: no quest, or nothing in it for the cards)
         QuestRules _rules; bool _rulesRead;
         public QuestRules Rules { get { if (!_rulesRead) { _rulesRead = true; try { _rules = YazsCompanion.Quest.Rules(this); } catch { } } return _rules; } }
+
+        // 0.15.0 (C15-09): the active quest's counted objectives (story events, the Boss Rush boss, event counts, kills of a rank) with
+        // their counts, read once per snapshot (null: no quest, or nothing counted) - the readout's info-only story row
+        QuestStory _story; bool _storyRead;
+        public QuestStory Story { get { if (!_storyRead) { _storyRead = true; try { _story = YazsCompanion.Quest.Story(this); } catch { } } return _story; } }
 
         public string SquadText()
         {
@@ -458,19 +464,16 @@ namespace YazsCompanion
         /// <summary>The run's pace, kept across snapshots: level-up screens seen and when (Advisor feeds it).</summary>
         internal static class Pace
         {
-            static readonly List<float> _at = new List<float>();
+            // 0.15.0 (C15-04): the mode's measured pace blended with this run's and smoothed (LevelPace, Context.cs - the bench replays it);
+            // up to 0.14.0 the last three minutes' rate, nothing before 0:45 (2.5 a minute then)
+            static readonly LevelPace _pace = new LevelPace();
             static float _lastSeconds = -1f;
-            public static int Count { get { return _at.Count; } }
-            public static void Clock(float seconds) { if (seconds + 5f < _lastSeconds) _at.Clear(); _lastSeconds = seconds; }   // the clock jumped back: a new run
-            public static void LevelUp(float seconds) { Clock(seconds); _at.Add(seconds); }
-            /// <summary>Level-ups per minute over the last three minutes of play (0 = too early to say).</summary>
-            public static double Rate(float seconds)
-            {
-                if (seconds < 45f) return 0;
-                float window = Math.Min(180f, seconds); int n = 0;
-                foreach (var t in _at) if (t >= seconds - window) n++;
-                return n / (window / 60.0);
-            }
+            public static int Count { get { return _pace.Count; } }
+            public static void Clock(float seconds) { if (seconds + 5f < _lastSeconds) _pace.Clear(); _lastSeconds = seconds; }   // the clock jumped back: a new run
+            public static void LevelUp(float seconds) { Clock(seconds); _pace.Add(seconds); }
+            /// <summary>Level-ups per minute for the rest of the run: the mode's measured pace before the first level-up, then blended with
+            /// the run's own (four level-ups' worth of prior) and smoothed at each level-up (half-life 60 s). Never 0.</summary>
+            public static double Rate(string mode) { return _pace.Rate(mode); }
         }
 
         static void ReadContext(GameplayMaster master, Snapshot s)
@@ -494,7 +497,7 @@ namespace YazsCompanion
             }
             catch { }
             Pace.Clock(s.Seconds);
-            c.LevelUps = Pace.Count; c.LevelRate = Pace.Rate(s.Seconds);
+            c.LevelUps = Pace.Count; c.LevelRate = Pace.Rate(s.Mode);
             // recruits carry a sentinel health value, so the leader's health bar speaks for the squad
             foreach (var sv in s.Squad)
             {
@@ -543,7 +546,7 @@ namespace YazsCompanion
         }
 
         /// <summary>A cheap fingerprint of everything the plan reads from the run: who is on the squad, every powerup and
-        /// item with its level or count, the tag points, the active quest. The readout polls this every two seconds and
+        /// item with its level or count, the tag points, the active quest (0.15.0: and its story objectives' counts). The readout polls this every two seconds and
         /// takes the full snapshot (names, the tree, the tags profile: some thousand calls into the game) only when it
         /// moved. 0 = could not be read (the caller then takes the snapshot as before).</summary>
         public static long QuickKey()
@@ -587,6 +590,7 @@ namespace YazsCompanion
                     if (hs != null) foreach (var t in TagTypes) h = h * 1099511628211L + hs.GetNumType(t);
                     var qm = GameQuestManager.Get; var q = qm == null ? null : qm.ActiveQuest;
                     h = h * 1099511628211L + (q == null ? 0L : q.Pointer.ToInt64());
+                    h = h * 1099511628211L + YazsCompanion.Quest.StoryHash();       // 0.15.0 (C15-09): a story step rebuilds the QUEST row
                     return h == 0 ? 1 : h;
                 }
             }
@@ -642,6 +646,116 @@ namespace YazsCompanion
             try { ReadBoosts(s); } catch (Exception e) { Plugin.Logger.LogWarning("[boosts] " + e.Message); }
             foreach (var sv in s.Squad) foreach (var kv in sv.Items) s.ItemsHeld += Math.Max(1, kv.Value);
             return s;
+        }
+    }
+
+    /// <summary>0.15.0, the drift guard at run time. Once a session, at the warm-up on the main menu (Warmup.cs): the Companion's
+    /// kits (Builds.Kits: every weapon, ability and evolution by English name) against the live class data - each class's
+    /// abilityBasePowerups with their two evolutions, and its weapon line (weaponPowerups linked by previousLevelWeapon). 1.0.2
+    /// renamed five Ranger evolutions and the build's pick quietly lost its bonus; a rename is now said once, as a Warning
+    /// "[data] N names in the Companion's tables are not in this game build: ...", and the names read teach Builds the game's
+    /// name of every asset (LearnAssets), so the advice still matches a renamed powerup. Lent build packs and the player's own
+    /// builds with names the game does not have: one "[builds] ..." line per name. Some 400 calls into the game, on the menu.</summary>
+    internal static class DataDrift
+    {
+        static bool _done; static int _tries;
+        public static bool Done { get { return _done; } }
+
+        static string Norm(string s)
+        {
+            var sb = new StringBuilder();
+            foreach (var ch in s ?? "") if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
+            return sb.ToString();
+        }
+
+        /// <summary>Main thread, on the menu. False = no class data yet (asked again later; given up after five tries).</summary>
+        public static bool Run()
+        {
+            if (_done) return true;
+            long perf = Perf.Begin();
+            try
+            {
+                var game = new List<GameKit>();
+                var learn = new List<KeyValuePair<string, string>>();
+                var assets = new HashSet<string>(StringComparer.Ordinal);          // every asset key read
+                using (G.Cache())
+                {
+                    foreach (CT cls in Enum.GetValues(typeof(CT)))
+                    {
+                        if (cls == CT.None || cls == CT.NumCharacters) continue;
+                        ClassProperties cp = null; try { cp = G.PropsOf(cls); } catch { }
+                        if (cp == null) continue;
+                        var g = new GameKit { Survivor = G.ClassName(cls) };
+                        Func<PowerupBase, string> note = p =>
+                        {
+                            if (p == null) return null;
+                            string name = G.Name(p), asset = G.Asset(p);
+                            if (string.IsNullOrEmpty(name) || name == "?" || string.IsNullOrEmpty(asset)) return null;
+                            name = name.Trim();
+                            g.Assets[name] = asset; learn.Add(new KeyValuePair<string, string>(name, asset)); assets.Add(asset);
+                            return name;
+                        };
+                        // the weapon line: the start has no previous weapon, the upgrade follows it, the three branches follow the upgrade
+                        var prevOf = new Dictionary<string, string>(StringComparer.Ordinal);     // name -> the previous weapon's name ("" = none)
+                        try
+                        {
+                            foreach (var w in G.Each(cp.weaponPowerups))
+                            {
+                                string name = note(w); if (name == null) continue;
+                                PowerupBase prev = null; try { prev = w.previousLevelWeapon; } catch { }
+                                prevOf[name] = prev == null ? "" : G.Name(prev).Trim();
+                            }
+                        }
+                        catch { }
+                        var starts = prevOf.Where(kv => kv.Value.Length == 0).Select(kv => kv.Key).ToList();
+                        if (starts.Count == 1)
+                        {
+                            g.Start = starts[0];
+                            var ups = prevOf.Where(kv => kv.Value == g.Start).Select(kv => kv.Key).ToList();
+                            if (ups.Count == 1) { g.Upgrade = ups[0]; g.Branches.AddRange(prevOf.Where(kv => kv.Value == g.Upgrade).Select(kv => kv.Key)); }
+                        }
+                        try
+                        {
+                            foreach (var a in G.Each(cp.abilityBasePowerups))
+                            {
+                                if (note(a) == null) continue;
+                                PowerupBase ea = null, eb = null; try { ea = a.abilityEvolutionA; eb = a.abilityEvolutionB; } catch { }
+                                note(ea); note(eb);
+                            }
+                        }
+                        catch { }
+                        if (g.Assets.Count > 0) game.Add(g);
+                    }
+                }
+                if (game.Count == 0)
+                {
+                    if (++_tries < 5) return false;
+                    _done = true; Plugin.Logger.LogInfo("[data] no class data found: the names were not checked this session");
+                    return true;
+                }
+                _done = true;
+                Builds.LearnAssets(learn);
+                // a name is in the game when it leads to an asset read just now: a name the game uses, an asset key, or a kit name whose
+                // asset is there under another name (the advice still matches it)
+                Builds.InGame = n => { string k = Builds.AssetOf(n); return k != null && assets.Contains(k); };
+
+                var line = new List<string>();
+                var miss = Builds.NotInGame(game, line);
+                int judged = Builds.Kits.Count(k => game.Any(g => string.Equals(g.Survivor, k.Survivor, StringComparison.OrdinalIgnoreCase)));
+                int names = Builds.Kits.Where(k => game.Any(g => string.Equals(g.Survivor, k.Survivor, StringComparison.OrdinalIgnoreCase))).Sum(k => Builds.KitNamesWithAssets(k).Count());
+                string notJudged = string.Join(", ", Builds.Kits.Where(k => !game.Any(g => string.Equals(g.Survivor, k.Survivor, StringComparison.OrdinalIgnoreCase))).Select(k => k.Survivor));
+                string lineText = line.Count > 0 ? "; the weapon line differs: " + string.Join("; ", line) : "";
+                if (miss.Count > 0) Plugin.Logger.LogWarning("[data] " + miss.Count + " names in the Companion's tables are not in this game build: " + string.Join(", ", miss) + lineText);
+                else if (line.Count > 0) Plugin.Logger.LogWarning("[data] the Companion's weapon lines differ from this game build: " + string.Join("; ", line));
+                else Plugin.Logger.LogInfo("[data] all " + names + " names of the Companion's tables are in this game build (" + judged + " classes" + (notJudged.Length > 0 ? "; no class data for " + notJudged : "") + ")");
+
+                foreach (var sv in Builds.Survivors) foreach (var p in Builds.PacksOf(sv)) Builds.SayNotInGame(p);
+                var mine = Builds.CustomNotInGame(Builds.InGame);
+                if (mine.Count > 0) Plugin.Logger.LogInfo("[builds] your own builds (builds.json) name what this game build does not have: " + string.Join(", ", mine) + " - edit them in the BUILDS tab");
+                return true;
+            }
+            catch (Exception e) { _done = true; Plugin.Logger.LogInfo("[data] check skipped: " + e.Message); return true; }
+            finally { Perf.End("warmup.data", perf); }
         }
     }
 }

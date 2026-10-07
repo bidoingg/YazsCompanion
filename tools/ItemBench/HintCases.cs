@@ -180,7 +180,8 @@ namespace YazsCompanion.Bench
                 var c = ScreenCall.Decide(x); if (c.Words != null) lines.Add(c.Words);
             }
             var nq = In("Chest", 0.3, 2, K("A", 0.2, 1)); nq.NoItems = "take no items"; lines.Add(ScreenCall.Decide(nq).Words);
-            var bn = In("LevelUp", 0.4, 0, K("A", 4.0, 1), new HintCard { Name = "Hunter's Whistle: Panic Whistle", Score = 0.5, Rank = 2, Skipped = true, Build = "A Build Named Twenty1" }); bn.Banish = true; bn.CanBanish = true; bn.Banishes = 1; lines.Add(ScreenCall.Decide(bn).Words);
+            // 0.15.0: the longest evolution name of 1.0.2 (1.0.1's longest, "Hunter's Whistle: Panic Whistle", is "Animal Whistle: Panic" now)
+            var bn = In("LevelUp", 0.4, 0, K("A", 4.0, 1), new HintCard { Name = "Automatic Turret: Provocation", Score = 0.5, Rank = 2, Skipped = true, Build = "A Build Named Twenty1" }); bn.Banish = true; bn.CanBanish = true; bn.Banishes = 1; lines.Add(ScreenCall.Decide(bn).Words);
             var bad = lines.Where(l => l == null || l.Length > ScreenCall.Budget || Wording.Rails(l).Any(b => !b.StartsWith("length"))).ToList();
             Check("H2", "every action line within the rails (" + ScreenCall.Budget + " characters, the card font's glyphs, no score)", bad.Count == 0 && lines.Count == 5, string.Join(" | ", lines));
         }
@@ -426,7 +427,7 @@ namespace YazsCompanion.Bench
                 && advisor.Contains("WhyUi.OnOffer(") && advisor.Contains("WhyUi.Close();") && advisor.Contains("WhyUi.Forget();") && advisor.Contains("WhyUi.Tick();"));
             Check("S", "[Advice] ActionHints (Reroll, Skip by default - no banish), [General] ShowWhy (on), RerollHint kept",
                 plugin != null && plugin.Contains("Config.Bind(\"Advice\", \"ActionHints\", HintActions.Reroll | HintActions.Skip,") && plugin.Contains("Config.Bind(\"General\", \"ShowWhy\", true,") && plugin.Contains("Config.Bind(\"Advice\", \"RerollHint\", true,"));
-            Check("S", "the ADVICE tab's hints row (eleven rows kept)", menu != null && menu.Contains("\"ad:hints\"") && menu.Contains("eleven rows") && menu.Contains("static void HintsStep(int d)"));
+            Check("S", "the ADVICE tab's hints row (one row for the rescue screen and the others; the rows in the tab's scroller)", menu != null && menu.Contains("\"ad:hints\"") && menu.Contains("Scroll(\"advice\", x, y, w, RowsRoom(y, rh, step), false, 40f") && menu.Contains("static void HintsStep(int d)"));
             Check("S", "the ability cards carry their tag facts for the band (the card's line unchanged: it reads the head)", ranker != null && ranker.Contains("Wording.Tags(say, G.Facts(p), s.Tags, s.Boosts, ctx);"));
             Check("S", "WhyText.cs, ScreenCall.cs and ScreenBand.cs are compiled into the bench (pure: no game types)",
                 proj != null && proj.Contains("WhyText.cs") && proj.Contains("ScreenCall.cs") && proj.Contains("ScreenBand.cs"));

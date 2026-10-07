@@ -145,6 +145,25 @@ namespace YazsCompanion
             return floor + 0.1 * lvl + syn + (lvl == max - 1 ? 0.25 : 0);
         }
 
+        /// <summary>Balanced's "each ability once early" (Ranker.ScoreAbility): the lift of a missing ability's first level - up to 1.5 while
+        /// <paramref name="reach10"/> (the clock's share of the next ten level-ups, Context.Reach(10)) is above 0.4, full from 1.0; none under
+        /// the other styles, with four abilities owned, or for an ability the build skips. Pure since 0.15.0 (C15-07: the bench orders a
+        /// lent build's hand by the style it follows).</summary>
+        public static double OnceEarly(BuildStyle style, int owned, bool skipped, double reach10)
+        {
+            if (style != BuildStyle.Balanced || owned >= 4 || skipped) return 0;
+            return 1.5 * Math.Max(0, Math.Min(1, (reach10 - 0.4) / 0.6));
+        }
+
+        /// <summary>A new ability's score with the lift of <see cref="OnceEarly"/>, squeezed above 5.6 so that two new abilities keep their
+        /// order and none reaches a tier-up's 6.2.</summary>
+        public static double WithOnce(double score, double once)
+        {
+            if (once <= 0) return score;
+            double lifted = score + once;
+            return Math.Max(score, lifted <= 5.6 ? lifted : 5.6 + (lifted - 5.6) * 0.25);
+        }
+
         // ---- the stat cards (Ranker.ScoreMilitary; pure, so the bench replays the logged cards)
         /// <summary>The rarity factor of a stat card: Common 1, Rare 2, Legendary 3 - the cards' own numbers go about 1 : 2 : 3-4 by
         /// rarity - and an Endless card <see cref="EndlessWeight"/> of <paramref name="endlessRatio"/>.</summary>

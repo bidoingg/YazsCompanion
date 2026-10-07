@@ -15,7 +15,28 @@
     <!-- Game install; override with -p:GameDir=... -->
     <GameDir Condition="'$(GameDir)' == ''">J:\SteamLibrary\steamapps\common\Yet Another Zombie Survivors</GameDir>
     <BepInExDir>$(GameDir)\BepInEx</BepInExDir>
+    <!-- 0.15.0: the DLL says which source it was built from - InformationalVersion = VERSION of Plugin.cs + "+" + the commit
+         (the YazsSourceRevision target below); Plugin.cs logs it on the load line, release.ps1 checks it -->
+    <InformationalVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\Plugin.cs')), '(?&lt;=VERSION = ")[^"]+'))</InformationalVersion>
   </PropertyGroup>
+
+  <!-- 0.15.0: the commit as SourceRevisionId, which the SDK appends to InformationalVersion ("0.15.0+abc1234"; "abc1234-dirty"
+       when the tree has uncommitted or untracked changes). Outside a git checkout it stays the bare version. -->
+  <Target Name="YazsSourceRevision" BeforeTargets="InitializeSourceControlInformation" Condition="'$(SourceRevisionId)' == ''">
+    <Exec Command="git rev-parse --short HEAD 2&gt;nul" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true"
+          IgnoreStandardErrorWarningFormat="true" EchoOff="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_YazsCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="_YazsGitExit" />
+    </Exec>
+    <Exec Command="git status --porcelain 2&gt;nul" Condition="'$(_YazsGitExit)' == '0'" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" EchoOff="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_YazsChanged" />
+    </Exec>
+    <PropertyGroup Condition="'$(_YazsGitExit)' == '0' and '$(_YazsCommit)' != ''">
+      <SourceRevisionId>$(_YazsCommit.Trim())</SourceRevisionId>
+      <SourceRevisionId Condition="'@(_YazsChanged)' != ''">$(SourceRevisionId)-dirty</SourceRevisionId>
+    </PropertyGroup>
+  </Target>
 
   <!-- BepInEx 6 IL2CPP core + the interop assemblies BepInEx generated on first launch -->
   <ItemGroup>

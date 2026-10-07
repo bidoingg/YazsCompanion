@@ -16,6 +16,9 @@
 //    the band does not argue an order the scores barely make;
 //  - a card a quest rule decided: the quest line first; on a lifted weapon the quest stands in for the build's order ("levels
 //    abilities first" would contradict the pick), and on a card the quest makes AVOID the card's merits are left out.
+//  - the side panel of a wide screen (0.15.x, C-M1 of the 10-07 review) gets the same items with a shorter "vs #1" sentence: the
+//    first card's own line stands under that card, so the panel names the decider alone ("Experiment 21 goes first", or with the
+//    style in two words: "... goes first: weapons first") - WhyBlock.SideItems.
 // The [card] log lines are not touched: [why] logs what the band drew.
 // Pure (no game types): the offline bench sweeps the builders and replays the 10-05 offers.
 using System;
@@ -44,6 +47,10 @@ namespace YazsCompanion
         public string Versus;                                           // the "vs #1" sentence (null: a card alone)
         public readonly List<string> Reasons = new List<string>();
         public readonly List<string> Items = new List<string>();        // Versus and Reasons in packing order
+        // 0.15.x (C-M1 of the 10-07 review): the side panel's words - the "vs #1" sentence without the first card's own line (it stands
+        // under that card already: "X goes first", "X goes first: weapons first"), then the reasons, in the same order
+        public string SideVersus;
+        public readonly List<string> SideItems = new List<string>();
     }
 
     internal static class WhyText
@@ -65,8 +72,9 @@ namespace YazsCompanion
         {
             var b = new WhyBlock();
             if (x == null) return b;
-            bool close;
-            b.Versus = Versus(x, out close);
+            bool close; string side;
+            b.Versus = Versus(x, out close, out side);
+            b.SideVersus = side;
             b.Close = close;
             if (close) b.Lead = "CLOSE CALL";
             b.Reasons.AddRange(Reasons(x.Say, x.Why, x.Shown, Math.Round(x.Score, 2) < 1.0, true, x.Lend));
@@ -74,40 +82,76 @@ namespace YazsCompanion
             if (b.Versus != null && (x.Rank > 1 || close)) b.Items.Add(b.Versus);
             b.Items.AddRange(b.Reasons);
             if (b.Versus != null && x.Rank <= 1 && !close) b.Items.Add(b.Versus);
+            if (b.SideVersus != null && (x.Rank > 1 || close)) b.SideItems.Add(b.SideVersus);
+            b.SideItems.AddRange(b.Reasons);
+            if (b.SideVersus != null && x.Rank <= 1 && !close) b.SideItems.Add(b.SideVersus);
             return b;
         }
 
         // ================================================================ the "vs #1" sentence
         /// <summary>The first card: how far ahead of the second it is ("Just ahead of Medical Drone"). Any other: what the first card
         /// has that this one lacks ("Experiment 21 goes first: The Medic build's main ability"); a close call says "Either works - ...".</summary>
-        public static string Versus(WhyIn x, out bool close)
+        public static string Versus(WhyIn x, out bool close) { string side; return Versus(x, out close, out side); }
+
+        /// <summary>As above; <paramref name="side"/>: the side panel's form (0.15.x, C-M1 of the 10-07 review). Where the band's sentence
+        /// carries the first card's own line - which stands under that card already - the panel says the decider alone: "Experiment 21
+        /// goes first", with the style in two words where that line names it ("... goes first: weapons first"); live 10-06 the whole
+        /// sentence (63 - 79 characters) took two of the panel's lines and pushed a reason out. Any other sentence as the band says it,
+        /// within <see cref="Budget"/>.</summary>
+        public static string Versus(WhyIn x, out bool close, out string side)
         {
-            close = false;
+            close = false; side = null;
             if (x == null) return null;
             if (x.Rank <= 1)
             {
                 if (string.IsNullOrEmpty(x.SecondName) || double.IsNaN(x.SecondScore)) return null;
                 close = Close(x.Score, x.SecondScore);
                 double gap = Math.Round(Math.Round(x.Score, 2) - Math.Round(x.SecondScore, 2), 2);
-                string two = Named(x.SecondName, x.Lend);
-                if (close) return Pick(VersusBudget, "either works - a hair ahead of " + two, "either works");
+                string two = Named(x.SecondName, x.Lend, x.Name);
+                if (close)
+                {
+                    side = Pick(Budget, "either works - a hair ahead of " + two, "either works");
+                    return Pick(VersusBudget, "either works - a hair ahead of " + two, "either works");
+                }
                 string head = gap < 0.6 ? "just ahead of " : gap < 1.5 ? "ahead of " : "well ahead of ";
+                side = Pick(Budget, head + two);
                 return Pick(VersusBudget, head + two);
             }
             if (string.IsNullOrEmpty(x.FirstName) || double.IsNaN(x.FirstScore)) return null;
             close = x.Rank == 2 && Close(x.FirstScore, x.Score);
-            string one = Named(x.FirstName, x.Lend);
-            if (close) return Pick(VersusBudget, "either works - " + one + " is a hair ahead", "either works");
+            string one = Named(x.FirstName, x.Lend, x.Name);
+            if (close)
+            {
+                side = Pick(Budget, "either works - " + one + " is a hair ahead", "either works");
+                return Pick(VersusBudget, "either works - " + one + " is a hair ahead", "either works");
+            }
             string lead = one + " goes first";
-            var edge = Edge(x);
+            bool onCard;
+            var edge = Edge(x, out onCard);
+            string brief = edge == null ? null : onCard ? Brief(edge) : edge;
+            side = Pick(Budget, brief != null ? lead + ": " + brief : null, lead);
             return Pick(VersusBudget, edge != null ? lead + ": " + edge : null, lead);
+        }
+
+        /// <summary>The style a card's line names, in two words ("Level 2 of 4 - weapons first, the build's style" -&gt; "weapons first");
+        /// null: none (the side panel's "vs #1" sentence then names the first card alone).</summary>
+        public static string Brief(string shown)
+        {
+            string d = Decisive(shown ?? "");
+            int comma = d.IndexOf(", ", StringComparison.Ordinal);
+            string head = (comma > 0 ? d.Substring(0, comma) : d).ToLowerInvariant();
+            foreach (var style in new[] { "weapons first", "abilities first" })
+                if (head.Contains(style)) return style;
+            return null;
         }
 
         // what the first card has that this one lacks: its own line (whole, then its decisive part), else the first of its reasons
         // this card does not share - never its place in a build this card stands higher in ("a core ability of the build" over the
-        // build's main ability read as if the order were wrong); null: nothing sets it apart in words
-        static string Edge(WhyIn x)
+        // build's main ability read as if the order were wrong); null: nothing sets it apart in words. <onCard>: it is the first card's
+        // own line (or its decisive part), on screen under that card
+        static string Edge(WhyIn x, out bool onCard)
         {
+            onCard = false;
             var mine = new HashSet<string>();
             string myShown = (x.Shown ?? "").Trim();
             mine.Add(Key(myShown)); mine.Add(Key(Decisive(myShown)));
@@ -118,23 +162,25 @@ namespace YazsCompanion
             string shown = (x.FirstShown ?? "").Trim();
             var candidates = new List<string> { shown, Decisive(shown) };
             candidates.AddRange(Reasons(x.FirstSay, x.FirstWhy, shown));
-            foreach (var c in candidates)
+            for (int i = 0; i < candidates.Count; i++)
             {
-                string k = Key(c);
+                string c = candidates[i], k = Key(c);
                 if (k.Length == 0 || mine.Contains(k) || roles.Contains(k) || roles.Contains(Key(Decisive(c)))) continue;
+                onCard = i < 2;
                 return c;
             }
             return null;
         }
 
-        // an evolution's own part of its name ("Bioweapon"), so the colon of the sentence is its only one - of the name another mod
-        // lends when it lends one
-        static string Named(string name, Func<string, string> lend)
+        // a card's name as the band says it - of the name another mod lends when it lends one. 0.15.0 (C15-03 b): an evolution's own
+        // part ("Bioweapon") only where <named> (this card's game name or base) names its base already; anywhere else the name whole,
+        // as its card shows it (live 10-06 19:33:05: "Frost goes first" on a Sawblade Drone card named nothing the player could find)
+        static string Named(string name, Func<string, string> lend, string named)
         {
             if (string.IsNullOrEmpty(name)) return "";
             string shown = name;
             if (lend != null) { try { shown = lend(name) ?? name; } catch { shown = name; } }
-            return shown.IndexOf(':') > 0 ? Wording.Short(shown) : shown;
+            return shown.IndexOf(':') > 0 && Wording.BaseNamed(name, named) ? Wording.Short(shown) : shown;
         }
 
         /// <summary>The decisive part of a card's line: after a level or a kind ("Level 3 of 4 - evolution unlocks at level 4" -&gt;
@@ -176,14 +222,14 @@ namespace YazsCompanion
                 {
                     switch (w.Kind)
                     {
-                        case SayKind.Ability: AbilityFacts(w, raw); break;
-                        case SayKind.Weapon: WeaponFacts(w, raw); break;
+                        case SayKind.Ability: AbilityFacts(w, raw, lend); break;
+                        case SayKind.Weapon: WeaponFacts(w, raw, lend); break;
                         case SayKind.NextTier: case SayKind.OtherBranch: case SayKind.FirstWeapon: raw.Add(Wording.Card(w, 1, null, null)); TagFacts(w, raw, true); break;
                         case SayKind.Evolution: EvolutionFacts(w, raw, lend); break;
                         case SayKind.Item: ItemFacts(w.Item, raw); break;
                         case SayKind.Tags: PodFacts(w, raw); break;
                         case SayKind.Stat: StatFacts(w, raw); break;
-                        case SayKind.Recruit: RecruitFacts(w.Recruit, raw); break;
+                        case SayKind.Recruit: RecruitFacts(w.Recruit, raw, shown); break;
                     }
                 }
             }
@@ -268,7 +314,7 @@ namespace YazsCompanion
         }
 
         // ---- abilities: the evolution, the build's order, what sets it apart, the squad's tags and team passives
-        static void AbilityFacts(CardWords w, List<string> raw)
+        static void AbilityFacts(CardWords w, List<string> raw, Func<string, string> lend)
         {
             int next = w.Level + 1; bool last = w.Max > 0 && next >= w.Max;
             if (w.Level <= 0)
@@ -284,35 +330,108 @@ namespace YazsCompanion
             if (w.Build != null && w.Priority >= 0) raw.Add(First(Wording.Role(w.Build, w.Priority)));
             if (w.Head != null && w.HeadRank > 0) raw.Add(First(w.Head));
             if (w.Level > 0 && w.Focus) raw.Add("your top ability - keep feeding it");
+            // ahead of the tags: what decided between this card and the weapon level on the offer (the band keeps four reasons)
+            var r = w.Rival;
+            // 0.15.0 (C15-03 a, the mirror): the first card, an ability, over a level of a weapon its style puts first - what decided
+            if (w.Rank == 1 && r != null && r.Rank > 1 && r.Style == BuildStyle.Weapon && !r.Lifted && r.Quest == null) raw.Add(WeaponLower(r, lend));
+            // 0.15.0 (C15-07): over its own survivor's weapon level because a lent build's own style says abilities first - said as the build's
+            if (w.LentStyle && !w.MineStyle && w.Style == BuildStyle.Ability && w.Build != null && w.Rank > 0 && r != null && r.Build == w.Build && r.Rank > w.Rank)
+                raw.Add(Within(lend, "abilities first, the " + w.Build + " build's style", "abilities first, the build's style"));      // 0.15.x: the cards' phrase (one for the idea everywhere)
             TagFacts(w, raw, true);
         }
 
         // ---- the weapon in hand: what this level does, the style, the clock, the tags
-        static void WeaponFacts(CardWords w, List<string> raw)
+        static void WeaponFacts(CardWords w, List<string> raw, Func<string, string> lend)
         {
             int next = w.Level + 1; bool last = w.Max > 0 && next >= w.Max;
             if (w.Special != null) raw.Add(First(Wording.Special(w.Special)));
             if (last && w.Next != null) raw.Add("then the next tier: " + w.Next);
             if (w.Lifted) raw.Add(w.LiftLeft == null ? "your abilities are done" : "your abilities are nearly done");
+            var r = w.Rival;
             if (w.Quest != null) raw.Add("the quest comes before the build's order");        // "levels abilities first" would contradict the lift
-            else switch (w.Style)
-            {
-                case BuildStyle.Ability: raw.Add(w.Build != null ? "the " + w.Build + " build levels abilities first" : "your level-up style: abilities first"); break;
-                case BuildStyle.Weapon: raw.Add(w.Build != null ? "the " + w.Build + " build levels weapons first" : "your level-up style: weapons first"); break;
-                default: raw.Add("weapon and abilities side by side"); break;
-            }
+            // 0.15.0 (C15-03 a): the first card under "abilities first", not lifted - the style would contradict the order (live 10-06
+            // 19:18:27: "The ... build levels abilities first" on the #1 Handgun); what decided is that the abilities on offer rank lower
+            else if (w.Style == BuildStyle.Ability && !w.Lifted && w.Rank == 1) raw.Add(AbilitiesLower(w, lend));
+            // ... and the mirror: under "weapons first" with an ability ranked above it, the style would argue for the card that lost -
+            // the "vs #1" sentence and the clock say why
+            else if (w.Style == BuildStyle.Weapon && w.Rank > 1 && r != null && r.Rank > 0 && r.Rank < w.Rank) { }
+            else raw.Add(StyleLine(w, lend));
             if (w.Reach < 0.6 && !last) raw.Add("too late to finish it (" + w.Clock + ")");
             TagFacts(w, raw, false);
         }
 
-        // ---- an evolution: the build's pick, what it adds, the tags
+        // the style a weapon level follows, in words: the build's ("the Medic build levels abilities first"), a lent build's own followed
+        // through Auto (0.15.0, C15-07: "abilities first, the Medic build's style" - 0.15.x: the cards' phrase, it said "build's own style"), the player's ("your style levels abilities first" -
+        // up to 0.14.0 it read "your level-up style: abilities first", which the rails leave out: the reason never showed)
+        static string StyleLine(CardWords w, Func<string, string> lend)
+        {
+            string order = w.Style == BuildStyle.Ability ? "abilities first" : w.Style == BuildStyle.Weapon ? "weapons first" : null;
+            bool build = w.Build != null && !w.MineStyle;
+            if (w.LentStyle && build) return Within(lend, (order ?? "balanced") + ", the " + w.Build + " build's style", (order ?? "balanced") + ", the build's style");
+            if (order == null) return "weapon and abilities side by side";
+            return build ? "the " + w.Build + " build levels " + order : "your style levels " + order;
+        }
+
+        // 0.15.0 (C15-03 a): why the first card, a weapon level under "abilities first", stands over every ability on the offer - the best
+        // of them has a low place in the same build ("Resuscitation is 4th in the Medic build's order"), none, or the build skips it;
+        // else plainly that they rank lower here
+        static string AbilitiesLower(CardWords w, Func<string, string> lend)
+        {
+            const string plain = "the abilities on offer rank lower here";
+            var r = w.Rival;
+            if (r == null) return "no ability on this offer";
+            if (string.IsNullOrEmpty(r.Name) || w.Build == null || r.Build != w.Build) return plain;
+            string a = r.Name, b = w.Build;
+            if (r.HeadRank >= 6) return Within(lend, "the " + b + " build skips " + a, "the build skips " + a, plain);
+            if (r.Priority >= 3) return Within(lend, a + " is " + Ord(r.Priority + 1) + " in the " + b + " build's order", a + " is " + Ord(r.Priority + 1) + " in the build's order", plain);
+            if (r.Priority < 0) return Within(lend, a + " is not in the " + b + " build", a + " is not in the build", plain);
+            return plain;
+        }
+
+        // 0.15.0 (C15-03 a, the mirror): why an ability stands over a level of a weapon whose style puts weapons first - the clock as a rule
+        // (a weapon that can no longer be finished falls to the balanced floor)
+        static string WeaponLower(CardWords r, Func<string, string> lend)
+        {
+            bool last = r.Max > 0 && r.Level + 1 >= r.Max;
+            string name = string.IsNullOrEmpty(r.Name) ? null : r.Name;
+            if (r.Reach < 0.6 && !last)
+                return name != null ? Within(lend, "too late to finish " + name + " (" + r.Clock + ")", "too late to finish " + name, "too late to finish the weapon") : "too late to finish the weapon";
+            return name != null ? Within(lend, "the " + name + " level ranks lower here", "the weapon level ranks lower here") : "the weapon level ranks lower here";
+        }
+
+        // the first form within a card line's 50 visible characters as the band draws it (the names another mod lends swapped in); the
+        // last form when none is
+        static string Within(Func<string, string> lend, params string[] forms)
+        {
+            string last = null;
+            foreach (var f in forms)
+            {
+                if (string.IsNullOrEmpty(f)) continue;
+                last = f;
+                string drawn = f;
+                if (lend != null) { try { drawn = lend(f) ?? f; } catch { drawn = f; } }
+                if (Wording.Safe(drawn).Length <= Wording.Budget) return f;
+            }
+            return last;
+        }
+
+        static string Ord(int n)
+        {
+            int t = n % 100;
+            string suffix = t >= 11 && t <= 13 ? "th" : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
+            return n + suffix;
+        }
+
+        // ---- an evolution: the build's pick (or, picking none, the base's place in the build), what it adds, the tags
         static void EvolutionFacts(CardWords w, List<string> raw, Func<string, string> lend)
         {
             if (w.Pick != null)
             {
-                string pick = Named(w.Pick, lend);
+                string pick = Named(w.Pick, lend, w.Base);          // the card is the base's evolution: its title names the base
                 raw.Add(w.Mine ? "the " + w.Build + " build's evolution" : !w.PickOffered ? pick + " isn't offered - this one still evolves it" : "the " + w.Build + " build takes " + pick + " instead");
             }
+            var role = Wording.Evolves(w);                          // 0.15.0 (C15-03 c)
+            if (role != null) raw.Add(First(role));
             if (w.Adds != null) raw.Add(w.AddsNew || string.IsNullOrWhiteSpace(w.AddsWith) ? "adds " + w.Adds + " - new to the squad" : "adds " + w.Adds + ", like your " + w.AddsWith);
             TagFacts(w, raw, true);
         }
@@ -395,7 +514,7 @@ namespace YazsCompanion
         }
 
         // ---- a rescue card: everything that speaks for the recruit, in the card's order
-        static void RecruitFacts(RecruitSay r, List<string> raw)
+        static void RecruitFacts(RecruitSay r, List<string> raw, string shown)
         {
             if (r == null) return;
             if (r.Liberate)
@@ -409,11 +528,13 @@ namespace YazsCompanion
             if (r.SharedType != null) raw.Add("also deals " + r.SharedType + (r.SharedWith != null ? ", like your " + r.SharedWith : ""));
             if (r.TeamBonus != null) raw.Add("team bonus: " + r.TeamBonus);
             if (r.Boosts != null) raw.Add(r.Boosts + " would boost " + r.Covered + " of your powerups");
-            if (!string.IsNullOrEmpty(r.Tier)) raw.Add(r.Tier.Trim().ToUpperInvariant() + "-tier recruit in the guides");
+            // 0.15.x (the 10-07 review): not where the card's own line names the tier already ("A-tier, also deals Slashing ...")
+            string tier = string.IsNullOrEmpty(r.Tier) ? null : r.Tier.Trim().ToUpperInvariant() + "-tier";
+            if (tier != null && (shown ?? "").IndexOf(tier, StringComparison.OrdinalIgnoreCase) < 0) raw.Add(tier + " recruit in the guides");
             // live check 2026-10-05 (rescue shot): next to a card that says "Unlocked synergy with X" the plain count read as a contradiction
             string more = r.Bought > 0 ? " more" : "";
             if (r.Unbought > 0) raw.Add(r.Unbought == 1 ? "1" + more + " synergy with your squad, not unlocked yet" : r.Unbought + more + " synergies with your squad, not unlocked yet");
-            if (r.RankLevels > 0) raw.Add(r.RankLevels + " class level" + (r.RankLevels > 1 ? "s" : "") + " from rank " + r.Rank);
+            if (r.RankLevels > 0) raw.Add(Wording.RankAway(r.RankLevels, r.Rank));
         }
 
         static string And(IList<string> names) { return names.Count <= 1 ? (names.Count == 1 ? names[0] : "") : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[names.Count - 1]; }

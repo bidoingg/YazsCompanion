@@ -98,6 +98,7 @@ namespace YazsCompanion
                 if (_off) return;
                 if (_walk != null) WalkTick(view, now);
                 LoadoutEquip.Frame(view, _visit, _view);
+                FollowSlots();              // 0.15.x (C-m5): the slot markers' stand-ins over the slot row follow their slots
                 if (_labelsPending && Time.frameCount > _labelsFrame) Relabel(view);
                 if (now < _next && !_dirty) return;
                 _next = now + Throttle;
@@ -241,6 +242,7 @@ namespace YazsCompanion
             _srcHook = _srcButton = _srcPoll = 0;
             _firstDrawAt = now + EntranceDelay;
             _placed.Clear(); _why = null; _sum = null; _why1 = null; _why2 = null; _rows.Clear();
+            _slotLayer = null; _slotHosts.Clear(); _followed.Clear(); _followWrites = _followFrames = 0; _sumNote = "";
             _visitSinceRun = true; _via = hook ? "hook" : "fallback";
             _labelsWanted = false; _labelsPending = false; _labelsFrame = -9; _whySaid = false; _templateSearched = false;
             _whyFrom = ""; _sumFrom = ""; _labelNote = "";
@@ -438,7 +440,7 @@ namespace YazsCompanion
         static void DrawnLine(LoadoutDetail detail)
         {
             string line = "drawn #" + _advice.Number + " level " + LevelOf(detail) + " (" + detail + ", size " + Size.ToString("0.00", IC) + "): " + _view.DrawnMarks()
-                + (detail == LoadoutDetail.Off ? "" : _lo != null ? " | " + LoadoutLayout.Drawn(_lo, _unitPx) : " | layout not measured")
+                + (detail == LoadoutDetail.Off ? "" : _lo != null ? " | " + LoadoutLayout.Drawn(_lo, _unitPx) + (detail >= LoadoutDetail.NumbersAndReason ? _sumNote : "") : " | layout not measured")
                 + WhyState(detail)
                 + (LoadoutEquip.Shown ? " | equip button" + (LoadoutEquip.PlanText.Length > 0 ? " (" + LoadoutEquip.PlanText + ")" : "") : "");
             if (line == _drawnLine) return;
@@ -472,7 +474,7 @@ namespace YazsCompanion
                 if (sm == null || sm.Kind == MarkKind.None) continue;
                 want.Add(s.ButtonPtr);
                 IntPtr bp = IntPtr.Zero; try { bp = LoadoutState.BadgeOf(s.Button).Pointer; } catch { }
-                var pl = Show(s.Button, s.ButtonPtr, bp, _slotMarkerLocal, sm.Kind, sm.Number, sm.Pin, false);
+                var pl = Show(s.Button, s.ButtonPtr, bp, _slotMarkerLocal, sm.Kind, sm.Number, sm.Pin, false, SlotHost(s.Button, s.ButtonPtr));
                 if (pl == null) continue;
                 string st = pl.Marker.State;
                 bool changed = first || st != pl.State;
@@ -488,17 +490,18 @@ namespace YazsCompanion
             }
         }
 
-        static Placed Show(UIViewRunSetupBadgeButton button, IntPtr key, IntPtr badge, float size, MarkKind kind, int number, bool pin, bool frame)
+        static Placed Show(UIViewRunSetupBadgeButton button, IntPtr key, IntPtr badge, float size, MarkKind kind, int number, bool pin, bool frame, RectTransform host = null)
         {
             try
             {
                 var brt = button.transform.TryCast<RectTransform>(); if (brt == null) return null;
+                var on = host ?? brt;           // a slot's marker hangs on its stand-in over the slot row (SlotHost), a grid badge's on its button
                 Placed pl;
                 if (!_placed.TryGetValue(key, out pl)) { pl = new Placed(); _placed[key] = pl; }
-                if (pl.Marker == null || !pl.Marker.Alive || Mathf.Abs(pl.Marker.Size - size) > 0.5f || pl.Badge != badge)
+                if (pl.Marker == null || !pl.Marker.Alive || Mathf.Abs(pl.Marker.Size - size) > 0.5f || pl.Badge != badge || Ptr(pl.Marker.Root.parent) != Ptr(on))
                 {
                     try { if (pl.Marker != null && pl.Marker.Alive) UnityEngine.Object.Destroy(pl.Marker.Root.gameObject); } catch { }
-                    pl.Marker = Ui.Marker(brt, MarkName, size, _numTemplate);
+                    pl.Marker = Ui.Marker(on, MarkName, size, _numTemplate);
                     pl.Badge = badge; pl.State = "";
                 }
                 pl.Marker.Set(kind, number, pin);
@@ -518,6 +521,107 @@ namespace YazsCompanion
                 return pl;
             }
             catch (Exception e) { Fail("marker", e); return null; }
+        }
+
+        // 0.15.x (C-m5 of the 10-07 review): a marker sits on its button's top-right corner, a third of the diamond past the edge. On the
+        // CHOSEN BADGES row the next slot is a later sibling and was drawn over that third - the '3' and the rust diamonds were cut, on
+        // the Deck the digit unreadable (so since 0.13.0). The slot markers hang on one layer drawn right after the last slot (a child of
+        // the slots' common parent, out of its layout, no clicks), each on a stand-in that takes its slot's rect every frame (the game
+        // moves and scales the slots as the screen flies in). The grid's markers stay on their buttons: the grid's cells keep a gap.
+        const string SlotLayerName = "YazsLoadoutSlotMarks";
+        static RectTransform _slotLayer;
+        static readonly Dictionary<IntPtr, RectTransform[]> _slotHosts = new Dictionary<IntPtr, RectTransform[]>();     // slot button -> { its rect, the stand-in }
+
+        static RectTransform SlotHost(UIViewRunSetupBadgeButton button, IntPtr key)
+        {
+            try
+            {
+                var brt = button.transform.TryCast<RectTransform>(); if (brt == null) return null;
+                RectTransform[] pair;
+                if (_slotHosts.TryGetValue(key, out pair) && Alive(pair[1]) && Alive(_slotLayer)) { Follow(pair[0], pair[1]); return pair[1]; }
+                if (!Alive(_slotLayer)) { _slotLayer = SlotLayer(); _slotHosts.Clear(); _followed.Clear(); }
+                if (_slotLayer == null) return null;
+                var host = Ui.NewRect("Slot", _slotLayer);
+                host.anchorMin = host.anchorMax = new Vector2(0.5f, 0.5f);
+                _slotHosts[key] = new[] { brt, host }; _followed.Remove(Ptr(host));      // a new stand-in is always written (a pointer can be reused)
+                Follow(brt, host);
+                return host;
+            }
+            catch (Exception e) { Once("slotlayer", "the slot markers stay on their buttons: " + e.GetBaseException().Message); return null; }
+        }
+
+        // the slots' lowest common parent gets the layer, right after the child that holds the last slot (never over what the game draws later)
+        static RectTransform SlotLayer()
+        {
+            var slots = new List<Transform>();
+            foreach (var c in _visit.SlotCells) { try { var t = c.Button.transform; if (t != null) slots.Add(t); } catch { } }
+            if (slots.Count == 0) return null;
+            Func<Transform, Transform, bool> under = (t, p) => { for (var u = t; u != null; u = u.parent) if (Ptr(u) == Ptr(p)) return true; return false; };
+            Transform parent = slots[0].parent;
+            while (parent != null && !slots.All(t => under(t, parent))) parent = parent.parent;
+            var prt = parent == null ? null : parent.TryCast<RectTransform>();
+            if (prt == null) return null;
+            int after = -1;
+            foreach (var t in slots) { var u = t; while (u != null && Ptr(u.parent) != Ptr(parent)) u = u.parent; if (u != null) after = Mathf.Max(after, u.GetSiblingIndex()); }
+            var layer = Ui.NewRect(SlotLayerName, prt);
+            Ui.Stretch(layer, 0, 0, 0, 0);
+            try { var le = layer.gameObject.AddComponent(Il2CppType.Of<LayoutElement>()).TryCast<LayoutElement>(); if (le != null) le.ignoreLayout = true; } catch { }
+            try { var g = layer.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); if (g != null) { g.blocksRaycasts = false; g.interactable = false; } } catch { }
+            if (after >= 0) layer.SetSiblingIndex(after + 1);
+            return layer;
+        }
+
+        // the stand-in takes the slot's rect in world space (its pivot, size, position, rotation, scale) and its being shown - written
+        // only when one of them changed since the stand-in's last write (the 10-07 fix review: five transform writes on up to four
+        // stand-ins every frame of the screen mark its canvas dirty, a batch rebuild each frame - on the Deck, whose first draw of the
+        // screen already costs 74-91 ms; the game's fly-in still moves them every frame while it runs, the still screen writes nothing)
+        sealed class Followed { public bool Set; public Vector2 Pivot, Size; public Vector3 Pos, Scale, ParentScale, ParentPos; public Quaternion Rot; }
+        static readonly Dictionary<IntPtr, Followed> _followed = new Dictionary<IntPtr, Followed>();       // stand-in -> what it was last given
+        static int _followWrites, _followFrames;                                                           // this visit: frames that wrote / frames followed
+
+        static void Follow(RectTransform slot, RectTransform host)
+        {
+            try
+            {
+                bool shown = slot.gameObject.activeInHierarchy;
+                if (host.gameObject.activeSelf != shown) host.gameObject.SetActive(shown);
+                var key = Ptr(host);
+                Followed f;
+                if (!_followed.TryGetValue(key, out f)) { f = new Followed(); _followed[key] = f; }
+                if (!shown) { f.Set = false; return; }
+                Vector2 pivot = slot.pivot, size = slot.rect.size;
+                var hp = host.parent;
+                Vector3 pos = slot.position, ls = slot.lossyScale, ps = hp != null ? hp.lossyScale : Vector3.one, pp = hp != null ? hp.position : Vector3.zero;
+                Quaternion rot = slot.rotation;
+                // a hundredth of a canvas unit (in world space: times the layer's scale), a ten-thousandth of a scale, a hundredth of a degree
+                float eps = Mathf.Max(1e-7f, 0.01f * Mathf.Abs(ps.x));
+                if (f.Set && (pivot - f.Pivot).sqrMagnitude < 1e-8f && (size - f.Size).sqrMagnitude < 1e-4f && (pos - f.Pos).sqrMagnitude < eps * eps && (pp - f.ParentPos).sqrMagnitude < eps * eps
+                    && Same(ls, f.Scale) && Same(ps, f.ParentScale) && Quaternion.Angle(rot, f.Rot) < 0.01f) return;
+                host.pivot = pivot;
+                host.sizeDelta = size;
+                host.position = pos;
+                host.rotation = rot;
+                host.localScale = new Vector3(Mathf.Abs(ps.x) > 1e-6f ? ls.x / ps.x : 1f, Mathf.Abs(ps.y) > 1e-6f ? ls.y / ps.y : 1f, 1f);
+                f.Set = true; f.Pivot = pivot; f.Size = size; f.Pos = pos; f.Scale = ls; f.ParentScale = ps; f.ParentPos = pp; f.Rot = rot;
+                _followWrote = true;
+            }
+            catch { }
+        }
+
+        static bool _followWrote;
+        static bool Same(Vector3 a, Vector3 b)
+        {
+            float m = Mathf.Max(1e-6f, Mathf.Max(Mathf.Abs(b.x), Mathf.Abs(b.y)));
+            return Mathf.Abs(a.x - b.x) < 1e-4f * m && Mathf.Abs(a.y - b.y) < 1e-4f * m && Mathf.Abs(a.z - b.z) < 1e-4f * Mathf.Max(m, Mathf.Abs(b.z));
+        }
+
+        /// <summary>Every frame of the screen: the slot markers' stand-ins follow their slots.</summary>
+        static void FollowSlots()
+        {
+            if (_slotHosts.Count == 0) return;
+            _followWrote = false;
+            foreach (var kv in _slotHosts) { var pair = kv.Value; if (Alive(pair[0]) && Alive(pair[1])) Follow(pair[0], pair[1]); }
+            _followFrames++; if (_followWrote) _followWrites++;
         }
 
         // big to small with a half turn, a ping as it lands (TreeUi's stamp); the top EQUIP badge keeps breathing; rust marks
@@ -588,6 +692,8 @@ namespace YazsCompanion
             }
             try { if (_why != null) UnityEngine.Object.Destroy(_why.gameObject); } catch { }
             try { if (_sum != null) UnityEngine.Object.Destroy(_sum.gameObject); } catch { }
+            try { if (Alive(_slotLayer)) UnityEngine.Object.Destroy(_slotLayer.gameObject); } catch { }
+            _slotLayer = null; _slotHosts.Clear(); _followed.Clear();
         }
 
         static void HideAll()
@@ -958,12 +1064,19 @@ namespace YazsCompanion
             return label + "  " + string.Join(" <color=" + Theme.DimHex + ">" + r.Sep + "</color> ", r.Items.Select(i => "<color=" + (i.Equipped ? Theme.WhiteHex : Theme.GoldHex) + ">" + Names.Text(i.Text) + "</color>"));
         }
 
+        // 0.15.x (C-m3 of the 10-07 review): where the band holds one row (1280 x 800, 1280 x 720) the second row - SWAP OUT, CLOSE CALLS,
+        // MATCH, FREE SLOTS - was dropped without a word; it now joins the EQUIP row when both fit the band's width at the 15 px floor
+        // ("EQUIP 1 Gunner · 2 Critical  |  SWAP OUT Bomber · Tough"), else the drawn line says it was left out
+        static string _sumNote = "";
+
         static void DrawSummary(RectTransform view, bool first)
         {
+            _sumNote = "";
             if (_lo.SumAt == "none") { Hide(_sum); return; }
             var rows = _view.Rows.ToList();
             if (_lo.Dropped.Contains("yard")) rows.RemoveAll(r => r.Kind == "yard" || r.Kind == "unlock");
-            if (_lo.Dropped.Contains("swap") && rows.Count > 1) rows.RemoveAt(1);
+            SummaryRow second = null;
+            if (_lo.Dropped.Contains("swap") && rows.Count > 1) { second = rows[1]; rows.RemoveAt(1); }
             if (rows.Count > _lo.SumRows) rows = rows.Take(_lo.SumRows).ToList();
             if (rows.Count == 0) { Hide(_sum); return; }
             bool alive = false; try { alive = _sum != null && _sum.gameObject != null; } catch { }
@@ -979,6 +1092,16 @@ namespace YazsCompanion
             float minU = Mathf.Max(LoadoutLayout.MinShrink * f, LoadoutLayout.MinPx / Mathf.Max(0.0001f, _unitPx)); if (minU > f) minU = f;
             float width = _lo.Sum.W - 2f * pad;
             var texts = rows.Select(RowText).ToList();
+            if (second != null && texts.Count == 1)
+            {
+                // the second row on the first one's line, if both fit the width at the smallest the rows may shrink to (the floor)
+                string bar = "|"; try { var font = _rows[0].font; if (font != null && !font.HasCharacter('|', true, true)) bar = "/"; } catch { }
+                string joined = texts[0] + "   <color=" + Theme.DimHex + ">" + bar + "</color>   " + RowText(second);
+                float jw = 0f; try { var t0 = _rows[0]; t0.fontSize = f; t0.text = joined; t0.ForceMeshUpdate(); jw = t0.preferredWidth; } catch { jw = 0f; }
+                if (jw > 0f && jw * minU / f <= width) { texts[0] = joined; _sumNote = " | swap row joined to row 1 (" + jw.ToString("0", IC) + " of " + width.ToString("0", IC) + " u)"; }
+                else _sumNote = " | " + second.Kind + " row dropped (one row fits; joined it needs " + (jw * minU / f).ToString("0", IC) + " of " + width.ToString("0", IC) + " u at the floor)";
+            }
+            else if (second != null) _sumNote = " | " + second.Kind + " row dropped";
             // shrink to fit the widest row, never under the 15 px floor; past that the row ends in "..."
             float widest = 0f;
             for (int i = 0; i < texts.Count; i++) { var t = _rows[i]; t.fontSize = f; t.text = texts[i]; try { t.ForceMeshUpdate(); widest = Mathf.Max(widest, t.preferredWidth); } catch { } }
@@ -1166,8 +1289,10 @@ namespace YazsCompanion
                         foreach (var pl in _placed.Values) pl.State = "";
                         if (_visit != null && _view != null) { DrawMarks(true); try { if (_sum != null && _sum.gameObject.activeSelf) for (int i = 0; i < _rows.Count; i++) Fx.Type("loadout:sum" + i, _rows[i], 0.45f + 0.12f * i, 160f); } catch { } }
                         for (int f = 0; f < 4; f++) Shots.Later(0.05f + 0.1f * f, "fxsetup" + f, true);
-                        Shots.Later(1.0f, "setup0_loadout", true);
-                        _walk.Stage = 1; _walk.Next = now + 1.6f; return;
+                        // 10-07 review (walk-shot nit): 2.0 s - at 1.0 s the replayed entrance was mid-way (no swap-out diamonds, no slot
+                        // mirror, one summary row typed); the first highlight waits for it
+                        Shots.Later(2.0f, "setup0_loadout", true);
+                        _walk.Stage = 1; _walk.Next = now + 2.6f; return;
                     case 1:
                         {
                             LoadoutCell cell = null;
@@ -1196,14 +1321,14 @@ namespace YazsCompanion
                     default:
                         LayoutLine();
                         Plugin.Logger.LogInfo("[loadout] " + CursorLine());
-                        Plugin.Logger.LogInfo("[loadout] setup walk: run setup stage done (no badge was clicked)");
+                        Plugin.Logger.LogInfo("[loadout] setup walk: run setup stage done (no badge was clicked; the slot markers' stand-ins written in " + _followWrites + " of " + _followFrames + " frames)");
                         WalkDone = true; _walk = null; return;
                 }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[loadout] setup walk: " + e.Message); WalkDone = true; _walk = null; }
         }
 
-        /// <summary>The stage did not get its screen in time (Menu.cs gives up after 12 s): end it.</summary>
+        /// <summary>The stage did not get its screen in time (Menu.cs gives up after 14 s): end it.</summary>
         public static void WalkGiveUp() { if (_walk != null) Plugin.Logger.LogWarning("[loadout] setup walk: the stage did not finish in time"); _walk = null; WalkDone = true; }
     }
 

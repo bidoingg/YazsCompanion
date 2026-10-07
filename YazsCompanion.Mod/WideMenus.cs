@@ -209,6 +209,19 @@ namespace YazsCompanion
         /// <summary>The HUD went away with its scene: so did everything changed under it.</summary>
         public static void Forget() { _run.Drop(); }
 
+        /// <summary>The run's menus reach past the game's 16:9 frame (0.15.0, C15-12: the WHY panel in a side wing): the frame's pieces
+        /// are hidden on a canvas wider than 3840 units and none shows again; <paramref name="wing"/> = the canvas units on each side.
+        /// False on 16:9 and on taller screens (16:10, the Steam Deck), with WideMenus off, while a frame-keeping menu has the pieces
+        /// back, and when the frame did not match (left as the game has it).</summary>
+        public static bool RunWings(out float wing)
+        {
+            var s = _run; wing = 0f;
+            if (!s.Applied || s.PiecesShown || s.W - RefW < 1f) return false;
+            foreach (var p in s.Pieces) { try { if (p == null || p.activeSelf) return false; } catch { return false; } }
+            wing = (s.W - RefW) / 2f;
+            return true;
+        }
+
         /// <summary>From GameMaster.Update (every scene): the main menu and the camp, every 0.25 s, at once after a setting change.</summary>
         public static void MenuTick()
         {
@@ -368,6 +381,14 @@ namespace YazsCompanion
             groups.Add(new KeyValuePair<string, List<string>>(what, new List<string> { label }));
         }
 
+        /// <summary>How many times a site was put back this session (each with its '[wide] ... restored (why)' line: every way back to the
+        /// game's frame goes through <see cref="Restore"/>; a failed apply changes nothing before it gives up). The pause walk's check
+        /// (0.15.0, C15-08).</summary>
+        public static int Restores { get; private set; }
+
+        /// <summary>The run's menus have the frame off now (the pause walk's check of the re-apply, 0.15.0 C15-08).</summary>
+        public static bool RunApplied { get { return _run.Applied; } }
+
         /// <summary>Puts back everything in reverse, shows the frame again, forgets.</summary>
         static void Restore(Site s, string why)
         {
@@ -387,6 +408,7 @@ namespace YazsCompanion
             int shown = 0;
             foreach (var p in s.Pieces) { try { p.SetActive(true); shown++; } catch { } }
             Plugin.Logger.LogInfo("[wide] " + s.Name + "restored (" + why + "): " + n + " change" + (n == 1 ? "" : "s") + " undone, " + shown + " frame piece" + (shown == 1 ? "" : "s") + " back");
+            Restores++;
             s.Reset();
         }
 

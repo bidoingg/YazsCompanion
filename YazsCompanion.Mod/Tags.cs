@@ -105,6 +105,19 @@ namespace YazsCompanion
                 .Select(kv => kv.Key + " " + kv.Value + (SpecialAt > 0 && kv.Value < SpecialAt ? "/" + SpecialAt : ""));
             return string.Join(", ", parts);
         }
+        /// <summary>0.15.0 (C15-03 d): the PLAN readout's TAGS row - <see cref="PointsText"/> with a met 10-tag effect said: "Kinetic 31 -
+        /// effect on", "Kinetic 31, Electric 22 - effects on", "Kinetic 12 - effect on, Electric 4/10" (types with points, most first, at
+        /// most <paramref name="max"/> when max &gt; 0; the met ones come first, the count sorts them). Up to 0.14.0 a met type read "Kinetic
+        /// 31", the same as a count with no threshold known.</summary>
+        public string PlanText(int max = 0)
+        {
+            var parts = Points.Where(kv => kv.Value > 0).OrderByDescending(kv => kv.Value).ThenBy(kv => Array.IndexOf(Names, kv.Key))
+                .Take(max > 0 ? max : int.MaxValue).ToList();
+            var met = SpecialAt > 0 ? parts.Where(kv => kv.Value >= SpecialAt).Select(kv => kv.Key + " " + kv.Value).ToList() : new List<string>();
+            var rest = parts.Where(kv => SpecialAt <= 0 || kv.Value < SpecialAt).Select(kv => kv.Key + " " + kv.Value + (SpecialAt > 0 ? "/" + SpecialAt : "")).ToList();
+            string on = met.Count == 0 ? "" : string.Join(", ", met) + (met.Count == 1 ? " - effect on" : " - effects on");
+            return on.Length == 0 ? string.Join(", ", rest) : rest.Count == 0 ? on : on + ", " + string.Join(", ", rest);
+        }
         public string DealsText()
         {
             var parts = Weight.Where(kv => kv.Value > 0).OrderByDescending(kv => kv.Value).ThenBy(kv => Array.IndexOf(Names, kv.Key))

@@ -1,6 +1,6 @@
 // The verdict on the screen, built from the card prefab's own geometry (canvas 3840x2160 units,
 // every card root is 832x1462, centred; the game's hover frame is that rect inset 5; the NEW/UPGRADE
-// ribbon overhangs the bottom edge; ~170 units of free band lie below the card before the divider).
+// ribbon overhangs the bottom edge; about 200 canvas units - 260 on the card - lie below it before the divider rule).
 //
 //  - recommended card: a gold frame on exactly the game's selection rect, with a small diamond on each
 //    corner (the game's own motif), and a diamond-tipped ribbon reading RECOMMENDED hanging under the card
@@ -24,7 +24,7 @@ namespace YazsCompanion
         const string FrameName = "YazsFrame", RibbonName = "YazsRibbon", ReasonName = "YazsReason";
 
         // geometry in canvas units, relative to the card root (832 x 1462)
-        // fonts sized like the card's own description text (~44 units); the band below the card is ~220 units deep
+        // fonts sized like the card's own description text (~44 units); the band below the card is ~260 units deep (on the card)
         const float FrameInset = 5f, FrameThick = 6f, CornerDiamond = 30f;
         const float RibbonH = 66f, RibbonW = 480f, RibbonTip = 40f;      // ribbon centre sits at -48 for scale 1
         const float ReasonH = 70f, ReasonW = 800f;                        // reason centre sits at -134 for scale 1
@@ -42,7 +42,7 @@ namespace YazsCompanion
                 var frame = Frame(root);
                 frame.gameObject.SetActive(best);
 
-                var ribbon = Ribbon(root, c.Button, s);
+                var ribbon = Ribbon(root, c.Button, CardTextSize.RibbonScale(s));        // 0.15.0: no larger than x1.3 - a larger size goes to the words
                 if (ribbon != null) ribbon.gameObject.SetActive(best);
                 if (best) { Entrance(frame, ribbon, "badge:" + c.Button.Pointer); Follow(c.Button, ribbon); }
 
@@ -52,6 +52,7 @@ namespace YazsCompanion
                     // "2ND", or (0.14.0, B4) "AVOID" on a card scored under 1: said in words, the dull red is the second cue
                     string prefix = best ? "" : Synergy.ReasonPrefix(c.Rank, c.Score);
                     reason.text = prefix + Text(c);
+                    Fit(reason, s);
                     reason.color = best ? Theme.Cream : (c.Score < 1 ? Theme.Rust : Theme.Grey);
                     reason.gameObject.SetActive(true);
                 }
@@ -72,6 +73,7 @@ namespace YazsCompanion
         static UIPowerupButtonSkill _follow;       // the recommended card while it is a skill card (null: none)
         static GameObject _ribbon; static CanvasGroup _ribbonGroup;       // held once: a per-frame .gameObject would allocate a wrapper each frame
         static GameObject _label; static CanvasGroup _labelGroup; static bool _labelRead, _tickWarned;
+        static bool _steppedSaid;                  // 0.15.0 (C15-08): the '[badge] ribbon stepped aside' proof line, once a session
 
         static void Follow(UIPowerupButtonBase b, RectTransform ribbon)
         {
@@ -104,6 +106,12 @@ namespace YazsCompanion
                 float a = _label != null && _label.activeInHierarchy ? (_labelGroup != null ? _labelGroup.alpha : 1f) : 0f;
                 float want = Mathf.Clamp01(1f - a);
                 if (Mathf.Abs(_ribbonGroup.alpha - want) > 0.004f) _ribbonGroup.alpha = want;
+                // 0.15.0 (C15-08): proof from a sent log that the ribbon yields on this screen - once a session, not verbose
+                if (want < 0.5f && !_steppedSaid)
+                {
+                    _steppedSaid = true;
+                    Plugin.Logger.LogInfo("[badge] ribbon stepped aside for the Skill Tree label (ribbon alpha " + want.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ")");
+                }
             }
             catch (Exception e)
             {
@@ -215,49 +223,118 @@ namespace YazsCompanion
                 text.alignment = TextAlignmentOptions.Center; text.fontStyle = FontStyles.Normal;
             }
             var rt = text.rectTransform;
-            // ribbon (RibbonH*s) + 15 above it + 18 gap + half the reason height: -134 at s = 1, the accepted 0.3.1 placement
-            rt.anchoredPosition = new Vector2(0f, -(RibbonH * s + 33f + ReasonH * s / 2)); rt.sizeDelta = new Vector2(Mathf.Min(ReasonW * s, 900f), ReasonH * s);
+            // ribbon (RibbonH*s) + 15 above it + 18 gap + half the reason height: -134 at s = 1, the accepted 0.3.1 placement; 0.15.0: under
+            // the ribbon at its own size (x1.3 at most, CardTextSize.RibbonScale), so a larger reason line keeps clear of the divider rule
+            float rs = CardTextSize.RibbonScale(s);
+            rt.anchoredPosition = new Vector2(0f, -(RibbonH * rs + 33f + ReasonH * s / 2)); rt.sizeDelta = new Vector2(Mathf.Min(ReasonW * s, 900f), ReasonH * s);
             text.fontSize = ReasonFont * s;
+            ReasonFontNow = ReasonFont * s;
             return text;
         }
 
+        /// <summary>The reason line's font as sized (card units) before Fit shrank a long one: the WHY band and panel take this size,
+        /// not the selected card's shrunk one.</summary>
+        public static float ReasonFontNow { get; private set; }
+
+        // 0.15.0 (the review of 10-06): a line wider than its rect - 900 units at most, 14 ems at the Deck's x1.56 - shrinks to fit, down
+        // to the 15 px floor, before the ellipsis cuts it. Ranker already sizes the words to the room (LineChars); this is the margin.
+        static bool _fitSaid;
+        static void Fit(TextMeshProUGUI t, float s)
+        {
+            try
+            {
+                float full = ReasonFont * s, room = t.rectTransform.sizeDelta.x;
+                t.fontSize = full;
+                if (!(room > 0)) return;
+                float w = t.GetPreferredValues(t.text).x;
+                if (!(w > room)) return;
+                float min = _px1 > 0 ? ReasonFont * Mathf.Min(s, ScreenBand.MinPx / _px1) : full * 0.9f;
+                float fit = Mathf.Max(min, full * room / w * 0.995f);
+                t.fontSize = fit;
+                if (!_fitSaid)
+                {
+                    _fitSaid = true;
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
+                    Plugin.Logger.LogInfo("[badge] a reason line shrank to fit its card: " + (_px1 * s).ToString("0.0", inv) + " -> " + (_px1 * fit / ReasonFont).ToString("0.0", inv) + " px ("
+                        + w.ToString("0", inv) + " units in " + room.ToString("0", inv) + (fit <= min + 0.01f ? FloorWords(_px1 * fit / ReasonFont) + " - the rest ends in an ellipsis" : "") + "; said once a session)");
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>The visible characters a card's reason line holds on this screen at the "Card text size" set now (CardTextSize.LineChars,
+        /// from the screen's model): Ranker sizes each card's words to it before the badges are drawn.</summary>
+        public static int LineChars()
+        {
+            try
+            {
+                float w = UnityEngine.Screen.width, h = UnityEngine.Screen.height, px1 = CardTextSize.ReasonPx1(w, h);
+                return CardTextSize.LineChars(CardTextSize.Scale(Plugin.BadgeScale.Value, px1, CardTextSize.CanvasUnits(w, h)), px1);
+            }
+            catch { return Wording.DeckWidth; }
+        }
+
         // one canvas unit is canvas pixel height / canvas height pixels (a third of a pixel on the Deck), and the card is drawn at
-        // a fraction of the canvas: its parents' scale times its own resting 0.95 (the prefab: 0.95 x 0.9 x 0.9 = 0.77). Enlarge the
-        // ribbon and the reason line until the reason font is at least MinTextPx tall, capped so both stay inside the band under
-        // the card (about 220 units); BadgeScale in the config overrides the automatic value.
+        // a fraction of the canvas: its parents' scale times its own resting 0.95 (the prefab: 0.95 x 0.9 x 0.9 = 0.77). That gives
+        // the reason line's height at s = 1; the s itself is CardTextSize's (ScreenBand.cs): Auto enlarges the ribbon and the reason
+        // line until the reason is 16 px, capped so both stay inside the band under the card (about 200 canvas units from the card's
+        // bottom to the divider rule) - x1.3, x1.6 on a canvas taller than 16:9 (the Deck) -, a size picked in the menu (BadgeScale,
+        // "Card text size") is that share of Auto on this screen (at most x1.85, the ribbon held at x1.3), and either way the reason
+        // never reads under 15 px, the WHY band's floor.
         // 0.14.0 (A1): up to 0.13.0 the card's own scale was left out - about 21 px on a 1440p monitor either way, but s = 1.2 and
-        // about 12 px on the Deck (canvas 3840 x 2400 on 800 pixels); now s = 1.3 there, about 13 px. The root's own scale is not
+        // about 12 px on the Deck (canvas 3840 x 2400 on 800 pixels); then s = 1.3 there, about 13 px. The root's own scale is not
         // read: the card's Selected animation grows it ~7 % on hover, and the badges are built while cards may still be moving.
-        const float MinTextPx = 16f, MaxScale = 1.3f, RestingRootScale = 0.95f;
+        // 0.15.0 (C15-06): the Deck at x1.56, 16 px; a picked size is measured too (the floor), and a canvas that cannot be measured
+        // falls back to the screen's model instead of s = 1.
+        const float RestingRootScale = 0.95f;
         static string _scaleSaid;
+        static float _px1;                         // the reason line's pixels at s = 1 as last measured (Fit's 15 px floor)
         static float Scale(RectTransform root)
         {
-            float fixedScale = 0; try { fixedScale = Plugin.BadgeScale.Value; } catch { }
-            if (fixedScale > 0) return Mathf.Clamp(fixedScale, 0.5f, MaxScale);
+            float setting = 0; try { setting = Plugin.BadgeScale.Value; } catch { }
+            float px1 = 0f, h = 0f, chain = RestingRootScale, pixels = UnityEngine.Screen.height;
             try
             {
                 var comp = root.GetComponentInParent(Il2CppInterop.Runtime.Il2CppType.Of<Canvas>());
                 var canvas = comp == null ? null : comp.TryCast<Canvas>();
                 if (canvas != null && canvas.rootCanvas != null) canvas = canvas.rootCanvas;
                 var crt = canvas == null ? null : canvas.transform.TryCast<RectTransform>();
-                float h = crt == null ? 0 : crt.rect.height; if (h <= 0) return 1f;
-                float pixels = canvas.pixelRect.height; if (!(pixels > 0)) pixels = UnityEngine.Screen.height;
-                float canvasScale = canvas.transform.lossyScale.y, chain = RestingRootScale;
-                var up = root.parent;
-                if (up != null && canvasScale > 0) chain = up.lossyScale.y / canvasScale * RestingRootScale;
-                if (!(chain > 0.05f) || chain > 4f) chain = RestingRootScale;
-                float px = ReasonFont * chain * pixels / h;
-                float s = Mathf.Clamp(MinTextPx / px, 1f, MaxScale);
-                string key = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + "/" + h.ToString("0");
-                if (key != _scaleSaid)
+                h = crt == null ? 0 : crt.rect.height;
+                if (h > 0)
                 {
-                    _scaleSaid = key;
-                    Plugin.Logger.LogInfo("[badge] scale s=" + s.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " px=" + (px * s).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
-                        + " (screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + ", canvas height " + h.ToString("0") + ", card scale " + chain.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ")");
+                    float measured = canvas.pixelRect.height; if (measured > 0) pixels = measured;
+                    float canvasScale = canvas.transform.lossyScale.y;
+                    var up = root.parent;
+                    if (up != null && canvasScale > 0) chain = up.lossyScale.y / canvasScale * RestingRootScale;
+                    if (!(chain > 0.05f) || chain > 4f) chain = RestingRootScale;
+                    px1 = ReasonFont * chain * pixels / h;
                 }
-                return s;
             }
-            catch { return 1f; }
+            catch { px1 = 0f; }
+            bool modelled = !(px1 > 0);
+            if (modelled) px1 = CardTextSize.ReasonPx1(UnityEngine.Screen.width, UnityEngine.Screen.height);
+            float canvasH = h > 0 ? h : CardTextSize.CanvasUnits(UnityEngine.Screen.width, UnityEngine.Screen.height);
+            float s = CardTextSize.Scale(setting, px1, canvasH);
+            _px1 = px1;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string key = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + "/" + h.ToString("0") + "/" + setting.ToString("0.00", inv);
+            if (key != _scaleSaid)
+            {
+                _scaleSaid = key;
+                bool floor = px1 * s <= ScreenBand.MinPx + 0.01f && s > 1f;
+                Plugin.Logger.LogInfo("[badge] scale s=" + s.ToString("0.00", inv) + " px=" + (px1 * s).ToString("0.0", inv)
+                    + " (screen " + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + ", " + (modelled ? "canvas not measured: modelled" : "canvas height " + h.ToString("0") + ", card scale " + chain.ToString("0.00", inv))
+                    + "; Card text size " + CardTextSize.Label(setting) + (setting > 0 ? " of Auto" : "") + (floor ? FloorWords(px1 * s) : "") + "; ribbon x" + CardTextSize.RibbonScale(s).ToString("0.00", inv)
+                    + "; a line holds " + CardTextSize.LineChars(s, px1) + " characters)");
+            }
+            return s;
+        }
+
+        /// <summary>", at the 15 px floor" - or, where the x2 cap (CardTextSize.FloorCap) stops short of it (a screen under 1024 x 768: live
+        /// 10-06 480 x 640 logged "at the 15 px floor" at 7.7 px, the 10-07 review), ", under the 15 px floor (the scale stops at x2)".</summary>
+        static string FloorWords(float px)
+        {
+            return px < ScreenBand.MinPx - 0.05f ? ", under the 15 px floor (the scale stops at x" + CardTextSize.FloorCap.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + ")" : ", at the 15 px floor";
         }
 
         // ---- primitives ----

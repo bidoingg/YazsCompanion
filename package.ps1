@@ -30,7 +30,11 @@ if (-not $NoBuild) {
     $env:DOTNET_ROOT = Join-Path $env:LOCALAPPDATA "Microsoft\dotnet"
     $env:PATH = "$env:DOTNET_ROOT;$env:PATH"
     Push-Location $modDir
-    try { dotnet build -c Release -p:Deploy=false | Select-String -Pattern "error|Build succeeded" | ForEach-Object { $_.Line.Trim() } } finally { Pop-Location }
+    try {
+        dotnet build -c Release -p:Deploy=false | Select-String -Pattern "error|Build succeeded" | ForEach-Object { $_.Line.Trim() }
+        if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE - nothing packaged" }
+    }
+    finally { Pop-Location }
 }
 if (-not (Test-Path $dll)) { throw "mod DLL not found: $dll" }
 
@@ -68,9 +72,12 @@ if (Test-Path $cfgSrc) {
 }
 
 Copy-Item $dll (Join-Path $stage "BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll")
-$kj = Join-Path $GameDir "BepInEx\plugins\YazsCompanion\knowledge.json"
-if (Test-Path $kj) { Copy-Item $kj (Join-Path $stage "BepInEx\plugins\YazsCompanion\knowledge.json") }
+# no knowledge.json (0.15.0): the DLL writes its own defaults and their stamp on the first run (Knowledge.cs RefreshDefaults). The copy
+# from the maintainer's game folder (maybe older than the DLL, maybe edited by hand) came without a stamp, so a fresh install
+# kept it as it was ("predates the update stamp") until the next update
 Copy-Item (Join-Path $PSScriptRoot "README.md") (Join-Path $stage "BepInEx\plugins\YazsCompanion\README.md")
+# 0.15.0 (C15-10): the release history moved out of the README; it links CHANGELOG.md, which travels next to it
+Copy-Item (Join-Path $PSScriptRoot "CHANGELOG.md") (Join-Path $stage "BepInEx\plugins\YazsCompanion\CHANGELOG.md")
 
 $readme = @"
 YAZS Companion $version  -  in-game advisor for Yet Another Zombie Survivors
@@ -93,9 +100,9 @@ STEAM DECK (Proton)
    Properties > Compatibility: Proton Experimental or Proton 9 or newer.
 5. Launch the game. The first start takes a little longer than usual.
 
-Check it worked: BepInEx/LogOutput.log in the game folder contains "YAZS Companion $version loaded".
-In a run, a PLAN block appears on the right edge of the HUD, and the first level-up screen shows a
-gold frame and a RECOMMENDED ribbon under one card.
+Check it worked: BepInEx/LogOutput.log in the game folder contains "YAZS Companion $version (...) loaded from".
+In a run, a PLAN block appears in the bottom-left corner of the HUD (the mod menu's DISPLAY tab moves
+it), and the first level-up screen shows a gold frame and a RECOMMENDED ribbon under one card.
 
 If the log file never appears, Proton did not load winhttp.dll: install Protontricks from Discover,
 open it, pick this game, "Select the default wineprefix" > "Run winecfg" > Libraries tab > type winhttp,
@@ -111,11 +118,12 @@ WHAT IT DOES
 ------------
 Read-only. It never writes to the save files, never picks for you, and does not touch achievements.
 On every power-up, chest, military training and SOS screen it frames the recommended card, hangs a
-RECOMMENDED ribbon under it and prints one reason line under every card. During play a PLAN block on
-the right edge lists, per survivor, the weapon line and its next step, the ability to feed and the next
-ability worth taking, then who to rescue (SOS) and which items to grab. Rules follow published guides
-(sources in BepInEx/plugins/YazsCompanion/knowledge.json, which you may edit; delete it to reset).
-Config: BepInEx/config/bidoi.yazs.companion.cfg (ShowBadges, ShowPanel, PanelTop, PanelRight).
+RECOMMENDED ribbon under it and prints one reason line under every card. During play a PLAN block in
+a corner of the HUD (bottom left by default) lists, per survivor, the weapon line and its next step,
+the ability to feed and the next ability worth taking, then who to rescue (SOS) and which items to grab.
+Rules follow published guides (sources in BepInEx/plugins/YazsCompanion/knowledge.json, written on the
+first launch, which you may edit; delete it to reset). Settings: the COMPANION entry of the main menu
+and the pause menu (or F10), or BepInEx/config/bidoi.yazs.companion.cfg.
 Mod log: BepInEx/plugins/YazsCompanion/companion.log.  Full notes: BepInEx/plugins/YazsCompanion/README.md.
 
 AUTO-UPDATE

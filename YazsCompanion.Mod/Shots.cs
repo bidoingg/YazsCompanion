@@ -3,9 +3,13 @@
 // a change (0.3 / 1.5 / 3.5 s into the gold highlight), its show / hide / creation, and one a minute during play.
 // Files go to BepInEx\plugins\YazsCompanion\shots\HHmmss_fff_<label>.png; every capture is logged as "[shot] ...".
 // Requests are queued with a delay and taken from the per-frame ticks (one capture per frame, capped per session).
+// 10-07 review (C-m11): also the run's results screens - the defeat (or victory) flow's first step and its stats step - so the
+// 21:9 results backdrop and WideMenus' 'results: step-1 box' can be judged from a frame ('results1', 'results2').
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
+using HarmonyLib;
 using UnityEngine;
 
 namespace YazsCompanion
@@ -69,5 +73,33 @@ namespace YazsCompanion
                 return;
             }
         }
+
+        /// <summary>A step of the results flow set itself up (UIDefeatState1 / UIDefeatState2.Setup): two captures of it, 0.8 and 1.6 s on
+        /// (the entrance played; the harness advances a step about 2 s after it shows).</summary>
+        public static void Results(int step)
+        {
+            if (!Enabled) return;
+            Plugin.Logger.LogInfo("[shot] results step " + step + " set up (" + UnityEngine.Screen.width + "x" + UnityEngine.Screen.height + ") - captures at 0.8 and 1.6 s");
+            Later(0.8f, "results" + step); Later(1.6f, "results" + step + "b");
+        }
+    }
+
+    // ---- the results flow's steps (read only: post-fixes that queue a capture with [Debug] Screenshots on); a step a game build lacks is skipped
+    [HarmonyPatch]
+    static class P_ResultsShot1
+    {
+        static MethodBase Target() { try { return AccessTools.DeclaredMethod(typeof(UIDefeatState1), "Setup", new[] { typeof(bool) }); } catch { return null; } }
+        static bool Prepare() { return Target() != null; }
+        static MethodBase TargetMethod() { return Target(); }
+        static void Postfix() { try { Shots.Results(1); } catch { } }
+    }
+
+    [HarmonyPatch]
+    static class P_ResultsShot2
+    {
+        static MethodBase Target() { try { return AccessTools.DeclaredMethod(typeof(UIDefeatState2), "Setup", Type.EmptyTypes); } catch { return null; } }
+        static bool Prepare() { return Target() != null; }
+        static MethodBase TargetMethod() { return Target(); }
+        static void Postfix() { try { Shots.Results(2); } catch { } }
     }
 }

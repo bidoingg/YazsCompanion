@@ -12,6 +12,7 @@ namespace YazsCompanion
     public enum PanelPlace { BottomLeft, Right }
     public enum PanelDetailLevel { Compact, Full }
     public enum LevelUpStyle { WeaponFirst, Balanced, AbilitiesFirst }
+    public enum LentBuildStyle { BuildsOwn, Mine }          // 0.15.0 (C15-07): whose style a lent build that Auto follows uses
     public enum Strength { Off, Normal, Strong }
     public enum RunGoal { WinTheRun, Balanced, FarmProgress }
     public enum CautionLevel { GlassCannon, Normal, Cautious }
@@ -23,13 +24,32 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.14.0";
+        public const string VERSION = "0.15.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
+
+        /// <summary>The commit this DLL was built from (0.15.0): "abc1234", "abc1234-dirty" (built with uncommitted changes), or null
+        /// (built outside git). The build stamps it into InformationalVersion ("0.15.0+abc1234", YazsCompanion.Mod.csproj); the load
+        /// line says it and release.ps1 checks it against the tag's commit.</summary>
+        internal static string Commit
+        {
+            get
+            {
+                try
+                {
+                    var a = (System.Reflection.AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(typeof(Plugin).Assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+                    string v = a != null ? a.InformationalVersion : null;
+                    int plus = v == null ? -1 : v.IndexOf('+');
+                    return plus >= 0 && plus + 1 < v.Length ? v.Substring(plus + 1) : null;
+                }
+                catch { return null; }
+            }
+        }
 
         internal static ManualLogSource Logger;
         internal static ConfigEntry<bool> ShowBadges;
         internal static ConfigEntry<bool> ShowWhy;                     // 0.14.0: the WHY band under the cards for the selected card (WhyUi.cs)
         internal static ConfigEntry<bool> ShowPanel;
+        internal static ConfigEntry<bool> QuestProgress;               // 0.15.0 (C15-09): the readout's info-only story row (QuestStory, QuestRules.cs)
         internal static ConfigEntry<bool> ShowYard;
         internal static ConfigEntry<bool> Motion;
         internal static ConfigEntry<PanelPlace> PanelPosition;
@@ -57,6 +77,7 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> PreviewMenu;
         internal static ConfigEntry<bool> PreviewPause;
         internal static ConfigEntry<LevelUpStyle> AdviceStyle;
+        internal static ConfigEntry<LentBuildStyle> AdviceLentStyle;    // 0.15.0 (C15-07, decision Q3): a lent build on Auto - its own style or LevelUpStyle
         internal static ConfigEntry<Strength> AdviceTiming;
         internal static ConfigEntry<bool> AdviceModeAware;
         internal static ConfigEntry<Strength> AdviceSynergy;
@@ -81,6 +102,7 @@ namespace YazsCompanion
         {
             var d = Doctrine.Current;
             d.Style = AdviceStyle.Value == LevelUpStyle.WeaponFirst ? BuildStyle.Weapon : AdviceStyle.Value == LevelUpStyle.AbilitiesFirst ? BuildStyle.Ability : BuildStyle.Balanced;
+            d.LentStyleMine = AdviceLentStyle != null && AdviceLentStyle.Value == LentBuildStyle.Mine;
             d.Timing = (int)AdviceTiming.Value;
             d.ModeAware = AdviceModeAware.Value;
             d.Synergy = (int)AdviceSynergy.Value;
@@ -158,7 +180,7 @@ namespace YazsCompanion
         {
             Logger = Log;
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
-            ShowWhy = Config.Bind("General", "ShowWhy", true, "While a card of a selection screen is selected (the mouse over it, or the controller's focus on it), a band under the cards says the rest of its verdict in plain words: up to four more reasons, and what the first card has that puts it first (or, on the first card, how far ahead it is) - CLOSE CALL when the first two cards are nearly even. It goes with the selection. Needs ShowBadges. false = the reason line under each card only.");
+            ShowWhy = Config.Bind("General", "ShowWhy", true, "While a card of a selection screen is selected (the mouse over it, or the controller's focus on it), a band under the cards - on a screen wider than 16:9 with WideMenus on, a panel beside the card in the side wing, up to four lines at the cards' own text size - says the rest of its verdict in plain words: up to four more reasons, and what the first card has that puts it first (or, on the first card, how far ahead it is) - CLOSE CALL when the first two cards are nearly even. It goes with the selection. Needs ShowBadges. false = the reason line under each card only.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
             ShowYard = Config.Bind("General", "ShowYard", true, "Training Yard advice: number the nodes worth buying with the points on hand (gold diamonds, in purchase order), ring the node to save for next, and print a PLAN strip under the tree (SPEND / THEN / WHY). Read-only: it never buys anything.");
             Motion = Config.Bind("General", "Motion", true, "Animate what the mod draws: Training Yard diamonds stamp in and the next purchase pings, rules draw themselves, the strip types on, the RECOMMENDED ribbon unfolds, the PLAN readout slides in and its title diamond spins when the advice changes. During play nothing loops. false = everything appears in place.");
@@ -173,8 +195,11 @@ namespace YazsCompanion
             PanelSize = Config.Bind("General", "PanelSize", 1f, new ConfigDescription("Size of the PLAN readout relative to its automatic size (the mod menu's \"Readout size\"): 1 = automatic, 1.2 = a fifth larger, 0.8 = a fifth smaller. The automatic size follows the screen: the text is 1.9 % of the screen's height and never under 15 px (15 px on the Steam Deck, 20 px at 1080p, 27 px at 1440p, 40 px at 4K).", new AcceptableValueRange<float>(0.5f, 2.5f)));
             PanelScale = Config.Bind("General", "PanelScale", 0f, "For hand-tuning: a fixed scale of the PLAN readout in place of the automatic one (1 = a 31-unit font on the 2160-unit canvas: 10 px on the Steam Deck, 21 px at 1440p). 0 = automatic, which follows the screen. PanelSize still multiplies it.");
             LoadoutSize = Config.Bind("General", "LoadoutSize", 1f, new ConfigDescription("Size of the badge advice on the run setup screen (the numbered diamonds, the WHY line, the summary under CHOSEN BADGES) relative to its automatic size (the BADGES page's \"Size\"): 1 = automatic - the text is 1.9 % of the screen's height, never under 15 px; the diamonds are 40 % of a badge button (more on small screens, so their number stays at 13 px or more), at most 60 %.", new AcceptableValueRange<float>(0.7f, 2f)));
-            BadgeScale = Config.Bind("General", "BadgeScale", 0f, "Size multiplier of the RECOMMENDED ribbon and the reason lines under the cards. 0 = automatic (enlarged on small screens, up to 1.3).");
+            // 0.15.0 (C15-06): up to 1.6 (was 1.3), the menu's "Card text size", and the WHY band and the hint follow it
+            BadgeScale = Config.Bind("General", "BadgeScale", 0f, new ConfigDescription("Size of the text on the selection screens (the mod menu's \"Card text size\"): the reason line under each card and the RECOMMENDED ribbon, and with them the WHY band and the REROLL / SKIP hint. 0 = automatic: the reason line is the cards' own size, enlarged on smaller screens until it reads 16 px - up to 1.3 x, 1.6 x on a screen taller than 16:9 such as the Steam Deck (20.5 px at 1440p, 16 px on the Steam Deck). 0.5 - 1.6 = that share of the automatic size on this screen (1.15: 23.6 px at 1440p, 18.4 px on the Steam Deck), at most what the band under the cards holds (1.85 x the cards' own size; the ribbon stops at 1.3 x); the WHY band and the hint grow or shrink by as much against their automatic sizes. A larger size holds fewer words: each card says a shorter form. Either way nothing here is drawn under 15 px: a small screen gets the size that reads 15 px.", new AcceptableValueRange<float>(0f, 1.6f)));
             PanelHighlight = Config.Bind("General", "PanelHighlight", 3f, "Seconds the sidebar lines whose advice changed (after a pick, a recruit or a Research Pod) glow gold before fading back to white. 0 = off.");
+            // 0.15.0 (C15-09): [General] with the readout's other switches (the roadmap's "[Display]" is the mod menu's DISPLAY tab)
+            QuestProgress = Config.Bind("General", "QuestProgress", true, "The PLAN readout's QUEST row also shows the progress of the active quest's story objective, which no card is steered by: 'story objective 3 of 5' (the story quests' own event count, the game's quest box says what it is) or 'story objective: the Boss Rush boss', dim, info only - it changes no advice and is never drawn on a selection screen. Not shown when the run cannot complete the quest. The [quest] lines of the log name every counted objective's id and count either way. false = the QUEST row only while one of the quest's rules changes the advice.");
             WideMenus.Bind(Config);         // 0.14.0: [General] WideMenus (+ [Debug] WideMenusWings)
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
             Verbose = Config.Bind("Logging", "Verbose", false, "Also log every raw field of every card and survivor (for validating the ranking).");
@@ -185,7 +210,10 @@ namespace YazsCompanion
             PreviewYard = Config.Bind("Debug", "PreviewYard", false, "About 6 s after launch, open the Training Yard from the main menu, walk its tabs and save a screenshot of each into the shots folder, then go back. For checking the Training Yard advice without touching the controls; off by default.");
             PreviewResolution = Config.Bind("Debug", "PreviewResolution", "", "Screen to emulate in the preview captures, WIDTHxHEIGHT (3440x1440 for the PC look, 1280x800 for the Steam Deck look): the frames are rendered so the sidebar has the pixels it would have on that screen, whatever desktop the game runs on. Empty = as the game is running.");
 
-            AdviceStyle = Config.Bind("Advice", "LevelUpStyle", LevelUpStyle.Balanced, "How level-ups are split between the weapon and the abilities for survivors on Auto (a build selected in the mod menu brings its own style). WeaponFirst = every weapon level before any ability level (the rule up to 0.9); Balanced = each ability once early, then the weapon and the main ability side by side; AbilitiesFirst = the abilities first, the weapon fills in. The human guides disagree on this, so it is yours to set.");
+            // 0.15.0 (C15-07): up to 0.14.0 this said "for survivors on Auto", but a build another mod lends that Auto follows brought its
+            // own style over it; now it says exactly when it applies, and LentBuildStyle (the ADVICE tab's row) lets it win there too
+            AdviceStyle = Config.Bind("Advice", "LevelUpStyle", LevelUpStyle.Balanced, "How level-ups are split between the weapon and the abilities. It applies to a survivor on Auto who follows no build (Auto reads the squad, the Training Yard and the guides), and - only with LentBuildStyle = Mine - to a survivor whose Auto follows a build another mod lends. A build selected in the mod menu always brings its own style, and so does a lent build on Auto with LentBuildStyle = BuildsOwn (the default; the cards and the PLAN readout then say 'abilities first, the build's style'). WeaponFirst = every weapon level before any ability level (the rule up to 0.9); Balanced = each ability once early, then the weapon and the main ability side by side; AbilitiesFirst = the abilities first, the weapon fills in. The human guides disagree on this, so it is yours to set.");
+            AdviceLentStyle = Config.Bind("Advice", "LentBuildStyle", LentBuildStyle.BuildsOwn, "Whose level-up style a build another mod lends follows while Auto picks it for a survivor (the BUILDS tab's VIA AUTO card). BuildsOwn (default) = the build's style, and the cards, the WHY band and the PLAN readout say so ('abilities first, the build's style', 'Handgun later - the build's style'); Mine = your LevelUpStyle. A build you select in the mod menu always brings its own style.");
             AdviceTiming = Config.Bind("Advice", "Timing", Strength.Normal, "How strongly the run clock moves the advice. What pays back over the rest of the run (XP, luck, pickup range, a fresh ability, a recruit) is worth the most early and little near the end; what works at once keeps its value. Off = the clock is ignored.");
             AdviceModeAware = Config.Bind("Advice", "ModeAware", true, "Let the game mode and difficulty steer the advice: the horizon (20:00 Default, 10:00 Hardcore and Boss Rush, 5:00 One Hit, waves in Extermination, open-ended Endurance and Infinite), boss damage in Boss Rush, crowd control and no health picks in One Hit, more weight on survival in Hardcore and on higher difficulties.");
             AdviceSynergy = Config.Bind("Advice", "Synergy", Strength.Normal, "Weight of the live squad synergy: damage types shared across the squad (every level adds a tag point to each type it deals), 10-tag effects within reach, team passives that boost grenades / turrets / taunts / deployables, and which evolution fits the squad.");
@@ -260,7 +288,7 @@ namespace YazsCompanion
             int patched = 0;
             foreach (var _ in harmony.GetPatchedMethods()) patched++;
             Logger.LogInfo("[hooks] " + patched + " methods patched (class by class; " + failed + " patch class" + (failed == 1 ? "" : "es") + " failed)");
-            Logger.LogInfo(NAME + " " + VERSION + " loaded from " + PluginDir + "; " + patched + " methods patched; badges " + (ShowBadges.Value ? "on" : "off")
+            Logger.LogInfo(NAME + " " + VERSION + (Commit != null ? " (" + Commit + ")" : "") + " loaded from " + PluginDir + "; " + patched + " methods patched; badges " + (ShowBadges.Value ? "on" : "off")
                 + "; panel " + (ShowPanel.Value ? "on" : "off") + "; auto-update " + (AutoUpdate.Value ? "on" : "off") + "; knowledge from " + knowledge.Source
                 + " (" + knowledge.ItemTier.Count + " items, " + knowledge.AbilityTier.Count + " abilities, " + knowledge.RescueTier.Count + " survivors)");
 

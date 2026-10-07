@@ -14,6 +14,8 @@
 //       shows (its damage types and tag points; the weights are estimates).
 //   W4  the game's stat labels (Knowledge.StatLabel) for every military card, and the sources: the badge draws the plain words, the
 //       ranking fills them after the ranks, the [shown] line, the ribbon's fade, the card's scale chain, the readout's vocabulary.
+//   W5  (0.15.0, C15-03) the 10-06 live wording fixes: a #1 weapon's WHY under "abilities first" (and the mirror), evolution names whole
+//       unless their base is named, the build's main / core ability evolving as the head, TAGS "effect on" - and the rails over each.
 // Generic names only (the repository is public): the run's lent builds are "Bench Anchor" (the leader's), "Bench Rocket" and
 // "Bench Summons" here; every card name is the game's own.
 using System;
@@ -126,6 +128,7 @@ namespace YazsCompanion.Bench
             Replay(items);
             Labels(powers);
             Sources();
+            Live1006(names, weaponNames, items);                // 0.15.0 (C15-03): the 10-06 live wording fixes (W5)
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
         }
@@ -555,13 +558,13 @@ namespace YazsCompanion.Bench
                 badge != null && badge.Contains("Wording.Safe(Names.Text(c.Display ?? c.Reason))") && badge.Contains("prefix + Text(c)") && badge.Contains("Synergy.ReasonPrefix(c.Rank, c.Score)"));
             int ranks = ranker == null ? -1 : ranker.IndexOf("order[i].Rank = i + 1;", StringComparison.Ordinal), say = ranker == null ? -1 : ranker.IndexOf("SayAll(order);", StringComparison.Ordinal);
             Check("W4", "the ranking fills Card.Display once the ranks are final (SayAll after the ranks), measured as drawn (beside its prefix, the lent names) and told apart",
-                ranks > 0 && say > ranks && ranker.Contains("c.Display = Wording.Card(c.Say, c.Rank, first, second, room, LendNames)") && ranker.Contains("Wording.RoomBeside(Synergy.ReasonPrefixWidth(c.Rank, c.Score))")
+                ranks > 0 && say > ranks && ranker.Contains("c.Display = Wording.Card(c.Say, c.Rank, first, second, room, LendNames)") && ranker.Contains("Wording.RoomBeside(Synergy.ReasonPrefixWidth(c.Rank, c.Score), width)") && ranker.Contains("width = Badge.LineChars();")
                 && ranker.Contains("WhyText.Distinct(lines,") && ranker.Contains("LendNames = Names.Text"));
             Check("W4", "one [shown] line per offer with the drawn text; the [card] line keeps its shape", advisor != null && advisor.Contains("\"[shown] \"") && advisor.Contains("Badge.Text(c)")
                 && advisor.Contains("line.Append(\"[card] #\").Append(c.Rank).Append(c.Rank == 1 ? \" PICK \" : \"      \").Append(c.Name).Append(\" (\").Append(c.Kind);"));
             Check("W4", "the ribbon follows the game's Skill Tree label from the HUD tick (no Harmony hook of its own); the scale uses the card's chain",
                 advisor != null && Regex.IsMatch(advisor, @"P_HudTick[\s\S]{0,400}Badge\.Tick\(\)") && badge.Contains("skillTreeCurrentLevelGameObject") && badge.Contains("1f - a") && !badge.Contains("[HarmonyPatch")
-                && badge.Contains("RestingRootScale = 0.95f") && badge.Contains("canvas.pixelRect.height") && badge.Contains("MaxScale = 1.3f") && badge.Contains("[badge] scale s="));
+                && badge.Contains("RestingRootScale = 0.95f") && badge.Contains("canvas.pixelRect.height") && badge.Contains("CardTextSize.Scale(") && badge.Contains("[badge] scale s="));     // 0.15.0 (C15-06): the cap is CardTextSize's (x1.3, x1.6 under 1080 px tall)
             Check("W4", "the readout's words: '»' when '›' is missing, 'next Pod: T', 'max tier', no 'stack T' / 'build T' / 'line complete'; no score on the reroll hint; no bullet in the notice",
                 plan != null && plan.Contains("\"next Pod: \" + focus") && !plan.Contains("\"build \" + focus") && plan.Contains("max tier") && !plan.Contains("\"stack ") && !plan.Contains("line complete") && plan.Contains("no new ability - too late to level one") && plan.Contains("\" later\"")
                 && panel != null && panel.Contains("HasCharacter('»'") && hint != null && !hint.Contains("\" would rate higher") && hint.Contains("Wording.Reroll(") && notice != null && !notice.Contains("•"));
@@ -573,5 +576,196 @@ namespace YazsCompanion.Bench
             Check("W4", "Wording.cs is compiled into the bench (pure: no game types)", proj != null && proj.Contains("Wording.cs"));
         }
         static string Proj() { return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "ItemBench.csproj")); }
+
+        // ---------------------------------------------------------------- W5: the 10-06 live wording fixes (0.15.0, C15-03)
+        // (a) the first card, a weapon level under "abilities first" and not lifted, says what decided instead of the style the order
+        //     contradicts (live 19:18:27.924: "The ... build levels abilities first" on the #1 Handgun) - the best ability on the offer has a
+        //     low place in the same build, none, or the build skips it; plainly, the abilities rank lower. The mirror: an ability first over a
+        //     level of a weapon its style puts first says the clock, and that weapon's own WHY drops "levels weapons first".
+        // (b) an evolution's own part of its name only where its base is named on the card or in the line (live 19:33:05.529: "Frost goes
+        //     first: ..." on a Sawblade Drone card, the first card being an evolution named "...: Frost").
+        // (c) a build that names no evolution for the base, its main or a core ability: "Evolves the <B> build's main ability" (19:33:04.927).
+        // (d) the readout's TAGS row says a met 10-tag effect: "Kinetic 31 - effect on" (19:33:51.096 read "Kinetic 10").
+        // Game names only; the builds are the bench's ("Bench Anchor", "Bench Rocket").
+        sealed class Offered { public string Name; public double Score; public CardWords W; public string Shown; }
+
+        // an offer once the ranks are final, as Ranker.SayAll makes it: the ranks and rivals (Wording.Ranks), then each card's line
+        static List<Offered> Offer(Func<string, string> lend, params Offered[] cards)
+        {
+            var list = cards.ToList();
+            Wording.Ranks(list.Select(c => c.W).ToList(), list.Select(c => c.Name).ToList());
+            string first = list.Count > 0 ? list[0].Name : null, second = list.Count > 1 ? list[1].Name : null;
+            foreach (var c in list) c.Shown = Wording.Card(c.W, c.W.Rank, first, second, Wording.Budget, lend);
+            return list;
+        }
+
+        // the WHY band's words for the card at <rank>, as WhyUi.InputOf asks for them
+        static WhyBlock WhyOf(List<Offered> offer, int rank, Func<string, string> lend)
+        {
+            var c = offer[rank - 1]; var f = offer[0]; var s = offer.Count > 1 ? offer[1] : null;
+            return WhyText.Block(new WhyIn { Name = c.Name, Rank = rank, Score = c.Score, Shown = c.Shown, Say = c.W, FirstName = f.Name, FirstScore = f.Score, FirstShown = f.Shown,
+                SecondName = s != null ? s.Name : null, SecondScore = s != null ? s.Score : double.NaN, FirstSay = f.W, Lend = lend });
+        }
+
+        static CardWords Gun(int level, BuildStyle style, string build, double reach = 1, string clock = "18:19 left", int max = 4)
+        {
+            return new CardWords { Kind = SayKind.Weapon, Level = level, Max = max, Style = style, Build = build, Reach = reach, Clock = clock };
+        }
+
+        static void Live1006(List<string> names, List<string> weaponNames, List<ProbeItem> items)
+        {
+            Console.WriteLine("    W5 the 10-06 live wording fixes (C15-03): the #1 weapon's WHY, names whole, the build's evolution head, TAGS 'effect on'");
+            const string A = "Bench Anchor", R = "Bench Rocket";
+            var lines = new List<string>(); var whys = new List<string>(); var versus = new List<string>();     // every card line, WHY reason and "vs #1" sentence built here, through the rails at the end
+            Action<WhyBlock> keep = k => { whys.AddRange(k.Reasons); if (k.Versus != null) versus.Add(k.Versus); };
+
+            // ---- (a) the live 19:18:27 offer: Handgun 3.65 (abilities first, not lifted), Resuscitation 3.45 (new, 4th in the build), Stimpack 3.20
+            var live = Offer(null,
+                new Offered { Name = "Handgun", Score = 3.65, W = Gun(2, BuildStyle.Ability, A) },
+                new Offered { Name = "Resuscitation", Score = 3.45, W = Ab(0, 4, A, 3, owned: 2) },
+                new Offered { Name = "Stimpack", Score = 3.20, W = Ab(1, 4, A, 2) });
+            var b = WhyOf(live, 1, null); string items1 = string.Join("  /  ", b.Items);
+            Console.WriteLine("      19:18:27 #1 Handgun under the card '" + live[0].Shown + "' -> WHY  " + items1);
+            Check("W5", "(a) the live #1 Handgun under abilities first: no 'levels abilities first' - the best ability's low place in the same build",
+                !items1.Contains("abilities first") && b.Reasons.Contains("Resuscitation is 4th in the build's order") && live[0].Shown == "Level 3 of 4 - the best of this offer", items1);
+            keep(b); lines.AddRange(live.Select(c => c.Shown));
+            Func<CardWords, string, List<string>> firstWhy = (rival, rivalName) =>
+            {
+                var cards = new List<Offered> { new Offered { Name = "Handgun", Score = 4.10, W = Gun(1, BuildStyle.Ability, A) } };
+                if (rival != null) cards.Add(new Offered { Name = rivalName, Score = 3.90, W = rival });
+                cards.Add(new Offered { Name = "Accumulator", Score = 2.10, W = new CardWords { Kind = SayKind.Item, Item = new ItemSay { Tier = "B" } } });
+                var o = Offer(null, cards.ToArray()); var blk = WhyOf(o, 1, null);
+                keep(blk); lines.AddRange(o.Select(c => c.Shown));
+                return blk.Reasons;
+            };
+            var none = firstWhy(null, null);
+            var skip = firstWhy(new CardWords { Kind = SayKind.Ability, Level = 1, Max = 4, Build = A, Priority = -1, HeadRank = 6, Head = Wording.Skips(A), EvoExists = true }, "Resuscitation");
+            var outside = firstWhy(Ab(0, 4, A, -1, owned: 2), "Stimpack");
+            var other = firstWhy(Ab(2, 4, "Rifleman", 0), "Electric Turret");
+            var core = firstWhy(Ab(2, 4, A, 1), "Medical Drone");
+            Check("W5", "(a) what decided, by the best ability on the offer: none, the build skips it, not in the build, another survivor's build, a core ability",
+                none.Contains("No ability on this offer") && skip.Contains("The Bench Anchor build skips Resuscitation") && outside.Contains("Stimpack is not in the Bench Anchor build")
+                && other.Contains("The abilities on offer rank lower here") && core.Contains("The abilities on offer rank lower here")
+                && !none.Concat(skip).Concat(outside).Concat(other).Concat(core).Any(r => r.Contains("levels abilities first")),
+                string.Join(" | ", new[] { none, skip, outside, other, core }.Select(l => l.FirstOrDefault(r => r.StartsWith("No ") || r.Contains("skips") || r.Contains("not in") || r.Contains("rank lower")) ?? "?")));
+            // the ranks unknown (the sweeps, a card scored outside an offer): as before
+            var unranked = WhyText.Reasons(Gun(2, BuildStyle.Ability, A), null, "Level 3 of 4 - the best of this offer");
+            Check("W5", "(a) a weapon level whose rank is not known keeps the style line (the bench's sweeps unchanged)", unranked.Contains("The Bench Anchor build levels abilities first"), string.Join(" / ", unranked));
+            // a lent name 19 characters longer: the decider stays within the card line's 50 as drawn
+            Func<string, string> longer = s => s == null ? s : s.Replace("Resuscitation", "Resuscitation Nnnnnnnnnnnnnnnnnn");
+            var lentLive = Offer(longer, live.Select(c => new Offered { Name = c.Name, Score = c.Score, W = c.W }).ToArray());
+            var lb = WhyOf(lentLive, 1, longer);
+            string decider = lb.Reasons.FirstOrDefault(r => r.Contains("4th") || r.Contains("rank lower"));
+            Check("W5", "(a) with a lent name 19 characters longer the decider is the form that fits 50 as drawn", decider == "The abilities on offer rank lower here" && Wording.Safe(longer(decider)).Length <= Wording.Budget, decider);
+            // the mirror: an ability first over a level of a weapon its style puts first
+            var mirror = Offer(null,
+                new Offered { Name = "Electric Turret", Score = 5.40, W = Ab(3, 4, "Rifleman", 0, evoOwned: true, clock: "2:10 left") },
+                new Offered { Name = "Pump-Action Shotgun", Score = 4.95, W = Gun(1, BuildStyle.Weapon, "Rifleman", 0.3, "2:10 left") });
+            var m1 = WhyOf(mirror, 1, null); var m2 = WhyOf(mirror, 2, null);
+            var mirrorEarly = Offer(null,
+                new Offered { Name = "Electric Turret", Score = 6.00, W = Ab(3, 4, "Rifleman", 0, evoOwned: true) },
+                new Offered { Name = "Pump-Action Shotgun", Score = 5.90, W = Gun(1, BuildStyle.Weapon, "Rifleman") });
+            var m3 = WhyOf(mirrorEarly, 1, null);
+            Console.WriteLine("      the mirror: #1 Electric Turret -> WHY  " + string.Join("  /  ", m1.Items) + "\n                  #2 Pump-Action Shotgun -> WHY  " + string.Join("  /  ", m2.Items));
+            Check("W5", "(a) the mirror: the #1 ability over a weapons-first level says the clock; that weapon's WHY drops 'levels weapons first' (its own line says the clock)",
+                m1.Reasons.Contains("Too late to finish Pump-Action Shotgun (2:10 left)") && !string.Join(" ", m2.Items).Contains("weapons first") && mirror[1].Shown == "Level 2 of 4 - too late to finish it (2:10 left)"
+                && m3.Reasons.Contains("The Pump-Action Shotgun level ranks lower here"), string.Join(" | ", m1.Reasons) + " || " + string.Join(" | ", m3.Reasons));
+            keep(m1); keep(m2); keep(m3); lines.AddRange(mirror.Select(c => c.Shown));
+
+            // ---- (b) names whole unless the base is named on the card or in the line
+            var evo = Offer(null,
+                new Offered { Name = "Bombing Strike: Bioweapon", Score = 8.20, W = new CardWords { Kind = SayKind.Evolution, Base = "Bombing Strike", Adds = "Chemical", AddsNew = true } },
+                new Offered { Name = "Bombing Strike: Supercharge", Score = 8.00, W = new CardWords { Kind = SayKind.Evolution, Base = "Bombing Strike", Adds = "Electric", AddsNew = true } },
+                new Offered { Name = "Sawblade Drone", Score = 4.40, W = Ab(1, 4, R, 2, evoOwned: true) });
+            string v3 = WhyOf(evo, 3, null).Versus, v2 = WhyOf(evo, 2, null).Versus;
+            Func<string, string> mist = s => s == null ? s : s.Replace("Bombing Strike: Bioweapon", "Mist Bombs: Frost");
+            var evoLent = Offer(mist, evo.Select(c => new Offered { Name = c.Name, Score = c.Score, W = c.W }).ToArray());
+            string vl = WhyOf(evoLent, 3, mist).Versus;
+            Console.WriteLine("      #3 Sawblade Drone: '" + v3 + "'; #2 Bombing Strike: Supercharge: '" + v2 + "'; lent '...: Frost': '" + vl + "'");
+            Check("W5", "(b) the vs sentence names another card whole ('Bombing Strike: Bioweapon goes first'), its own part only on a card of the same base",
+                v3 != null && v3.StartsWith("Bombing Strike: Bioweapon goes first", StringComparison.Ordinal) && v2 != null && v2.StartsWith("Bioweapon goes first", StringComparison.Ordinal)
+                && vl != null && vl.StartsWith("Mist Bombs: Frost goes first", StringComparison.Ordinal), v3 + " | " + v2 + " | " + vl);
+            Check("W5", "(b) ShortBeside / BaseNamed: the short form only beside its base; Short alone as before",
+                Wording.ShortBeside("Bombing Strike: Bioweapon", "Bombing Strike") == "Bioweapon" && Wording.ShortBeside("Bombing Strike: Bioweapon", "Sawblade Drone") == "Bombing Strike: Bioweapon"
+                && Wording.ShortBeside("Bear Trap: Fire", "Bear Trap") == "Bear Trap: Fire" && Wording.ShortBeside("Handgun", "Handgun") == "Handgun" && !Wording.BaseNamed("Falcon: Assault", null)
+                && Wording.BaseNamed("Falcon: Assault", "after Falcon: Guardian and") && Wording.Short("Bombing Strike: Bioweapon") == "Bioweapon");
+            string lift2 = Wording.Card(new CardWords { Kind = SayKind.Weapon, Level = 1, Max = 4, Style = BuildStyle.Ability, Lifted = true }, 2, "Helicopter Strike: Chemtrails", "Handgun");
+            string lift3 = Wording.Card(new CardWords { Kind = SayKind.Weapon, Level = 1, Max = 4, Style = BuildStyle.Ability, Lifted = true }, 3, "Falcon: Guardian", "Falcon: Assault");
+            string pick = Wording.Card(new CardWords { Kind = SayKind.Evolution, Base = "Bombing Strike", Build = R, Pick = "Bombing Strike: Bioweapon", Mine = false }, 1, null, null);
+            Check("W5", "(b) card lines: another card whole or the generic form (never a bare 'Chemtrails'); the second name short where the first names its base; the build's pick short on its base's card",
+                lift2 == "Level 2 of 4 - next, after the top card" && lift3 == "Level 2 of 4 - after Falcon: Guardian and Assault" && pick == "The Bench Rocket build takes Bioweapon instead", lift2 + " | " + lift3 + " | " + pick);
+            lines.AddRange(new[] { lift2, lift3, pick }); lines.AddRange(evo.Select(c => c.Shown));
+
+            // ---- (c) the build's main or core ability evolving, the build picking no evolution
+            Func<int, string, string, string> evolves = (p, build, special) => Wording.Card(new CardWords { Kind = SayKind.Evolution, Base = "Experiment 21", Build = build, BasePriority = p, Special = special }, 1, null, null);
+            string c0 = evolves(0, A, null), c2 = evolves(2, A, null), c3 = evolves(3, A, null), cn = evolves(-1, A, null), cs = evolves(0, A, "Ice"), cl = evolves(0, "A Build Named Twenty1", null), cb = evolves(0, null, null);
+            string cp = Wording.Card(new CardWords { Kind = SayKind.Evolution, Base = "Experiment 21", Build = A, BasePriority = 0, Pick = "Experiment 21: 73", Mine = true }, 1, null, null);
+            Check("W5", "(c) 'Evolves the <B> build's main ability' / 'a core ability of the <B> build' for a base the build ranks first to third and names no evolution for",
+                c0 == "Evolves the Bench Anchor build's main ability" && c2 == "Evolves a core ability of the Bench Anchor build" && c3 == "Evolution - a big step up" && cn == "Evolution - a big step up"
+                && cs == "Evolution - turns on the Ice 10-tag effect" && cl == "Evolves the build's main ability" && cb == "Evolution - a big step up" && cp == "The Bench Anchor build's evolution",
+                string.Join(" | ", new[] { c0, c2, c3, cn, cs, cl, cb, cp }));
+            var cw = WhyText.Reasons(new CardWords { Kind = SayKind.Evolution, Base = "Experiment 21", Build = A, BasePriority = 0, Special = "Ice" }, null, cs);
+            Check("W5", "(c) the WHY band says it when the card's line says something stronger (a 10-tag effect)", cw.Contains("Evolves the Bench Anchor build's main ability"), string.Join(" / ", cw));
+            lines.AddRange(new[] { c0, c2, c3, cn, cs, cl, cb, cp }); whys.AddRange(cw);
+
+            // ---- (d) TAGS: a met 10-tag effect is said
+            Func<int, int, Dictionary<string, int>, string> plan = (at, max, pts) => { var t = new TagProfile { SpecialAt = at }; foreach (var kv in pts) t.Points[kv.Key] = kv.Value; return t.PlanText(max); };
+            var p31 = new Dictionary<string, int> { { "Kinetic", 31 } }; var p2 = new Dictionary<string, int> { { "Kinetic", 31 }, { "Electric", 22 } };
+            var pm = new Dictionary<string, int> { { "Kinetic", 12 }, { "Electric", 4 } }; var pu = new Dictionary<string, int> { { "Kinetic", 8 }, { "Slashing", 4 } };
+            var pt = new TagProfile { SpecialAt = 10 }; foreach (var kv in pu) pt.Points[kv.Key] = kv.Value;
+            string d1 = plan(10, 1, p31), d2 = plan(10, 2, p2), d3 = plan(10, 2, pm), d4 = plan(10, 2, pu), d5 = plan(0, 2, p2), d6 = plan(10, 1, p2), d7 = plan(10, 2, new Dictionary<string, int> { { "Kinetic", 10 } });
+            Check("W5", "(d) TAGS says a met 10-tag effect ('Kinetic 31 - effect on'); short of it, or no threshold known, as before",
+                d1 == "Kinetic 31 - effect on" && d2 == "Kinetic 31, Electric 22 - effects on" && d3 == "Kinetic 12 - effect on, Electric 4/10" && d4 == "Kinetic 8/10, Slashing 4/10" && d4 == pt.PointsText(2)
+                && d5 == "Kinetic 31, Electric 22" && d6 == "Kinetic 31 - effect on" && d7 == "Kinetic 10 - effect on", string.Join(" | ", new[] { d1, d2, d3, d4, d5, d6, d7 }));
+
+            // ---- the sources: the ranks and rivals before the lines, the evolution's base place, the TAGS row
+            string ranker = Src("Ranker.cs"), plansrc = Src("Plan.cs");
+            int rk = ranker == null ? -1 : ranker.IndexOf("Wording.Ranks(order.ConvertAll(c => c.Say), order.ConvertAll(c => c.Name))", StringComparison.Ordinal);
+            int disp = ranker == null ? -1 : ranker.IndexOf("c.Display = Wording.Card(c.Say, c.Rank, first, second, room, LendNames)", StringComparison.Ordinal);
+            Check("W5", "the sources: SayAll ranks and pairs the rivals before the lines; ScoreEvolution fills the base's place; the readout's TAGS row asks PlanText",
+                rk > 0 && disp > rk && ranker.Contains("BasePriority = build != null && !parent.Skipped ? parent.Priority : -1") && plansrc != null && plansrc.Contains("s.Tags.PlanText(Compact ? 1 : 2)"));
+
+            // ---- the rails over every new form: the deciders for every ability as the rival, the mirror for every weapon, the evolution
+            // heads for every build, in the game's names and as drawn (every name 19 characters longer, the room an AVOID card leaves)
+            var builds = Builds.Where(x => x != null).ToList();
+            foreach (var n in names)
+                foreach (var build in builds)
+                    foreach (int p in new[] { -1, 1, 3, 4 })
+                        foreach (bool skipped in new[] { false, true })
+                        {
+                            var rival = new CardWords { Kind = SayKind.Ability, Level = 0, Max = 4, Build = build, Priority = skipped ? -1 : p, HeadRank = skipped ? 6 : 0, Head = skipped ? Wording.Skips(build) : null, Owned = 2 };
+                            var o = Offer(null, new Offered { Name = "Handgun", Score = 4.0, W = Gun(1, BuildStyle.Ability, build) }, new Offered { Name = n, Score = 3.0, W = rival });
+                            whys.AddRange(WhyOf(o, 1, null).Reasons);
+                        }
+            foreach (var wn in weaponNames)
+                foreach (double reach in new[] { 1.0, 0.3 })
+                {
+                    var o = Offer(null, new Offered { Name = "Electric Turret", Score = 5.0, W = Ab(3, 4, "Rifleman", 0, evoOwned: true, clock: "12:05 left") }, new Offered { Name = wn, Score = 4.9, W = Gun(1, BuildStyle.Weapon, "Rifleman", reach, "12:05 left") });
+                    whys.AddRange(WhyOf(o, 1, null).Reasons);
+                }
+            foreach (var build in builds) for (int p = -1; p <= 4; p++) foreach (var special in new[] { null, "Kinetic" }) lines.Add(evolves(p, build, special));
+            var railBad = new List<string>();
+            foreach (var l in lines.Where(x => x != null).Distinct()) { var off = Wording.Rails(l); if (off.Count > 0) railBad.Add("'" + l + "' (" + string.Join(", ", off) + ")"); }
+            foreach (var r in whys.Where(x => x != null).Distinct()) if (!WhyText.Fits(r)) railBad.Add("WHY '" + r + "'");
+            foreach (var r in versus.Where(x => x != null).Distinct()) if (!WhyText.Fits(r, WhyText.VersusBudget)) railBad.Add("vs #1 '" + r + "'");
+            // the deciders keep the card line's 50, as drawn too (the band swaps the lent names in)
+            var lender = Lender(names.Concat(weaponNames).Concat(items.Select(i => i.Name)).Concat(new[] { "Handgun", "Resuscitation", "Stimpack" }));
+            int drawnBad = 0; string drawnLongest = "";
+            foreach (var n in names.Take(400))
+                foreach (var build in builds)
+                {
+                    var o = Offer(lender, new Offered { Name = "Handgun", Score = 4.0, W = Gun(1, BuildStyle.Ability, build) }, new Offered { Name = n, Score = 3.0, W = new CardWords { Kind = SayKind.Ability, Max = 4, Build = build, Priority = 3, Owned = 2 } });
+                    foreach (var r in WhyOf(o, 1, lender).Reasons.Where(x => x.Contains("4th") || x.Contains("rank lower")))
+                    {
+                        string drawn = Wording.Safe(lender(r));
+                        if (drawn.Length > Wording.Budget || Wording.Rails(drawn).Count > 0) drawnBad++;
+                        else if (drawn.Length > drawnLongest.Length) drawnLongest = drawn;
+                    }
+                    foreach (var c in o) if (c.Shown != null && Wording.Rails(Wording.Safe(lender(c.Shown))).Count > 0) drawnBad++;
+                }
+            Check("W5", "every new form within the rails - card lines <= 50, WHY items within the band's, the deciders <= 50 as drawn with names 19 characters longer ("
+                + lines.Distinct().Count() + " lines, " + whys.Distinct().Count() + " WHY items)", railBad.Count == 0 && drawnBad == 0,
+                railBad.Count == 0 && drawnBad == 0 ? "the longest decider as drawn: '" + drawnLongest + "' (" + drawnLongest.Length + ")" : railBad.Count + " off, " + drawnBad + " as drawn: " + string.Join(" || ", railBad.Take(12)));
+        }
     }
 }

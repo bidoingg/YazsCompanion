@@ -301,11 +301,13 @@ namespace YazsCompanion
         }
 
         // everything the plan depends on: squad members with weapons, abilities, levels, items, tree levels, and the active quest
+        // (0.15.0, C15-09: with its counted objectives' progress - a story step rebuilds the QUEST row)
         static string StateKey(Snapshot s)
         {
             string quest = "";
             try { var qm = GameQuestManager.Get; var q = qm == null ? null : qm.ActiveQuest; if (q != null) quest = q.Pointer.ToString(); } catch { }
-            return s.Squad.Count + "|" + s.SquadText() + "|" + quest + "|" + s.Tags.Key();
+            string story = ""; try { var st = s.Story; if (st != null) story = st.Key(); } catch { }
+            return s.Squad.Count + "|" + s.SquadText() + "|" + quest + "|" + story + "|" + s.Tags.Key();
         }
 
         // ---- motion: the entrance, and the cue that the advice changed ----

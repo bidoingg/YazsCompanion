@@ -181,7 +181,13 @@ namespace YazsCompanion
             List<int> equipped; string eqFrom;
             if (run != null) { equipped = run.Equipped; eqFrom = "this run's badges"; }
             else if (LoadoutUi.Last != null) { equipped = LoadoutUi.Last.Equipped.ToList(); eqFrom = "equipped = your badges at the last run setup visit"; }
-            else { equipped = LoadoutState.EquippedNow(); eqFrom = equipped.Count > 0 ? "equipped = the run setup screen's badges" : "your equipped badges show after the first visit to the run setup screen"; }
+            else
+            {
+                equipped = LoadoutState.EquippedNow(); eqFrom = "equipped = the run setup screen's badges";
+                // 0.15.x (the 10-07 review): before the first visit the screen holds none - the save's selection, which it opens with
+                // (up to 0.15.0 the page then headlined "NOTHING TO SWAP OUT" over a save with four equipped)
+                if (equipped.Count == 0) { equipped = LoadoutState.SavedSelection(); eqFrom = equipped.Count > 0 ? "equipped = your saved selection, as the run setup screen opens with it" : "your equipped badges show after the first visit to the run setup screen"; }
+            }
 
             Text(_body, "Who", 120, 350, 1800, 70, 50f, Theme.Grey, "<color=" + Theme.GoldHex + ">" + Who(who).ToUpperInvariant() + "</color>   badges as team leader   <color=" + Theme.DimHex + ">"
                 + (b == null ? "Auto" : b.Name) + "</color>", TextAlignmentOptions.Left, true);
@@ -219,7 +225,9 @@ namespace YazsCompanion
                 if (icon != null) Pic(c.Rt, "Icon", 40, 26, 116, 116, icon, locked ? new Color(0.4f, 0.4f, 0.4f, 1f) : Color.white);
                 // NEVER goes on the level row: appended to the name it was cut to "Elemental - N..." in the 184-unit cell
                 string lvlText = pin == 2 ? "NEVER" + (locked ? "" : "  L" + lvl) : locked ? "LOCKED" : "L" + lvl + " / " + f.Max;
-                Text(c.Rt, "Lvl", 14, 6, 168, 34, 28f, pin == 2 ? Theme.Rust : locked ? Theme.Grey : Theme.Cream, lvlText, TextAlignmentOptions.Left, true);
+                // 0.15.x (the 10-07 review): 16 units further in - at x 14 the 'L' sat on the tile frame's inner line and 'L1 / 5' read
+                // '11 / 5' at 1280 x 800
+                Text(c.Rt, "Lvl", 30, 8, 156, 34, 28f, pin == 2 ? Theme.Rust : locked ? Theme.Grey : Theme.Cream, lvlText, TextAlignmentOptions.Left, true);
                 Text(c.Rt, "Name", 6, 146, cell - 12, 40, 30f, pin == 2 ? Theme.Rust : Theme.White, LoadoutState.DisplayName(f), TextAlignmentOptions.Center, true);
                 var m = v.MarkOf(f.Id);
                 if (m != null && m.Frame) Ui.Frame(c.Rt, "Frame", -4f, 4f, Theme.Gold, 22f);

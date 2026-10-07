@@ -85,7 +85,9 @@ namespace YazsCompanion
 
                 Ranker.Rank(screen, cards, snap);
                 if (Plugin.ShowBadges.Value) foreach (var c in cards) Badge.Show(c);
-                Shots.Later(0.6f, "offer");
+                // 10-07 review (C-m7): 1.0 s - after the WHY's own 0.6 s entrance delay and 0.12 s fade (at 0.6 s the shot came 3-38 ms
+                // before the WHY was drawn); WhyUi adds a 'why' shot 0.4 s after the offer's first '[why]' line
+                Shots.Later(1.0f, "offer");
 
                 var sb = new StringBuilder();
                 sb.Append("[offer] ").Append(screen).Append(' ').Append(snap.Clock).Append(" (").Append(snap.Mode).Append(" horde ").Append(snap.Horde).Append(")");
@@ -187,11 +189,95 @@ namespace YazsCompanion
             return false;
         }
 
+        // ---- the pause walk's hover tour (C-m7 / C-m8 of the 10-07 release review): once a session, on the first offer of two cards or
+        // more, 2 s in (the 'offer' and 'why' shots taken), the selection moves to the cards in screen positions 2, 3 and 4 in turn the
+        // game's own way - EventSystem.SetSelectedGameObject, what the pad's focus and the game's first-card select do (never a click;
+        // the card's OnSelected direct when that did not reach it in 0.8 s) - and each card's WHY is photographed 0.4 s after its
+        // '[why]' line ('why_card2' ...: the middle cards, the right wing and the team panel's clearance at 21:9, the band following
+        // the selection at 16:10); then the selection goes back to card 1 and the walk takes the pick as before
+        static int _tourPos = -1;            // the screen position on show (2..4); -1 not started this session, 0 done
+        static float _tourAt, _tourSelAt; static bool _tourShot, _tourDirect; static IntPtr _tourScreen;
+
+        /// <summary>True while the tour holds the offer (the walk asks again shortly and takes no pick meanwhile).</summary>
+        internal static bool DebugTourDue(float now)
+        {
+            if (_tourPos == 0) return false;
+            try
+            {
+                if (_lastCards == null || _debugScreen == null || (_tourPos > 0 && _debugScreen.Pointer != _tourScreen))
+                {
+                    if (_tourPos > 0) { Plugin.Logger.LogInfo("[menu] pause walk: hover tour cut short at card " + _tourPos + " - the offer closed"); _tourPos = 0; }
+                    return false;
+                }
+                if (_tourPos < 0)
+                {
+                    if (_lastCards.Count < 2 || now < _debugOfferAt + 2f) return false;     // a one-card offer: the next one
+                    _tourScreen = _debugScreen.Pointer; _tourPos = 2; _tourAt = now; _tourSelAt = -1f;
+                    Plugin.Logger.LogInfo("[menu] pause walk: hover tour - cards 2 to " + Math.Min(4, _lastCards.Count) + " of " + _lastCards.Count + " selected in turn (the game's selection, never a click), a 'why_card' shot 0.4 s after each '[why]' line");
+                }
+                if (now < _tourAt) return true;
+                if (_tourPos > Math.Min(4, _lastCards.Count))
+                {
+                    var first = _lastCards[0];
+                    TourSelect(first);
+                    Plugin.Logger.LogInfo("[menu] pause walk: hover tour done - the selection back on card 1 (" + first.Name + ")");
+                    _tourPos = 0; return false;
+                }
+                var c = _lastCards[_tourPos - 1];
+                var p = c.Button == null ? IntPtr.Zero : c.Button.Pointer;
+                if (_tourSelAt < 0f)
+                {
+                    _tourSelAt = now; _tourShot = false; _tourDirect = false;
+                    Plugin.Logger.LogInfo("[menu] pause walk: hover card " + _tourPos + " - #" + c.Rank + " " + c.Name);
+                    if (!TourSelect(c)) { _tourDirect = true; c.Button.OnSelected(); Plugin.Logger.LogInfo("[menu] pause walk: no EventSystem - card " + _tourPos + "'s OnSelected called direct"); }
+                    _tourAt = now + 0.05f; return true;
+                }
+                if (!_tourShot)
+                {
+                    if (p != IntPtr.Zero && WhyUi.LastSaid == p && WhyUi.LastSaidAt >= _tourSelAt)
+                    {
+                        Shots.Later(Math.Max(0.05f, 0.4f - (now - WhyUi.LastSaidAt)), "why_card" + _tourPos, true);
+                        _tourShot = true; _tourAt = now + 1.0f; return true;
+                    }
+                    if (!_tourDirect && now - _tourSelAt > 0.8f && WhyUi.SelectedNow != p)
+                    {
+                        _tourDirect = true; c.Button.OnSelected();
+                        Plugin.Logger.LogInfo("[menu] pause walk: the selection did not reach card " + _tourPos + " in 0.8 s (no OnSelected) - its OnSelected called direct");
+                        _tourAt = now + 0.05f; return true;
+                    }
+                    if (now - _tourSelAt > 2f)
+                    {
+                        Plugin.Logger.LogInfo("[menu] pause walk: no '[why]' line for card " + _tourPos + " within 2 s (" + (WhyUi.SelectedNow == p ? "selected" : "NOT selected") + ") - shot anyway");
+                        Shots.Later(0.05f, "why_card" + _tourPos, true); _tourShot = true; _tourAt = now + 0.6f; return true;
+                    }
+                    _tourAt = now + 0.05f; return true;
+                }
+                _tourPos++; _tourSelAt = -1f; return true;
+            }
+            catch (Exception e) { _tourPos = 0; Plugin.Logger.LogWarning("[menu] pause walk: hover tour failed: " + e.Message); return false; }
+        }
+
+        // the game's own selection (its first-card select and the pad's focus go the same way); false without an EventSystem
+        static bool TourSelect(Card c)
+        {
+            var es = UnityEngine.EventSystems.EventSystem.current;
+            if (es == null || c.Button == null) return false;
+            es.SetSelectedGameObject(c.Button.gameObject);
+            return true;
+        }
+
         static string BuildsText(Snapshot s)
         {
             var parts = new List<string>();
-            // a lent build Auto follows says so (0.13.0, F02: it follows the tier-3 branch taken - "Tank Pellets (Weapon, Auto)")
-            foreach (var sv in s.Squad) { var b = sv.Build; parts.Add(sv.Name + " " + (b != null ? b.Name + " (" + b.Style + (Builds.OnAuto(sv.Name) ? ", Auto" : "") + ")" : "Auto (" + Doctrine.Current.Style + ")")); }
+            // a lent build Auto follows says so (0.13.0, F02: it follows the tier-3 branch taken - "Tank Pellets (Weapon, Auto)"); 0.15.0
+            // (C15-07): with the style's source - "(Ability, Auto, the build's own)", or "(Balanced, Auto, mine)" with LentBuildStyle = Mine
+            foreach (var sv in s.Squad)
+            {
+                var b = sv.Build;
+                if (b == null) { parts.Add(sv.Name + " Auto (" + Doctrine.Current.Style + ")"); continue; }
+                StyleSource from; var style = Ranker.StyleOf(sv, out from);
+                parts.Add(sv.Name + " " + b.Name + " (" + style + (from == StyleSource.Lent ? ", Auto, the build's own" : from == StyleSource.Mine ? ", Auto, mine" : "") + ")");
+            }
             return parts.Count > 0 ? " | builds: " + string.Join(", ", parts) : "";
         }
     }

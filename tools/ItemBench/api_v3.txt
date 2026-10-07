@@ -1,0 +1,10 @@
+# The public surface of YazsCompanion.Api at ApiVersion 3 (YazsCompanionMod.dll), frozen: the bench
+# (ApiContract.cs) compares the built DLL with it. Other mods call these through reflection, by name and parameter
+# types: a line changes only with a new ApiVersion and a new api_v<N>.txt, never in place.
+method public static void YazsCompanion.Api.Extensions.InvalidateDisplayNames()
+method public static void YazsCompanion.Api.Extensions.RegisterBuildProvider(string owner, System.Func<string, string> buildPackPathForClass)
+method public static void YazsCompanion.Api.Extensions.RegisterDisplayNames(string owner, System.Func<string, string, string> nameFor)
+method public static void YazsCompanion.Api.Extensions.RegisterOption(string owner, string group, string label, string description, System.Func<string[]> choices, System.Func<int> get, System.Action<int> set)
+method public static void YazsCompanion.Api.Extensions.Unregister(string owner)
+property public static int YazsCompanion.Api.Extensions.ApiVersion { get; }
+type public static class YazsCompanion.Api.Extensions

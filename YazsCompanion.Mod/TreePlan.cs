@@ -254,4 +254,68 @@ namespace YazsCompanion
             return advice;
         }
     }
+
+    /// <summary>0.15.0 (C15-08): one node whose level changed between two reads of the same Training Yard tab.</summary>
+    internal sealed class TChange
+    {
+        public TNode Node;                // as the later read has it
+        public int From, To;
+        public int Advice;                // a purchase: its place in the SPEND list shown before it (1 ..); 0 = not advised (or a refund)
+        public bool Bought { get { return To > From; } }
+
+        /// <summary>The log line after "[yard] ": "bought Weapon Damage 1>2 (advice #1)", "bought Armor 0>1 (not advised)",
+        /// "refunded Armor 1>0".</summary>
+        public string Line
+        {
+            get
+            {
+                string head = (Bought ? "bought " : "refunded ") + Node.Name + " " + From + ">" + To;
+                return Bought ? head + (Advice > 0 ? " (advice #" + Advice + ")" : " (not advised)") : head;
+            }
+        }
+    }
+
+    /// <summary>0.15.0 (C15-08): the Training Yard purchase log - what the player bought or refunded between two reads of a tab, and
+    /// whether a purchase followed the advice on screen. The game says nothing when a node is bought; the levels of two consecutive
+    /// reads do. It makes the advice measurable (does the player follow it, which place) before 0.16.0 steers the plan by the badge
+    /// advice. Pure: TNode values only, so the bench drives it.</summary>
+    internal static class TreeDiff
+    {
+        /// <summary>A node's identity in its tab: its save key and its place (two nodes never share both, even with keys missing).</summary>
+        public static string Id(TNode n) { return (n.Key ?? "") + "@" + n.Rank + "." + n.Slot; }
+
+        /// <summary>The levels of one read by <see cref="Id"/>: what the next read of the same tab is compared with.</summary>
+        public static Dictionary<string, int> Levels(IEnumerable<TNode> nodes)
+        {
+            var d = new Dictionary<string, int>();
+            if (nodes != null) foreach (var n in nodes) if (n != null) d[Id(n)] = n.Level;
+            return d;
+        }
+
+        /// <summary>Every node of <paramref name="now"/> whose level differs from <paramref name="before"/>, in the read's (the tree's)
+        /// order; a node the earlier read did not have is left out (another tab or survivor starts a record of its own). A purchase
+        /// carries its place in <paramref name="advice"/> - the SPEND list worked out from the earlier read, the one on screen when the
+        /// player bought - when the node is in it and the bought levels start below the level the advice took it to (a level past the
+        /// advice is not advised).</summary>
+        public static List<TChange> Diff(Dictionary<string, int> before, List<TNode> now, TAdvice advice)
+        {
+            var list = new List<TChange>();
+            if (before == null || now == null) return list;
+            foreach (var n in now)
+            {
+                if (n == null) continue;
+                string id = Id(n);
+                int was;
+                if (!before.TryGetValue(id, out was) || was == n.Level) continue;
+                var ch = new TChange { Node = n, From = was, To = n.Level };
+                if (ch.Bought && advice != null)
+                {
+                    var b = advice.Now.FirstOrDefault(x => x.Node != null && Id(x.Node) == id);
+                    if (b != null && ch.From < b.To) ch.Advice = b.Order;
+                }
+                list.Add(ch);
+            }
+            return list;
+        }
+    }
 }

@@ -45,6 +45,7 @@ namespace YazsCompanion
         {
             public string Key; public RectTransform View, Content, Before, After; public bool Across;
             public float Size, Extent, Pos, Inset;       // the view's length, the content's, how far it is scrolled, the content's margin inside the view
+            public float Top;                            // the margin above the content (Inset, or less under a tab's lead line: C-m1 of the 10-07 review)
             public float Max { get { return Mathf.Max(0f, Extent - Size); } }
         }
 
@@ -181,6 +182,7 @@ namespace YazsCompanion
             try { if (_go != null) UnityEngine.Object.Destroy(_go); } catch { }
             _go = null; _stage = null; _body = null; _ctls.Clear(); _scrolls.Clear(); _focus = null; _saved = null; _pvWindow = null; _pvCaption = null;
             _tabBar = null; _tabRule = null;
+            _walkRows = 0; _scrollWalk = 0;         // a walk's inert rows never outlive the menu they were shown in
             try
             {
                 var es = UnityEngine.EventSystems.EventSystem.current;
@@ -339,15 +341,16 @@ namespace YazsCompanion
             bool fire = (x != 0 || y != 0) && (fresh || now >= _repeatAt);
             if (fire && !fresh) _repeatAt = now + 0.11f;
 
-            if (Pad("GoNextTab") || Pad("GoNextTab2") || Key(KeyCode.E) || Key(KeyCode.PageDown)) { SetTab((_tab + 1) % _tabCount); return; }
-            if (Pad("GoPrevTab") || Pad("GoPrevTab2") || Key(KeyCode.Q) || Key(KeyCode.PageUp)) { SetTab((_tab + _tabCount - 1) % _tabCount); return; }
-            if (Pad("Cancel") || Key(KeyCode.Escape) || Key(KeyCode.Backspace)) { Back(); return; }
+            if (PadOrKey(Pad("GoNextTab") || Pad("GoNextTab2")) || ByKey(Key(KeyCode.E) || Key(KeyCode.PageDown))) { SetTab((_tab + 1) % _tabCount); return; }
+            if (PadOrKey(Pad("GoPrevTab") || Pad("GoPrevTab2")) || ByKey(Key(KeyCode.Q) || Key(KeyCode.PageUp))) { SetTab((_tab + _tabCount - 1) % _tabCount); return; }
+            if (PadOrKey(Pad("Cancel")) || ByKey(Key(KeyCode.Escape) || Key(KeyCode.Backspace))) { Back(); return; }
 
             bool mouseDown = Mouse();
             if (!_open) return;
-            if (_scrolls.Count > 0) { float wheel = Wheel(); if (wheel != 0f) WheelScroll(wheel); }
+            if (_scrolls.Count > 0) { float wheel = Wheel(); if (wheel != 0f) { if (!_firstSaid) FirstInput("mouse"); WheelScroll(wheel); } }
             if (fire)
             {
+                PadOrKey(true);         // the stick / d-pad, or the arrow keys the game maps onto the same axes
                 if (y != 0) Move(0, y);
                 else if (_focus != null && _focus.Change != null) { _focus.Change(x); Click(); }
                 else Move(x, 0);
@@ -360,7 +363,40 @@ namespace YazsCompanion
                 if (submit && !_submitIsMouse) { _submitIsMouse = true; Plugin.Logger.LogInfo("[menu] UISubmit fires on the left mouse button too: ignored on click frames"); }
                 return;
             }
-            if (submit || Key(KeyCode.Return) || Key(KeyCode.KeypadEnter) || Key(KeyCode.Space)) Activate(_focus);
+            if (PadOrKey(submit) || ByKey(Key(KeyCode.Return) || Key(KeyCode.KeypadEnter) || Key(KeyCode.Space))) Activate(_focus);
+        }
+
+        // ---- 0.15.0 (C15-08): the first input the menu took this session, said once and outside the verbose log, so a sent log
+        // proves how the menu was worked: 'pad' (the Steam Deck's controls), 'key', 'mouse' or 'touch'. The game maps keys onto its
+        // Rewired actions as well, so an action counts as the keyboard's when a key is down on that frame. A touch is told from the
+        // mouse by Input.touchCount - the same test the EventSystem's input module makes before it hands out touch pointer ids (0 and
+        // up; the mouse's are negative): the menu hit-tests by itself, so there is no pointer event to read. A lone hover is not
+        // enough for 'mouse' (a cursor the system moves would make one): a click, the wheel or a second hover is.
+        static bool _firstSaid; static int _hoverFocus; static KeyCode[] _keyboard;
+
+        static void FirstInput(string source)
+        {
+            if (_firstSaid) return;
+            _firstSaid = true;
+            Plugin.Logger.LogInfo("[menu] first input this session: " + source);
+        }
+
+        /// <summary>A Rewired action fired: the keyboard's when a key is down this frame, else the pad's. Returns <paramref name="fired"/>.</summary>
+        static bool PadOrKey(bool fired) { if (fired && !_firstSaid) FirstInput(KeyboardHeld() ? "key" : "pad"); return fired; }
+        static bool ByKey(bool fired) { if (fired && !_firstSaid) FirstInput("key"); return fired; }
+        static string Pointer() { try { if (UnityEngine.Input.touchCount > 0) return "touch"; } catch { } return "mouse"; }
+
+        /// <summary>Any keyboard key held (the KeyCodes below the mouse buttons; joystick buttons come after them). Asked only until the
+        /// first input is said.</summary>
+        static bool KeyboardHeld()
+        {
+            try
+            {
+                if (_keyboard == null) _keyboard = ((KeyCode[])Enum.GetValues(typeof(KeyCode))).Where(k => (int)k > 0 && k < KeyCode.Mouse0).Distinct().ToArray();
+                foreach (var k in _keyboard) if (UnityEngine.Input.GetKey(k)) return true;
+            }
+            catch { }
+            return false;
         }
 
         static Vector3 _lastMouse;
@@ -373,12 +409,13 @@ namespace YazsCompanion
             if (!moved && !down) return false;
             var p = new Vector2(mp.x, mp.y);
             for (int i = 0; i < _tabCount; i++)
-                if (down && _tabLabels[i] != null && Hit(_tabLabels[i].rectTransform, p)) { SetTab(i); return true; }
+                if (down && _tabLabels[i] != null && Hit(_tabLabels[i].rectTransform, p)) { if (!_firstSaid) FirstInput(Pointer()); SetTab(i); return true; }
             Ctl over = null;
             foreach (var c in _ctls) if (c.Rt != null && Hit(c.Rt, p) && (c.In == null || Hit(c.In.View, p))) { over = c; break; }
             if (over == null) return down;
-            if (over != _focus) Focus(over, true);
+            if (over != _focus) { Focus(over, true); if (!down && !_firstSaid && ++_hoverFocus >= 2) FirstInput("mouse"); }
             if (!down) return false;
+            if (!_firstSaid) FirstInput(Pointer());
             if (over.Change != null && over.Left != null && Hit(over.Left, p)) { over.Change(-1); Click(); }
             else if (over.Change != null && over.Right != null && Hit(over.Right, p)) { over.Change(1); Click(); }
             else Activate(over);
@@ -455,8 +492,13 @@ namespace YazsCompanion
         {
             if (_desc == null) return;
             _desc.text = text ?? "";
+            // 10-07 review (walk-shot nit): while a walk runs the help shows whole at once - its typing (up to 0.9 s) left the walks'
+            // shots with half a help text (205 of 444 characters)
+            if (WalkOn) { Fx.Cancel("menu.desc"); try { _desc.maxVisibleCharacters = 99999; } catch { } return; }
             Fx.Type("menu.desc", _desc, 0f, 420f);
         }
+
+        static bool WalkOn { get { try { return (Plugin.PreviewPause.Value && !_ppDone) || (Plugin.PreviewMenu.Value && !_pvDone); } catch { return false; } } }
 
         static void Click()
         {
@@ -566,12 +608,16 @@ namespace YazsCompanion
         // follows: the focus moving onto a control that is not fully shown brings it into view, the mouse only works
         // a control where the area shows it, the wheel scrolls the area under the pointer, and a small gold arrow
         // outside the area says on which side there is more. Where an area stood outlives the rebuild of the body.
-        static Scroller Scroll(string key, float x, float y, float w, float h, bool across, float inset)
+        static Scroller Scroll(string key, float x, float y, float w, float h, bool across, float inset, float top = -1f)
         {
-            var s = new Scroller { Key = key, Across = across, Inset = inset, Size = across ? w : h };
-            s.View = Place(Ui.NewRect("View:" + key, _body), x - inset, y - inset, w + 2f * inset, h + 2f * inset);     // the inset keeps the focus glow of a control at the edge whole
+            // top: the inset above the area when it must be smaller - 0.15.x (C-m1 of the 10-07 review): the ADVICE and DISPLAY rows
+            // start 24 - 28 units under their lead line, so the 40-unit inset let a row scrolled out above the area cover the lead's
+            // descenders; their inset there stops at the lead (the focus glow of the top row loses its faint outer edge)
+            if (top < 0f) top = inset;
+            var s = new Scroller { Key = key, Across = across, Inset = inset, Top = top, Size = across ? w : h };
+            s.View = Place(Ui.NewRect("View:" + key, _body), x - inset, y - top, w + 2f * inset, h + inset + top);     // the inset keeps the focus glow of a control at the edge whole
             s.View.gameObject.AddComponent(Il2CppType.Of<RectMask2D>());
-            s.Content = Place(Ui.NewRect("Content", s.View), inset, inset, w, h);
+            s.Content = Place(Ui.NewRect("Content", s.View), inset, top, w, h);
             s.Before = across ? Pointer(_body, x + w - 124f, y - 78f, 52f, 90f) : Pointer(_body, x + w + inset + 12f, y, 52f, 0f);
             s.After = across ? Pointer(_body, x + w - 56f, y - 78f, 52f, -90f) : Pointer(_body, x + w + inset + 12f, y + h - 52f, 52f, 180f);
             _scrolls.Add(s);
@@ -598,9 +644,9 @@ namespace YazsCompanion
             pos = Mathf.Clamp(pos, 0f, s.Max); s.Pos = pos; _scrollPos[s.Key] = pos;
             try { s.Before.gameObject.SetActive(pos > 1f); s.After.gameObject.SetActive(pos < s.Max - 1f); } catch { }
             Fx.Cancel("menu.scroll");
-            var content = s.Content; bool across = s.Across; float inset = s.Inset;
-            float from = across ? inset - content.anchoredPosition.x : content.anchoredPosition.y + inset;      // where it is on screen: a glide cut short starts from there
-            Action<float> put = p => { content.anchoredPosition = across ? new Vector2(inset - p, -inset) : new Vector2(inset, p - inset); };
+            var content = s.Content; bool across = s.Across; float inset = s.Inset, top = s.Top;
+            float from = across ? inset - content.anchoredPosition.x : content.anchoredPosition.y + top;      // where it is on screen: a glide cut short starts from there
+            Action<float> put = p => { content.anchoredPosition = across ? new Vector2(inset - p, -top) : new Vector2(inset, p - top); };
             if (!glide || Mathf.Abs(from - pos) < 1f) { put(pos); return; }
             Fx.Run("menu.scroll", 0f, 0.16f, k => put(Mathf.Lerp(from, pos, Fx.OutCubic(k))));
         }
@@ -619,10 +665,14 @@ namespace YazsCompanion
 
         static float Wheel() { try { return UnityEngine.Input.mouseScrollDelta.y; } catch (Exception e) { InputError("Input.mouseScrollDelta", e); return 0f; } }
 
-        static void WheelScroll(float wheel)
+        static void WheelScroll(float wheel) { WheelScroll(wheel, new Vector2(_lastMouse.x, _lastMouse.y)); }
+
+        /// <summary>The wheel over the screen point <paramref name="p"/> (the pointer; the walk's check passes an area's centre):
+        /// the area under it scrolls, if it has more to show. True when one did.</summary>
+        static bool WheelScroll(float wheel, Vector2 p)
         {
-            var p = new Vector2(_lastMouse.x, _lastMouse.y);
-            foreach (var s in _scrolls) if (s.Max > 0f && Hit(s.View, p)) { ScrollTo(s, s.Pos - wheel * 150f, true); return; }
+            foreach (var s in _scrolls) if (s.Max > 0f && Hit(s.View, p)) { ScrollTo(s, s.Pos - wheel * 150f, true); return true; }
+            return false;
         }
 
         // ================================================================ the shell: backdrop, header, tabs, footer
@@ -851,7 +901,18 @@ namespace YazsCompanion
             Box(rt, "Rule", pad, 172, inner, 3, Theme.GoldRule);
 
             Text(rt, "L1", pad, 190, inner, 40, 30f, Theme.Grey, "LEVEL-UPS", TextAlignmentOptions.Left, true);
-            Text(rt, "Style", pad, 226, inner, 56, 44f, Theme.White, StyleText(b == null ? Doctrine.Current.Style : b.Style) + (b == null ? " (ADVICE tab)" : ""), TextAlignmentOptions.Left);
+            // 0.15.0 (C15-07): what Auto follows levels up by the lent build's own style - or, with LentBuildStyle = Mine, by yours
+            var lentBuild = b == null ? viaAuto : lentAuto ? b : null;
+            string styleText = StyleText(b == null ? Doctrine.Current.Style : b.Style) + (b == null ? " (ADVICE tab)" : ""), styleShort = null;
+            if (lentBuild != null)
+            {
+                // 0.15.x (the 10-07 review): the cards' phrase, "the build's style" (it said "(its own)"); "(build's style)" on a narrow card
+                StyleSource from; var st = Builds.StyleFor(lentBuild, true, Doctrine.Current.Style, Doctrine.Current.LentStyleMine, out from);
+                styleText = StyleText(st) + (from == StyleSource.Mine ? " (yours)" : " (the build's style)");
+                if (from != StyleSource.Mine) styleShort = StyleText(st) + " (build's style)";
+            }
+            var styleLabel = Text(rt, "Style", pad, 226, inner, 56, 44f, Theme.White, styleText, TextAlignmentOptions.Left);
+            if (styleShort != null && styleLabel != null) { try { if (styleLabel.GetPreferredValues(styleText).x > inner) styleLabel.text = styleShort; } catch { } }
 
             Text(rt, "L2", pad, 306, inner, 40, 30f, Theme.Grey, "WEAPON BRANCH", TextAlignmentOptions.Left, true);
             string branch = b == null ? "" : b.Branch;
@@ -890,8 +951,9 @@ namespace YazsCompanion
 
             c.Desc = () => b == null
                 ? (viaAuto != null ? "AUTO - while " + viaAuto.Pack + " lends its builds, Auto follows its " + viaAuto.Name + "; select any card to follow that instead. Otherwise: no" : "AUTO. No")
-                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, 10-tag effects within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab." + BadgeSentence(who, viaAuto)
-                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" : "   [select to follow it]") + BadgeSentence(who, b);
+                    + " fixed build: the weapon branch and the evolutions follow what your squad deals right now (shared damage types, 10-tag effects within reach, team passives), then your Training Yard investment, then the guides. Level-ups use the style set on the ADVICE tab."
+                    + LentStyleSentence(viaAuto) + BadgeSentence(who, viaAuto)
+                : (b.Pack.Length > 0 ? "[" + b.Pack + "]  " : "") + Names.Text(b.Summary) + (active ? "" : lentAuto ? "   [followed through Auto]" + LentStyleSentence(b) : "   [select to follow it]") + BadgeSentence(who, b);
         }
 
         // ---------------------------------------------------------------- the editor of your own build
@@ -1000,41 +1062,129 @@ namespace YazsCompanion
             return sb.ToString();
         }
 
+        // ---- 0.15.0 (C15-05): the rows of ADVICE and DISPLAY scroll. Both tabs were full at eleven rows; their rows now live in
+        //      the clipped area of MODS and BUILDS (Scroll), laid out in its own space from y 0. The area is as tall as the whole rows
+        //      that fit above the footer, whatever the row count - eleven, exactly where they stood - so a list that fits does not
+        //      move, and a longer one scrolls with the focus (keys and pad), the wheel and the gold arrows, from where it stood.
+        const float RowsFloor = 1806f;          // the lowest a list may reach: the footer rule (1846, BuildShell) less the area's 40-unit inset
+
+        /// <summary>The height of a list of rows starting at <paramref name="top"/>: the whole rows that fit above the footer.</summary>
+        static float RowsRoom(float top, float rh, float step)
+        {
+            int n = Mathf.Max(1, Mathf.FloorToInt((RowsFloor - top + (step - rh)) / step));
+            return n * step - (step - rh);
+        }
+
+        /// <summary>0.15.x (C-m1 of the 10-07 review): the inset above a tab's rows that stops at its lead line - the room between the lead's
+        /// rect (Text grows a one-line lead to 1.55 x its font, about its middle) and the rows' top, 40 at most (ADVICE: 24, DISPLAY: 28).
+        /// A row scrolled out above the area no longer covers the lead's descenders.</summary>
+        static float TopInset(TextMeshProUGUI lead, float rowsTop)
+        {
+            float bottom = 0f;
+            try { if (lead != null) bottom = -lead.rectTransform.anchoredPosition.y + lead.rectTransform.sizeDelta.y; } catch { bottom = 0f; }
+            return bottom > 0f ? Mathf.Clamp(rowsTop - bottom, 0f, 40f) : 40f;
+        }
+
+        /// <summary>The rows are laid out: every control of the tab is one of the area's (the mouse works it only where the area
+        /// shows it), and the area goes back to where it stood before the rebuild.</summary>
+        static void EndRows(Scroller area, float extent)
+        {
+            foreach (var c in _ctls) c.In = area;
+            Settle(area, extent);
+        }
+
+        /// <summary>The walks' inert rows (ScrollWalk): while <see cref="_walkRows"/> is set, the list gets that many rows more, so
+        /// its scrolling is proven at any screen size, even while every real row fits. They change nothing.</summary>
+        static void WalkRows(RectTransform rows, string prefix, float w, float rh, float step, float valueW, ref float y)
+        {
+            for (int i = 1; i <= _walkRows; i++)
+            {
+                Cycler(rows, prefix + ":walk" + i, 0f, y, w, rh, "Scroll test row " + i, null, () => "-", d => { },
+                    () => "A row the menu walk adds for a moment ([Debug] PreviewMenu / PreviewPause), to prove that the list scrolls. It does nothing and goes with the walk.", valueW);
+                y += step;
+            }
+        }
+
         static void BuildAdvice()
         {
-            float x = 320f, w = 3200f, y = 360f, rh = 116f, step = 124f;       // 0.14.0: eleven rows - the eleventh ends at 1804, above the footer rule (1846)
-            Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, "The standing orders of the advice, saved as you change them and followed from the next offer on. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
+            float x = 320f, w = 3200f, y = 360f, rh = 116f, step = 124f;       // 0.14.0: eleven rows - the eleventh ends at 1804, above the footer rule (1846); 0.15.0: twelve while another mod lends builds
+            // 0.15.x (the 10-07 review): with the lent builds' row the lead and the first row's label say that lent builds follow that row
+            // (the lead stays one line: 193 characters, the old one's 194)
+            bool lentRow = Builds.PackSource != null || Plugin.AdviceLentStyle.Value != LentBuildStyle.BuildsOwn;
+            var lead = Text(_body, "Lead", x, y, w, 60, 44f, Theme.Grey, lentRow
+                ? "Standing orders for every survivor, saved as you change them and followed from the next offer on. A build you select keeps the build's style - a lent build too, unless the second row says Mine."
+                : "The standing orders of the advice, saved as you change them and followed from the next offer on. They apply to every survivor; a build you select on the BUILDS tab brings its own level-up style.", TextAlignmentOptions.Left);
             y += 88f;
-            Cycler(_body, "ad:style", x, y, w, rh, "Level-up style (survivors on Auto)", "chevrons", () => Words(Plugin.AdviceStyle.Value.ToString()), d => Plugin.AdviceStyle.Value = Next(Plugin.AdviceStyle.Value, d),
+            // 0.15.0 (C15-05): the rows live in a clipped area that follows the focus (Scroll): eleven rows show at once, where they
+            // always stood; a twelfth (Lent builds' level-up style, while another mod lends builds) scrolls in with the keys, the pad's
+            // focus and the wheel, a gold arrow saying on which side there is more
+            var area = Scroll("advice", x, y, w, RowsRoom(y, rh, step), false, 40f, TopInset(lead, y));
+            var rows = area.Content; y = 0f;
+            Cycler(rows, "ad:style", 0f, y, w, rh, lentRow ? "Level-up style (on Auto; lent builds: next row)" : "Level-up style (survivors on Auto)", "chevrons", () => Words(Plugin.AdviceStyle.Value.ToString()),
+                d => { Plugin.AdviceStyle.Value = Next(Plugin.AdviceStyle.Value, d); foreach (var k in _ctls) if (k.Key == "ad:lent" && k.Refresh != null) k.Refresh(); },     // 0.15.0: "Mine (...)" names it
                 () => Plugin.AdviceStyle.Value == LevelUpStyle.WeaponFirst ? "WEAPON FIRST: every weapon level before any ability level - the rule of the mod up to 0.9. Some guides swear by it; others, and the ability-centred survivors, do not."
                     : Plugin.AdviceStyle.Value == LevelUpStyle.AbilitiesFirst ? "ABILITIES FIRST: abilities before weapon levels; the weapon fills in. Evolutions, a recruit's first weapon and new weapon tiers stay on top."
                     : "BALANCED (default): each ability once early, then the weapon and the main ability side by side, the rest after. The human guides disagree on 'weapon first', so this sits between them."); y += step;
-            Cycler(_body, "ad:timing", x, y, w, rh, "Run clock", "clock", () => Words(Plugin.AdviceTiming.Value.ToString()), d => Plugin.AdviceTiming.Value = Next(Plugin.AdviceTiming.Value, d),
+            // 0.15.0 (C15-07, the user's decision Q3): whose level-up style a build another mod lends follows while Auto picks it - its own
+            // (the default, said on the cards and the readout) or the row above ([Advice] LentBuildStyle). Only while another mod lends
+            // builds (or the cfg says Mine), as the MODS tab comes only with a registered mod: without one the row would change nothing,
+            // and the tab keeps its eleven rows with nothing to scroll
+            if (lentRow)
+            {
+                Cycler(rows, "ad:lent", 0f, y, w, rh, "Lent builds' level-up style", "chevrons", () => LentStyleText(), d => Plugin.AdviceLentStyle.Value = Next(Plugin.AdviceLentStyle.Value, d),
+                    () => LentStyleHelp()); y += step;
+            }
+            Cycler(rows, "ad:timing", 0f, y, w, rh, "Run clock", "clock", () => Words(Plugin.AdviceTiming.Value.ToString()), d => Plugin.AdviceTiming.Value = Next(Plugin.AdviceTiming.Value, d),
                 () => "What pays back over the rest of the run - XP, luck, pickup range, a fresh ability, a recruit - is worth the most early and little near the end; what works at once (a weapon tier, the level that completes an ability, a 10-tag effect within reach) keeps its value. " + (Plugin.AdviceTiming.Value == Strength.Off ? "OFF: the clock is ignored." : Plugin.AdviceTiming.Value == Strength.Strong ? "STRONG: the late-run cut-off is sharper." : "")); y += step;
-            Cycler(_body, "ad:mode", x, y, w, rh, "Game mode and difficulty", "skull", () => Plugin.AdviceModeAware.Value ? "Steer the advice" : "Ignore", d => Plugin.AdviceModeAware.Value = !Plugin.AdviceModeAware.Value,
+            Cycler(rows, "ad:mode", 0f, y, w, rh, "Game mode and difficulty", "skull", () => Plugin.AdviceModeAware.Value ? "Steer the advice" : "Ignore", d => Plugin.AdviceModeAware.Value = !Plugin.AdviceModeAware.Value,
                 () => "The mode sets the horizon (Default 20:00, Hardcore and Boss Rush 10:00, One Hit 5:00, Extermination by waves, Endurance and Infinite open-ended: economy never fades), doubles boss damage in Boss Rush, drops health picks and raises crowd control in One Hit, and weighs survival more in Hardcore and on higher difficulties."); y += step;
-            Cycler(_body, "ad:synergy", x, y, w, rh, "Squad synergy", "link", () => Words(Plugin.AdviceSynergy.Value.ToString()), d => Plugin.AdviceSynergy.Value = Next(Plugin.AdviceSynergy.Value, d),
+            Cycler(rows, "ad:synergy", 0f, y, w, rh, "Squad synergy", "link", () => Words(Plugin.AdviceSynergy.Value.ToString()), d => Plugin.AdviceSynergy.Value = Next(Plugin.AdviceSynergy.Value, d),
                 () => "Read live: every level adds a tag point to each damage type it deals (+2% for everything dealing it, its 10-tag effect at 10 points), so picks that share a type with your squad are worth more; team passives boost grenades, turrets, taunts and deployables across the squad; evolutions are chosen by what they add for THIS squad."); y += step;
-            Cycler(_body, "ad:tags", x, y, w, rh, "Damage type tags", "hash", () => Plugin.AdviceTags.Value == TagStrategy.Auto ? "Auto: favour the main type" : Plugin.AdviceTags.Value == TagStrategy.Spread ? "Spread" : "Always " + Plugin.AdviceTags.Value, d => Plugin.AdviceTags.Value = Next(Plugin.AdviceTags.Value, d),
+            Cycler(rows, "ad:tags", 0f, y, w, rh, "Damage type tags", "hash", () => Plugin.AdviceTags.Value == TagStrategy.Auto ? "Auto: favour the main type" : Plugin.AdviceTags.Value == TagStrategy.Spread ? "Spread" : "Always " + Plugin.AdviceTags.Value, d => Plugin.AdviceTags.Value = Next(Plugin.AdviceTags.Value, d),
                 () => "AUTO favours the type your squad deals most, toward its 10-tag effect (the guides: one main type, maybe a second, avoid totals under 10); the readout's TAGS row names it as 'next Pod'. SPREAD favours none. Or name one type to always favour on Research Pods, items and level-ups."); y += step;
-            Cycler(_body, "ad:goal", x, y, w, rh, "What the run is for", "coin", () => Words(Plugin.AdviceGoal.Value.ToString()), d => Plugin.AdviceGoal.Value = Next(Plugin.AdviceGoal.Value, d),
+            Cycler(rows, "ad:goal", 0f, y, w, rh, "What the run is for", "coin", () => Words(Plugin.AdviceGoal.Value.ToString()), d => Plugin.AdviceGoal.Value = Next(Plugin.AdviceGoal.Value, d),
                 () => "WIN THE RUN: cash never helps the run itself, so cash bonuses rank low and XP fades with the clock. FARM PROGRESS: cash, XP and luck keep their value to the end, and a recruit close to a new rank counts for more."); y += step;
-            Cycler(_body, "ad:caution", x, y, w, rh, "Caution", "heart", () => Words(Plugin.AdviceCaution.Value.ToString()), d => Plugin.AdviceCaution.Value = Next(Plugin.AdviceCaution.Value, d),
+            Cycler(rows, "ad:caution", 0f, y, w, rh, "Caution", "heart", () => Words(Plugin.AdviceCaution.Value.ToString()), d => Plugin.AdviceCaution.Value = Next(Plugin.AdviceCaution.Value, d),
                 () => "How much max health, armor, regeneration and healing weigh. They already weigh more late, on higher difficulties and while the squad is hurting; this scales all of that."); y += step;
-            Cycler(_body, "ad:recruit", x, y, w, rh, "SOS signals late in a run", "radio", () => Words(Plugin.AdviceRecruit.Value.ToString()), d => Plugin.AdviceRecruit.Value = Next(Plugin.AdviceRecruit.Value, d),
+            Cycler(rows, "ad:recruit", 0f, y, w, rh, "SOS signals late in a run", "radio", () => Words(Plugin.AdviceRecruit.Value.ToString()), d => Plugin.AdviceRecruit.Value = Next(Plugin.AdviceRecruit.Value, d),
                 () => "BY THE CLOCK: recruit while a newcomer still has the level-ups to grow (a recruit also adds +20% XP), Liberate for the level-up and cash once they do not. Or always recruit, or Liberate from the halfway mark."); y += step;
             // 0.12.2: the reroll hint on the rescue screen; 0.14.0: the action hints of every selection screen in the same row
-            // ([Advice] RerollHint + ActionHints), so the tab keeps its eleven rows
-            Cycler(_body, "ad:hints", x, y, w, rh, "Hints on the selection screens", "diamond", () => HintsText(), d => HintsStep(d), () => HintsHelp()); y += step;
+            // ([Advice] RerollHint + ActionHints) - one row for both (since 0.15.0 the rows scroll past eleven)
+            Cycler(rows, "ad:hints", 0f, y, w, rh, "Hints on the selection screens", "diamond", () => HintsText(), d => HintsStep(d), () => HintsHelp()); y += step;
             // 0.14.0 (C3): how hard the active quest steers the cards
-            Cycler(_body, "ad:quest", x, y, w, rh, "The active quest", "crosshair", () => QuestText(Plugin.AdviceQuest.Value), d => Plugin.AdviceQuest.Value = Next(Plugin.AdviceQuest.Value, d),
+            Cycler(rows, "ad:quest", 0f, y, w, rh, "The active quest", "crosshair", () => QuestText(Plugin.AdviceQuest.Value), d => Plugin.AdviceQuest.Value = Next(Plugin.AdviceQuest.Value, d),
                 () => Plugin.AdviceQuest.Value == QuestSteer.Off ? "OFF: the quest is not followed at all - its team rule on the rescue screen neither. The game still counts it."
                     : Plugin.AdviceQuest.Value == QuestSteer.InfoOnly ? "INFO ONLY: the readout's QUEST row says what the quest still asks and the log gives the reasons, but no card moves for it (its team rule neither)."
                     : "ON (default): what the quest asks for comes first, with a 'Quest: ...' line under the card - the weapon it wants maxed, the ability or evolution it wants, a health item, the Research Pods and trainings it counts; a pick that would fail it reads AVOID. Kills with a survivor and the like weigh a little. Your build and tag plan stay; the readout gets a QUEST row while a rule changes something."); y += step;
-            Cycler(_body, "ad:loadout", x, y, w, rh, "Badge advice on the run setup screen", "diamond", () => LoadoutText(Plugin.AdviceLoadout.Value), d => Plugin.AdviceLoadout.Value = Next(Plugin.AdviceLoadout.Value, d),
-                () => LoadoutHelp(Plugin.AdviceLoadout.Value));
+            Cycler(rows, "ad:loadout", 0f, y, w, rh, "Badge advice on the run setup screen", "diamond", () => LoadoutText(Plugin.AdviceLoadout.Value), d => Plugin.AdviceLoadout.Value = Next(Plugin.AdviceLoadout.Value, d),
+                () => LoadoutHelp(Plugin.AdviceLoadout.Value)); y += step;
+            WalkRows(rows, "ad", w, rh, step, 1000f, ref y);
+            EndRows(area, y - (step - rh));
         }
         static string QuestText(QuestSteer q) { return q == QuestSteer.On ? "Steer the advice" : q == QuestSteer.InfoOnly ? "Info only" : "Off"; }
+
+        // ---- 0.15.0 (C15-07): a lent build Auto follows - whose level-up style it uses (the BUILDS tab's Auto and VIA AUTO cards)
+        static string LentStyleSentence(Build lent)
+        {
+            if (lent == null) return "";
+            StyleSource from; var st = Builds.StyleFor(lent, true, Doctrine.Current.Style, Doctrine.Current.LentStyleMine, out from);
+            return from == StyleSource.Mine
+                ? " While Auto follows " + lent.Name + ", it levels up by your style (" + StyleText(st).ToLowerInvariant() + "): ADVICE tab, Lent builds' level-up style."
+                : " While Auto follows " + lent.Name + ", it levels up by the build's style (" + StyleText(st).ToLowerInvariant() + "), not the ADVICE tab's - the row Lent builds' level-up style switches that.";
+        }
+
+        // ---- 0.15.0 (C15-07): the lent builds' style row - the value names your style when it is yours that wins
+        // (0.15.x, the 10-07 review: one phrase for the idea everywhere - the cards', "the build's style"; the value read The build's own)
+        static string LentStyleText()
+        {
+            return Plugin.AdviceLentStyle.Value == LentBuildStyle.Mine ? "Mine (" + StyleText(Doctrine.Current.Style).ToLowerInvariant() + ")" : "The build's style";
+        }
+        static string LentStyleHelp()
+        {
+            return Plugin.AdviceLentStyle.Value == LentBuildStyle.Mine
+                ? "MINE: a build another mod lends, followed through Auto (the VIA AUTO card on the BUILDS tab), levels up by your Level-up style above - " + StyleText(Doctrine.Current.Style).ToLowerInvariant() + " now - while its ability order, branch and evolutions still lead. A build you select always brings its own style."
+                : "THE BUILD'S STYLE (default): a build another mod lends, followed through Auto (the VIA AUTO card on the BUILDS tab), levels up by the style it comes with, and the cards and the readout say so when yours differs: 'abilities first, the build's style', 'Handgun later - the build's style'. MINE: your Level-up style above wins there too.";
+        }
 
         // ---- 0.14.0: the hints row - four settings of [Advice] RerollHint (the rescue screen) and ActionHints (every other screen)
         static readonly HintActions[] HintSets = { HintActions.Reroll | HintActions.Skip, HintActions.Reroll | HintActions.Skip | HintActions.Banish, HintActions.None, HintActions.None };
@@ -1076,47 +1226,137 @@ namespace YazsCompanion
         // the steps of "Readout size": 70 % .. 200 % of the automatic size
         static float SizeStep(float value, int d) { return Mathf.Clamp(Mathf.Round((value + 0.1f * d) * 10f) / 10f, 0.7f, 2f); }
 
+        // ---- 0.15.0 (C15-06): "Card text size" - [General] BadgeScale, the size rule of CardTextSize (ScreenBand.cs). The menu's canvas is
+        //      the HUD's (3840 x 2160, Expand), so a canvas unit here is a canvas unit there and the sizes are the screens' own.
+        /// <summary>The cards' reason line in pixels on this screen at a setting (0 = Auto).</summary>
+        static float CardPx(float setting)
+        {
+            float sw = UnityEngine.Screen.width, sh = UnityEngine.Screen.height, px1 = CardTextSize.ReasonPx1(sw, sh);
+            return px1 * CardTextSize.Scale(setting, px1, CardTextSize.CanvasUnits(sw, sh));
+        }
+        /// <summary>The row's next step on this screen (a share of Auto; a step that would draw what the screen shows now is passed over).</summary>
+        static float CardStep(float setting, int d)
+        {
+            float sw = UnityEngine.Screen.width, sh = UnityEngine.Screen.height;
+            return CardTextSize.Step(setting, d, CardTextSize.ReasonPx1(sw, sh), CardTextSize.CanvasUnits(sw, sh));
+        }
+        static string CardTextValue() { float v = Plugin.BadgeScale.Value; return CardTextSize.Label(v) + "  (" + Mathf.RoundToInt(CardPx(v)) + " px)"; }
+        static string CardTextHelp()
+        {
+            // 0.15.x (the 10-07 review): it said a pick scales the three texts alike - the WHY band and the hint follow the pick's share but
+            // keep their own limits (the band 15 - 22 px x the share, never above the reason line; the hint never under 15 px)
+            var sb = new System.Text.StringBuilder("The text on the selection screens: the reason line under each card, and with it the WHY band and the REROLL / SKIP hint. AUTO is the cards' own size, enlarged on small screens until it reads 16 px. A picked size is that share of Auto on this screen - 115% draws the reason line at 115% of what Auto draws, on a monitor as on the Steam Deck; the WHY band and the hint grow or shrink by the same share, each within its own limits. Larger text holds fewer words, so a card says a shorter form. Never under 15 px, never more than the room under the cards holds. On this ");
+            sb.Append(UnityEngine.Screen.width).Append(" x ").Append(UnityEngine.Screen.height).Append(" screen:");
+            float sw = UnityEngine.Screen.width, sh = UnityEngine.Screen.height, px1 = CardTextSize.ReasonPx1(sw, sh), canvasH = CardTextSize.CanvasUnits(sw, sh);
+            for (int i = 0; i < CardTextSize.Steps.Length; i++)
+            {
+                float px = CardPx(CardTextSize.Steps[i]);
+                sb.Append(i == 0 ? " " : ", ").Append(CardTextSize.Label(CardTextSize.Steps[i])).Append(' ').Append(Mathf.RoundToInt(px));
+                // 0.15.x (C-m4): a step that draws a smaller step's size here is left out of the row, both ways round
+                if (CardTextSize.SameAsSmaller(CardTextSize.Steps[i], px1, canvasH)) sb.Append(" (the same here, skipped)");
+            }
+            return sb.Append(" px. The preview shows a reason line and the WHY band at their real size.").ToString();
+        }
+
+        /// <summary>The card text sample at the top of the DISPLAY preview: a reason line as one stands under a card, and the WHY band.</summary>
+        sealed class CardSampleUi { public RectTransform Plate, Band, Rule, TipL, TipR; public TextMeshProUGUI Reason, Why; public float Width; }
+
+        static CardSampleUi BuildCardSample(RectTransform window, float ww)
+        {
+            var ui = new CardSampleUi { Width = ww - 80f };
+            ui.Plate = Box(window, "CardSample", 40f, 40f, ui.Width, 200f, new Color(0.02f, 0.02f, 0.018f, 0.82f));      // the selection screen's dark ground
+            ui.Reason = Text(ui.Plate, "Reason", 0f, 0f, ui.Width, 62f, 40f, Theme.Grey, Synergy.ReasonPrefix(2, 4.0) + "Also deals Kinetic, like your Handgun", TextAlignmentOptions.Center);
+            ui.Band = Place(Ui.NewRect("WhyBand", ui.Plate), 0f, 0f, 100f, 60f);
+            Ui.Stretch(Ui.Image(ui.Band, "Bar", Theme.Plate), 0f, 0f, 0f, 0f);
+            ui.Rule = Box(ui.Band, "Rule", 0f, 0f, 100f, 3f, Theme.Gold);
+            ui.TipL = Ui.Diamond(ui.Band, "TipL", 0f, 0.5f, 36f, Theme.Gold);
+            ui.TipR = Ui.Diamond(ui.Band, "TipR", 1f, 0.5f, 36f, Theme.Gold);
+            ui.Why = Text(ui.Band, "Why", 0f, 0f, 100f, 60f, 30f, Theme.Cream, "<b><color=" + Theme.GoldHex + ">WHY</color></b>   Team bonus: armor<color=" + Theme.DimHex + ">  /  </color>Experiment 21 is a hair ahead", TextAlignmentOptions.Center);
+            return ui;
+        }
+
+        /// <summary>Size the sample as the selection screens would draw it now: the reason line at 40 x 0.77 x s canvas units, the WHY
+        /// band at its own size in pixels (CardTextSize.WhyPx), with the band's pad, tips and gold rule (WhyUi's proportions).</summary>
+        static void LayCardSample(CardSampleUi ui)
+        {
+            if (ui == null || ui.Plate == null || ui.Reason == null || ui.Why == null) return;
+            try
+            {
+                float sw = UnityEngine.Screen.width, sh = UnityEngine.Screen.height, setting = Plugin.BadgeScale.Value;
+                float canvasH = CardTextSize.CanvasUnits(sw, sh), px1 = CardTextSize.ReasonPx1(sw, sh), s = CardTextSize.Scale(setting, px1, canvasH), unitPx = sh / canvasH;
+                float reasonFont = CardTextSize.ReasonUnits * CardTextSize.CardChain * s;
+                float whyFont = CardTextSize.WhyPx(px1 * s, CardTextSize.Factor(setting, px1, canvasH)) / unitPx;
+                float pad = 26f, reasonH = reasonFont * 1.55f, bandH = ScreenBand.BlockHeight(1, whyFont);
+                float tip = 36f * whyFont / 40f * 1.2f, inner = 22f * whyFont / 30f;
+                ui.Reason.fontSize = reasonFont;
+                Place(ui.Reason.rectTransform, 0f, pad, ui.Width, reasonH);
+                ui.Why.fontSize = whyFont;
+                float textW = 0f; try { textW = ui.Why.GetPreferredValues(ui.Why.text).x; } catch { }
+                if (!(textW > 0f)) textW = 0.46f * whyFont * 52f;
+                float bandW = Mathf.Min(ui.Width - 40f, textW + tip + 2f * inner + 4f);
+                Place(ui.Band, (ui.Width - bandW) / 2f, pad + reasonH + 16f, bandW, bandH);
+                Ui.Stretch(ui.Band.Find("Bar").TryCast<RectTransform>(), tip / 2f, 0f, tip / 2f, 0f);
+                Place(ui.Rule, tip / 2f, 0f, bandW - tip, Mathf.Max(3f, 0.1f * whyFont));
+                ui.TipL.sizeDelta = ui.TipR.sizeDelta = new Vector2(tip * 0.7071f, tip * 0.7071f);
+                Ui.Stretch(ui.Why.rectTransform, tip / 2f + inner, 0f, tip / 2f + inner, 0f);
+                ui.Plate.sizeDelta = new Vector2(ui.Width, pad + reasonH + 16f + bandH + pad);
+            }
+            catch (Exception e) { Plugin.Logger.LogInfo("[menu] card text sample: " + e.Message); }
+        }
+
         static void BuildDisplay()
         {
             // the settings on the left; on the right the PLAN readout itself, as it will look in play with the settings as
             // they stand - same canvas geometry as the HUD, so the same pixels
-            float x = 120f, w = 2060f, y = 352f, rh = 116f, step = 124f, vw = 800f;      // 0.14.0: eleven rows (the ADVICE tab's geometry) - the eleventh ends at 1800, above the footer rule (1846)
-            Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws. Every change is saved as you make it and applies at once; the preview is the PLAN readout at its real size.", TextAlignmentOptions.Left);
+            float x = 120f, w = 2060f, y = 352f, rh = 116f, step = 124f, vw = 800f;      // 0.14.0: eleven rows (the ADVICE tab's geometry) - the eleventh ends at 1800, above the footer rule (1846); 0.15.0: twelve, eleven show at once
+            var lead = Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws, saved as you change it and applied at once. The preview shows the PLAN readout and the card text at their real size.", TextAlignmentOptions.Left);
             y += 92f;
-            float top = y;
+            // 0.15.0 (C15-05): the rows scroll as on the ADVICE tab; the preview window is as tall as the area, not as the rows
+            float top = y, room = RowsRoom(top, rh, step);
+            var area = Scroll("display", x, top, w, room, false, 40f, TopInset(lead, top));
+            var rows = area.Content; y = 0f;
             Func<bool, string> onOff = v => v ? "On" : "Off";
             Action redraw = () => { _pvDirty = true; };
-            Cycler(_body, "di:badges", x, y, w, rh, "Card verdicts", "diamond", () => onOff(Plugin.ShowBadges.Value), d => Plugin.ShowBadges.Value = !Plugin.ShowBadges.Value,
+            Cycler(rows, "di:badges", 0f, y, w, rh, "Card verdicts", "diamond", () => onOff(Plugin.ShowBadges.Value), d => Plugin.ShowBadges.Value = !Plugin.ShowBadges.Value,
                 () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason in plain words under every offered card (the ribbon steps aside while the game shows its Skill Tree label). Off also hides the WHY band.", vw); y += step;
-            Cycler(_body, "di:why", x, y, w, rh, "WHY band on the selected card", null, () => onOff(Plugin.ShowWhy.Value), d => Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value,
-                () => "While a card is selected - the mouse over it, or the controller's focus on it - a band under the cards says the rest of its reasons and what the first card has over it (CLOSE CALL when the first two are nearly even). With a controller a card is always selected, so the band is always up. Needs Card verdicts.", vw); y += step;
-            Cycler(_body, "di:panel", x, y, w, rh, "PLAN readout during play", "eye", () => onOff(Plugin.ShowPanel.Value), d => { Plugin.ShowPanel.Value = !Plugin.ShowPanel.Value; redraw(); },
+            Cycler(rows, "di:why", 0f, y, w, rh, "WHY band on the selected card", null, () => onOff(Plugin.ShowWhy.Value), d => Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value,
+                () => "While a card is selected - the mouse over it, or the controller's focus on it - a band under the cards (on a screen wider than 16:9 whose menus fill the screen: a panel beside the card in the side wing, up to four lines) says the rest of its reasons and what the first card has over it (CLOSE CALL when the first two are nearly even). With a controller a card is always selected, so the band is always up. Needs Card verdicts.", vw); y += step;
+            // 0.15.0 (C15-06): how large the text on the selection screens is drawn ([General] BadgeScale) - the cards' reason lines, and
+            // with them the WHY band and the hint; the preview window shows a reason line and the WHY band at their real size
+            CardSampleUi sample = null;         // built with the preview window, below
+            Cycler(rows, "di:cardtext", 0f, y, w, rh, "Card text size", null, CardTextValue, d => { Plugin.BadgeScale.Value = CardStep(Plugin.BadgeScale.Value, d); LayCardSample(sample); },
+                CardTextHelp, vw); y += step;
+            Cycler(rows, "di:panel", 0f, y, w, rh, "PLAN readout during play", "eye", () => onOff(Plugin.ShowPanel.Value), d => { Plugin.ShowPanel.Value = !Plugin.ShowPanel.Value; redraw(); },
                 () => "The see-through readout of what to pick next: a row per survivor, then QUEST what the active quest still asks - TAGS damage type tags (their effect at 10) - SOS who to recruit - GRAB items worth a chest pick.", vw); y += step;
-            Cycler(_body, "di:size", x, y, w, rh, "Readout size", null, () => Mathf.RoundToInt(Plugin.PanelSize.Value * 100f) + "%" + (Mathf.Abs(Plugin.PanelSize.Value - 1f) < 0.01f ? "  (automatic)" : ""),
+            Cycler(rows, "di:size", 0f, y, w, rh, "Readout size", null, () => Mathf.RoundToInt(Plugin.PanelSize.Value * 100f) + "%" + (Mathf.Abs(Plugin.PanelSize.Value - 1f) < 0.01f ? "  (automatic)" : ""),
                 d => { Plugin.PanelSize.Value = SizeStep(Plugin.PanelSize.Value, d); redraw(); },
                 () => "How large the readout is drawn. 100% is the automatic size, which follows the screen: its text is 1.9% of the screen's height and never under 15 pixels, whatever the resolution or aspect. Raise it if the advice is hard to read from where you sit, lower it to see more of the field. The preview shows the real size.", vw); y += step;
-            Cycler(_body, "di:detail", x, y, w, rh, "Readout detail", null, () => Plugin.PanelDetail.Value.ToString(), d => { Plugin.PanelDetail.Value = Next(Plugin.PanelDetail.Value, d); redraw(); },
+            Cycler(rows, "di:detail", 0f, y, w, rh, "Readout detail", null, () => Plugin.PanelDetail.Value.ToString(), d => { Plugin.PanelDetail.Value = Next(Plugin.PanelDetail.Value, d); redraw(); },
                 () => "COMPACT: one row per survivor with only what to pick next. FULL: two rows per survivor with the next steps and the evolution names.", vw); y += step;
-            Cycler(_body, "di:place", x, y, w, rh, "Readout position", null, () => Words(Plugin.PanelPosition.Value.ToString()), d => { Plugin.PanelPosition.Value = Next(Plugin.PanelPosition.Value, d); redraw(); },
+            Cycler(rows, "di:place", 0f, y, w, rh, "Readout position", null, () => Words(Plugin.PanelPosition.Value.ToString()), d => { Plugin.PanelPosition.Value = Next(Plugin.PanelPosition.Value, d); redraw(); },
                 () => "BOTTOM LEFT: the empty corner under the weapon and ability icons. RIGHT: the right edge between the item icons and the minimap.", vw); y += step;
-            Cycler(_body, "di:opacity", x, y, w, rh, "Readout backing", null, () => Mathf.RoundToInt(Plugin.PanelOpacity.Value * 100f) + "%", d => { Plugin.PanelOpacity.Value = Mathf.Round(Mathf.Clamp01(Plugin.PanelOpacity.Value + 0.1f * d) * 10f) / 10f; redraw(); },
+            Cycler(rows, "di:opacity", 0f, y, w, rh, "Readout backing", null, () => Mathf.RoundToInt(Plugin.PanelOpacity.Value * 100f) + "%", d => { Plugin.PanelOpacity.Value = Mathf.Round(Mathf.Clamp01(Plugin.PanelOpacity.Value + 0.1f * d) * 10f) / 10f; redraw(); },
                 () => "Darkness of the soft backing under the readout text. Lower shows more of the field; higher reads better over bright effects.", vw); y += step;
-            Cycler(_body, "di:idle", x, y, w, rh, "Readout when nothing changed", null, () => Mathf.RoundToInt(Plugin.PanelIdle.Value * 100f) + "%", d => { Plugin.PanelIdle.Value = Mathf.Round(Mathf.Clamp(Plugin.PanelIdle.Value + 0.1f * d, 0.2f, 1f) * 10f) / 10f; Panel.PreviewDoze(); },
+            Cycler(rows, "di:idle", 0f, y, w, rh, "Readout when nothing changed", null, () => Mathf.RoundToInt(Plugin.PanelIdle.Value * 100f) + "%", d => { Plugin.PanelIdle.Value = Mathf.Round(Mathf.Clamp(Plugin.PanelIdle.Value + 0.1f * d, 0.2f, 1f) * 10f) / 10f; Panel.PreviewDoze(); },
                 () => "The readout is at full strength right after a pick, then settles to this opacity. 100% = it never dims. The preview settles to it now.", vw); y += step;
-            Cycler(_body, "di:yard", x, y, w, rh, "Training Yard advice", "up", () => onOff(Plugin.ShowYard.Value), d => Plugin.ShowYard.Value = !Plugin.ShowYard.Value,
+            Cycler(rows, "di:yard", 0f, y, w, rh, "Training Yard advice", "up", () => onOff(Plugin.ShowYard.Value), d => Plugin.ShowYard.Value = !Plugin.ShowYard.Value,
                 () => "Number the nodes worth buying with the points on hand and print the SPEND / THEN / WHY strip. It follows the build you selected for that survivor.", vw); y += step;
-            Cycler(_body, "di:motion", x, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => { Plugin.Motion.Value = !Plugin.Motion.Value; redraw(); },
+            Cycler(rows, "di:motion", 0f, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => { Plugin.Motion.Value = !Plugin.Motion.Value; redraw(); },
                 () => "Animate what the mod draws. During play nothing loops; the flair is kept for menus like this one.", vw); y += step;
-            Cycler(_body, "di:wide", x, y, w, rh, "Menus on wide screens", null, WideMenus.Label, WideMenus.Step, WideMenus.Help, vw); y += step;
+            Cycler(rows, "di:wide", 0f, y, w, rh, "Menus on wide screens", null, WideMenus.Label, WideMenus.Step, WideMenus.Help, vw); y += step;
+            WalkRows(rows, "di", w, rh, step, vw, ref y);
+            EndRows(area, y - (step - rh));
 
             // ---- the preview window: a stand-in for the field (dark ground, a few bright effects to judge the backing
-            //      against), the readout in its corner, a caption with the size in pixels
-            float wx = x + w + 60f, ww = W - 120f - wx, wh = y - step + rh - top - 96f;
+            //      against), the readout in its corner, a caption with the size in pixels. As tall as the rows' area (less the
+            //      caption); when the rows scroll, it stands aside for their gold arrows
+            float wx = x + w + 60f + (area.Max > 0f ? 76f : 0f), ww = W - 120f - wx, wh = room - 96f;
             var window = Box(_body, "PreviewWindow", wx, top, ww, wh, new Color(0.10f, 0.11f, 0.10f, 1f));
             window.gameObject.AddComponent(Il2CppType.Of<RectMask2D>());
             var field = Art.Field;
             if (field != null) { var fi = Box(window, "Field", 0, 0, ww, wh, Color.white).GetComponent<Image>(); fi.sprite = field; fi.type = Image.Type.Simple; fi.preserveAspect = false; }
             var host = Place(Ui.NewRect("Readout", window), 0, 0, ww, wh);       // the readout anchors to this rect's corners as it does to the screen's
+            sample = BuildCardSample(window, ww); LayCardSample(sample);
             Ui.Frame(Place(Ui.NewRect("Edge", _body), wx, top, ww, wh), "Line", 0, 3, Theme.GoldRule, 18f);
             _pvCaption = Text(_body, "PreviewCaption", wx, top + wh + 18f, ww, 96f, 42f, Theme.Grey, "", TextAlignmentOptions.TopLeft, false, true);
             _pvWindow = host; _pvDirty = true;
@@ -1270,8 +1510,13 @@ namespace YazsCompanion
         // the paused run, change two display settings through the menu's own controls (and put them back), close it, check
         // the pause menu is still up, then resume for five seconds so the readout the mod menu took down comes back - with
         // the changed settings. Well under fifty seconds of play: no save is written.
-        static bool _ppDone, _ppResumed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
+        // 0.15.x (C-B1 of the 10-07 release review): with [Debug] PreviewResolution set (1280x800 = the Steam Deck) the walk runs in a
+        // window of that size from the main menu on, as the setup and menu walks do - the level-ups then come at the Deck's real layout
+        // and pixels - and puts the display back before its done line (and when it fails). The first offer also gets the hover tour
+        // (Advisor.DebugTourDue: cards 2-4 selected the game's way, a 'why_cardN' shot after each '[why]' line).
+        static bool _ppDone, _ppResumed, _ppWindowed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
         static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
+        static WideMode _ppWide; static bool _ppWideChanged, _ppWideWas; static int _ppRestores;      // 0.15.0 (C15-08): the wide Off / back step
         static float _ppLastPick = -10f; static int _ppPauseTries;
         internal static bool FakePauseOnce;
 
@@ -1289,12 +1534,12 @@ namespace YazsCompanion
             if (setup != null)
             {
                 // 0.13.0 [Debug] PreviewSetup: the badge advice's stage first (LoadoutUi.WalkTick: screenshots, the game's cursor moved
-                // over three badges - never a click), 12 s at most; without a run to follow it backs out of the start flow
+                // over three badges - never a click), 14 s at most (10-07: its entrance shot waits 2 s); without a run to follow it backs out of the start flow
                 if (SetupStageOn && !LoadoutUi.WalkDone)
                 {
                     float t = Time.realtimeSinceStartup;
                     if (!LoadoutUi.WalkArmed) { LoadoutUi.ArmWalk(); _wzStageAt = t; return true; }
-                    if (t - _wzStageAt <= 12f) return true;
+                    if (t - _wzStageAt <= 14f) return true;
                     LoadoutUi.WalkGiveUp();
                 }
                 if (SetupStageOn && !SetupRun && !PausePreviewOn)
@@ -1440,6 +1685,85 @@ namespace YazsCompanion
             c.Change(d); return true;
         }
 
+        /// <summary>0.15.0 (C15-08): the "Menus on wide screens" row (di:wide) worked to <paramref name="target"/> one step at a time, as
+        /// a player cycles it (each step saved by the config entry; the HUD's tick follows on its next frame). Without the row the value
+        /// is set directly, so the player's own value always comes back.</summary>
+        static void WideCycle(WideMode target)
+        {
+            if (WideMenus.Mode == null) return;
+            int n = Enum.GetValues(typeof(WideMode)).Length;
+            for (int i = 0; i < n && WideMenus.Mode.Value != target; i++) if (!Work("di:wide", 1)) break;
+            if (WideMenus.Mode.Value != target) WideMenus.Mode.Value = target;
+        }
+
+        /// <summary>Why the run's menus have nothing applied on this screen (the pause walk's wide step).</summary>
+        static string WideIdle()
+        {
+            int w = 0, h = 0;
+            try { w = UnityEngine.Screen.width; h = UnityEngine.Screen.height; } catch { }
+            if (w > 0 && h > 0 && Mathf.Abs((float)w / h - 16f / 9f) < 0.01f) return "a 16:9 screen " + w + "x" + h + ": the game draws no frame";
+            return "screen " + w + "x" + h + ": the frame was left as the game has it - see the [wide] lines";
+        }
+
+        // ---- 0.15.0 (C15-05): the walks scroll the ADVICE and DISPLAY rows, as a player would, and say whether it held
+        static int _scrollWalk, _walkRows;
+
+        /// <summary>The scroll check of the tab on show, one step a call (the caller waits about a second between two): the rows as
+        /// they are - the last one focused, then a wheel notch over the area; then two inert rows more (WalkRows), so the list scrolls
+        /// whatever the screen, the same again; then the rows put back. True once done. Screenshots &lt;shot&gt;_end and &lt;shot&gt;_more.</summary>
+        static bool ScrollWalk(string tab, string shot)
+        {
+            switch (_scrollWalk++)
+            {
+                case 0: case 3: ScrollCheck(tab); Shots.Later(0.4f, shot + (_walkRows > 0 ? "_more" : "_end"), true); return false;
+                case 1: case 4: WheelCheck(tab); return false;
+                case 2: _walkRows = 2; _dirty = true; return false;
+                default: _walkRows = 0; _scrollWalk = 0; _dirty = true; return true;
+            }
+        }
+
+        static Scroller AreaOf(string tab) { string key = tab.ToLowerInvariant(); return _scrolls.FirstOrDefault(a => a.Key == key); }
+
+        /// <summary>How many rows the tab has, how many show at once, their tops on the stage with the area at its top (0.14.0 drew
+        /// ADVICE at 448 + 124 n and DISPLAY at 444 + 124 n: with eleven rows the numbers must not move), then the last row focused
+        /// as a key press down the list focuses it: it has to stand whole at the end of the area, the up arrow shown when the list
+        /// scrolls, the down arrow gone. One '[menu] ADVICE rows N, visible M, scroll ok' line, FAILED with what was wrong otherwise.</summary>
+        static void ScrollCheck(string tab)
+        {
+            var s = AreaOf(tab);
+            var rows = s == null ? new List<Ctl>() : _ctls.Where(c => c.In == s && c.Rt != null).ToList();
+            if (rows.Count == 0) { Plugin.Logger.LogWarning("[menu] " + tab + " rows 0 - scroll FAILED: no rows in a scrolling area"); return; }
+            float origin = -s.View.anchoredPosition.y + s.Top;            // the area's top on the stage (the body stands at the stage's corner)
+            Func<Ctl, float> at = c => -c.Rt.anchoredPosition.y;
+            int visible = rows.Count(c => at(c) + c.Rt.sizeDelta.y <= s.Size + 0.5f);
+            string tops = string.Join(", ", rows.Select(c => Mathf.RoundToInt(origin + at(c)).ToString()));
+            var last = rows[rows.Count - 1];
+            Focus(last, false);
+            var wrong = new List<string>();
+            float a0 = at(last), a1 = a0 + last.Rt.sizeDelta.y;
+            if (a0 < s.Pos - 0.5f || a1 > s.Pos + s.Size + 0.5f) wrong.Add("the last row stands at " + a0.ToString("0") + " - " + a1.ToString("0") + ", the area shows " + s.Pos.ToString("0") + " - " + (s.Pos + s.Size).ToString("0"));
+            if (Mathf.Abs(s.Pos - s.Max) > 1f) wrong.Add("the area stopped at " + s.Pos.ToString("0") + " of " + s.Max.ToString("0"));
+            bool up = s.Before.gameObject.activeSelf, down = s.After.gameObject.activeSelf;
+            if (up != (s.Max > 1f) || down) wrong.Add("arrows: up " + (up ? "shown" : "hidden") + ", down " + (down ? "shown" : "hidden"));
+            string line = "[menu] " + tab + " rows " + rows.Count + ", visible " + visible + ", scroll " + (wrong.Count == 0 ? "ok" : "FAILED: " + string.Join("; ", wrong))
+                + " - at the end " + s.Pos.ToString("0") + " of " + s.Max.ToString("0") + " units" + (up ? ", the up arrow shown" : "") + "; row tops " + tops;
+            if (wrong.Count == 0) Plugin.Logger.LogInfo(line); else Plugin.Logger.LogWarning(line);
+        }
+
+        /// <summary>One wheel notch up over the middle of the tab's area, through the menu's own wheel path (the hit test included).</summary>
+        static void WheelCheck(string tab)
+        {
+            var s = AreaOf(tab);
+            if (s == null) return;
+            if (s.Max <= 0f) { Plugin.Logger.LogInfo("[menu] " + tab + " wheel: nothing to scroll"); return; }
+            float before = s.Pos;
+            var mid = s.View.TransformPoint(s.View.rect.center);            // an overlay canvas: world space is screen pixels
+            bool took = WheelScroll(1f, new Vector2(mid.x, mid.y));
+            bool ok = took && s.Pos < before - 1f;
+            string line = "[menu] " + tab + " wheel " + (ok ? "ok" : "FAILED") + " - " + before.ToString("0") + " -> " + s.Pos.ToString("0") + (took ? "" : " (the area was not under the point)");
+            if (ok) Plugin.Logger.LogInfo(line); else Plugin.Logger.LogWarning(line);
+        }
+
         static void PausePreviewTick()
         {
             bool on = false; try { on = Plugin.PreviewPause.Value; } catch { }
@@ -1454,6 +1778,8 @@ namespace YazsCompanion
                     case 0:
                         {
                             var mm = MainMenu(); if (mm == null) { _ppAt = now + 2f; return; }
+                            // C-B1: the window of PreviewResolution first (the setup and menu walks do the same), 2.5 s to settle
+                            if (!_ppWindowed) { _ppWindowed = true; if (Preview.Window()) { _ppAt = now + 2.5f; return; } }
                             Plugin.Logger.LogInfo("[menu] pause walk: Quick Run"); mm.quickRunButton.onClick.Invoke();
                             _ppAt = now + 4f; _ppStage = 1; _ppStarted = now; return;
                         }
@@ -1466,6 +1792,7 @@ namespace YazsCompanion
                             // or up to forty when no offer has come by then: a walk without one offer ranked and taken
                             // checks little (still under the fifty seconds after which a killed run leaves a save)
                             bool more = t < 30f || (Advisor.DebugPicks == 0 && t < 40f);
+                            if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }      // the first offer's hover tour holds the pick (the run clock stands)
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 0.5f; return; }      // an offer that is up is always answered
                             // the game opens its pause menu by itself when its window is not the focused one as the run comes
                             // up (a launch from a script): the clock then stands at 0 until somebody resumes - do that, once
@@ -1478,7 +1805,7 @@ namespace YazsCompanion
                             {
                                 _ppAt = now + (playing ? 0.5f : 1.5f);
                                 if (!playing && WizardStep()) _ppAt = now + 2.5f;       // one screen of the run wizard per step
-                                if (now - _ppStarted > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); _ppDone = true; }
+                                if (now - _ppStarted > 200f) { Plugin.Logger.LogWarning("[menu] pause walk: the run never started"); Preview.Restore(); _ppDone = true; }
                                 return;
                             }
                             // the game takes no pause key while a selection screen is up or still animating out (seen: asked
@@ -1505,6 +1832,9 @@ namespace YazsCompanion
                     case 4:
                         Plugin.Logger.LogInfo("[menu] pause walk: mod menu " + (_open ? "open over the paused run" : "did NOT open"));
                         if (!_open) { _ppStage = 5; _ppAt = now + 0.5f; return; }
+                        SetTab(1); _ppAt = now + 1.2f; _ppStage = 40; return;
+                    case 40:    // 0.15.0 (C15-05): the ADVICE rows scrolled to the end, as the keys and the wheel scroll them
+                        if (!ScrollWalk("ADVICE", "pause1b_advice")) { _ppAt = now + 1.2f; return; }
                         SetTab(2); _ppAt = now + 1.2f; _ppStage = 41; return;
                     case 41:
                         {   // DISPLAY: the settings a player would try first, through the controls themselves; the preview follows
@@ -1517,8 +1847,52 @@ namespace YazsCompanion
                         Plugin.Logger.LogInfo("[menu] pause walk: detail " + _ppDetail + " -> " + Plugin.PanelDetail.Value + ", size " + _ppSize.ToString("0.0") + " -> " + Plugin.PanelSize.Value.ToString("0.0"));
                         Shots.Later(0.9f, "pause3_display_changed", true);
                         _ppAt = now + 1.6f; _ppStage = 43; return;
-                    case 43:
-                        Back(); _ppAt = now + 1.0f; _ppStage = 5; return;
+                    case 43:    // 0.15.0 (C15-05): the DISPLAY rows the same
+                        if (!ScrollWalk("DISPLAY", "pause3b_display")) { _ppAt = now + 1.2f; return; }
+                        _ppAt = now + 1.0f; _ppStage = 44; return;
+                    case 44:    // 0.15.0 (C15-08): "Menus on wide screens" Off and back through its own row, as a player tries it: the
+                        {       // '[wide] restored (off)' line as the game's frame comes back, then the re-apply at the player's own value
+                            if (WideMenus.Mode == null) { Plugin.Logger.LogInfo("[menu] pause walk: Menus on wide screens not bound - skipped"); _ppStage = 47; return; }
+                            _ppWide = WideMenus.Mode.Value; _ppWideChanged = true; _ppStage = 45;
+                            if (_ppWide != WideMode.Off) return;
+                            WideCycle(WideMode.Everywhere);        // the player has it Off: on first, so there is a frame to put back
+                            Plugin.Logger.LogInfo("[menu] pause walk: Menus on wide screens is Off - " + WideMenus.Label() + " first, so there is something to put back");
+                            _ppAt = now + 1.2f; return;
+                        }
+                    case 45:
+                        {
+                            _ppRestores = WideMenus.Restores; _ppWideWas = WideMenus.RunApplied;
+                            string from = WideMenus.Label();
+                            WideCycle(WideMode.Off);
+                            Plugin.Logger.LogInfo("[menu] pause walk: Menus on wide screens " + from + " -> " + WideMenus.Label() + " (" + (_ppWideWas ? "the frame is off: the game's frame comes back" : "nothing applied: " + WideIdle()) + ")");
+                            // 10-07 review (walk-shot nit): the mod menu closed for the shot - under it the returned frame cannot be seen
+                            Close(); Plugin.Logger.LogInfo("[menu] pause walk: mod menu closed for the wide Off shot (reopened to put the value back)");
+                            Shots.Later(0.8f, "pause3c_wide_off", true);
+                            _ppAt = now + 1.2f; _ppStage = 46; return;
+                        }
+                    case 46:
+                        {
+                            int restored = WideMenus.Restores - _ppRestores;
+                            if (!_ppWideWas) Plugin.Logger.LogInfo("[menu] pause walk: wide Off - no '[wide] restored' line due (" + WideIdle() + ")");
+                            else if (restored > 0 && !WideMenus.RunApplied) Plugin.Logger.LogInfo("[menu] pause walk: wide Off ok - '[wide] restored' logged, the game's frame is back");
+                            else Plugin.Logger.LogWarning("[menu] pause walk: wide Off - " + (restored == 0 ? "no '[wide] restored' line" : "restored, yet the frame is off again") + " 1.2 s after the change");
+                            Open(); SetTab(2); _ppAt = now + 1.2f; _ppStage = 461; return;     // the row again (its controls come with the next build)
+                        }
+                    case 461:
+                        {
+                            if (!_open) WideMenus.Mode.Value = _ppWide;       // no menu: the value direct (WideCycle then has nothing to work, no 'no control' warning)
+                            WideCycle(_ppWide); _ppWideChanged = false;
+                            Plugin.Logger.LogInfo("[menu] pause walk: Menus on wide screens Off -> " + WideMenus.Label() + " (the player's value)");
+                            _ppAt = now + 1.2f; _ppStage = 47; return;
+                        }
+                    case 47:
+                        {
+                            bool want = _ppWideWas && _ppWide != WideMode.Off, applied = WideMenus.RunApplied;
+                            if (want == applied) Plugin.Logger.LogInfo("[menu] pause walk: wide re-apply ok - " + (want ? "the frame is off again at " + WideMenus.Label() + " ('[wide] ... frame off' above)" : _ppWide == WideMode.Off ? "the frame stays the game's (the player's Off)" : "nothing to re-apply (" + WideIdle() + ")"));
+                            else Plugin.Logger.LogWarning("[menu] pause walk: wide re-apply - the frame is " + (applied ? "off" : "the game's") + " at " + WideMenus.Label() + ", expected " + (want ? "off" : "the game's"));
+                            Shots.Later(0.1f, "pause3d_wide_back", true);
+                            Back(); _ppAt = now + 1.0f; _ppStage = 5; return;
+                        }
                     case 5:
                         {
                             bool paused = false; try { paused = GameplayMaster.IsPaused; } catch { }
@@ -1541,20 +1915,24 @@ namespace YazsCompanion
                             Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; _ppChanged = false;
                             Plugin.Logger.LogInfo("[menu] pause walk: settings put back (detail " + Plugin.PanelDetail.Value + ", size " + Plugin.PanelSize.Value.ToString("0.0") + ")");
                         }
-                        _ppStage = 8; return;
+                        // C-B1: the display put back before the done line (the game is stopped from outside soon after it)
+                        Preview.Restore(); _ppStage = 8; _ppAt = now + 1.5f; return;
                     default:
                         _ppDone = true; Plugin.Logger.LogInfo("[menu] pause walk done"); return;
                 }
             }
             catch (Exception e)
             {
-                Plugin.Logger.LogWarning("[menu] pause walk: " + e); _ppDone = true;
+                Plugin.Logger.LogWarning("[menu] pause walk: " + e); _ppDone = true; _walkRows = 0; _scrollWalk = 0;
+                Preview.Restore();
                 if (_ppChanged) { _ppChanged = false; try { Plugin.PanelDetail.Value = _ppDetail; Plugin.PanelSize.Value = _ppSize; } catch { } }
+                if (_ppWideChanged) { _ppWideChanged = false; try { WideMenus.Mode.Value = _ppWide; } catch { } }
             }
         }
 
         // ================================================================ the preview walk ([Debug] PreviewMenu)
         static bool _pvDone; static int _pvStage; static float _pvAt = -1f;
+        static float _pvCard = -1f;         // the Card text size the walk changed and puts back (-1: nothing to put back)
 
         static void PreviewTick()
         {
@@ -1594,9 +1972,22 @@ namespace YazsCompanion
                         Shots.Later(0.9f, "menu_badges2", true); _pvAt = now + 1.5f; _pvStage = 5; return;
                     case 5:
                         Builds.DropCustom("Tank"); SetTab(1); _focusKey = "ad:timing"; _dirty = true;
-                        Shots.Later(0.9f, "menu4_advice", true); _pvAt = now + 1.5f; _pvStage = 6; return;
+                        Shots.Later(0.9f, "menu4_advice", true); _pvAt = now + 1.5f; _pvStage = 51; return;
+                    case 51:    // 0.15.0 (C15-05): the ADVICE rows scrolled to the end, as the keys and the wheel scroll them
+                        if (!ScrollWalk("ADVICE", "menu4b_advice")) { _pvAt = now + 1.2f; return; }
+                        _pvStage = 6; return;
                     case 6:
-                        SetTab(2); Shots.Later(0.9f, "menu5_display", true); _pvAt = now + 1.5f; _pvStage = _tabCount > 3 ? 61 : 7; return;
+                        SetTab(2); Shots.Later(0.9f, "menu5_display", true); _pvAt = now + 1.5f; _pvStage = 62; return;
+                    case 62:    // the DISPLAY rows the same
+                        if (!ScrollWalk("DISPLAY", "menu5b_display")) { _pvAt = now + 1.2f; return; }
+                        _pvAt = now + 1.0f; _pvStage = 63; return;
+                    case 63:    // 0.15.0 (C15-06): the Card text size row worked once (to 150 %: SAVED, the preview's sample grows), then put back
+                        _pvCard = Plugin.BadgeScale.Value;
+                        if (Work("di:cardtext", -1)) Plugin.Logger.LogInfo("[menu] walk: Card text size " + CardTextSize.Label(_pvCard) + " -> " + CardTextSize.Label(Plugin.BadgeScale.Value) + " (" + Mathf.RoundToInt(CardPx(Plugin.BadgeScale.Value)) + " px card reasons on this screen)");
+                        Shots.Later(0.6f, "menu5c_cardtext", true); _pvAt = now + 1.5f; _pvStage = 64; return;
+                    case 64:
+                        if (_pvCard >= 0f) { Plugin.BadgeScale.Value = _pvCard; _pvCard = -1f; _dirty = true; Plugin.Logger.LogInfo("[menu] walk: Card text size put back (" + CardTextSize.Label(Plugin.BadgeScale.Value) + ")"); }
+                        _pvAt = now + 1.0f; _pvStage = _tabCount > 3 ? 61 : 7; return;
                     case 61:    // only while another mod has options registered
                         SetTab(3); Shots.Later(0.9f, "menu6_mods", true); _pvAt = now + 1.5f; _pvStage = 7; return;
                     case 7:
@@ -1605,7 +1996,11 @@ namespace YazsCompanion
                         _pvDone = true; Plugin.Logger.LogInfo("[menu] preview done"); return;
                 }
             }
-            catch (Exception e) { Plugin.Logger.LogWarning("[menu] preview: " + e); Preview.Restore(); _pvDone = true; }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogWarning("[menu] preview: " + e); Preview.Restore(); _pvDone = true; _walkRows = 0; _scrollWalk = 0;
+                if (_pvCard >= 0f) { try { Plugin.BadgeScale.Value = _pvCard; } catch { } _pvCard = -1f; }
+            }
         }
     }
 

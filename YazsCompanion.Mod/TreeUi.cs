@@ -12,6 +12,8 @@
 // Ticked from UIViewSkillTree.Update; the advice is recomputed only when the tab, the points or a node level changes
 // (a cheap signature). Read-only: it never buys anything. Markers are children of the game's node objects and the
 // strip is a child of the view, so they show, hide and die with them.
+// 0.15.0 (C15-08): a node bought or refunded between two reads of a tab logs '[yard] bought <node> a>b (advice #n | not advised)'
+// or '[yard] refunded <node> a>b' (TreeState.LogChanges over TreeDiff), so whether the advice is followed shows in a sent log.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,7 +65,7 @@ namespace YazsCompanion
                 if (now < _next && !tabChanged) return;
                 _next = now + 0.25f;
                 if (!Enabled) { HideAll(); return; }
-                if (view.Pointer != _viewPtr) { _viewPtr = view.Pointer; _strip = null; _text = null; _rule = null; _tip = null; _glint = null; _marks.Clear(); _sig = ""; Fx.Cancel("yard"); }
+                if (view.Pointer != _viewPtr) { _viewPtr = view.Pointer; _strip = null; _text = null; _rule = null; _tip = null; _glint = null; _marks.Clear(); _sig = ""; Fx.Cancel("yard"); TreeState.ForgetLevels(); }
                 if (tabChanged) { _containerPtr = container.Pointer; _fresh = true; _sig = ""; }
                 bool isTeam = false; try { var g = view.containerTabGeneral; isTeam = g != null && g.Pointer == container.Pointer; } catch { }
                 string tree;
@@ -76,6 +78,7 @@ namespace YazsCompanion
                 string s = sig.ToString();
                 if (s == _sig && Alive()) return;
                 _sig = s;
+                TreeState.LogChanges(container.Pointer, tree, nodes, _advice);       // 0.15.0 (C15-08): bought / refunded since the last read, against the advice shown then
 
                 _nodes = nodes; _tree = tree; _highlighted = null;
                 perf = Perf.Begin();
@@ -120,6 +123,7 @@ namespace YazsCompanion
             foreach (var m in _marks.Values) { try { m.Root.gameObject.SetActive(false); m.Label = null; } catch { } }
             Fx.Cancel("yard");
             _sig = ""; _containerPtr = IntPtr.Zero;
+            TreeState.ForgetLevels();
         }
 
         // ---- the markers on the nodes ----

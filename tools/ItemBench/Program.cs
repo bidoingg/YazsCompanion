@@ -5,6 +5,9 @@
 //   - the Research Pod cards a squad would see and how they rank.
 // Usage: ItemBench [gamedata.json] [--all]   |   ItemBench --replay-loadout <companion log>   (default path: <project root>\data\gamedata.json, i.e. six levels
 //        up from the exe in tools\ItemBench\bin\Release\net8.0; --all prints every item's score for every squad)
+//        0.15.0: ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] (LogCheck.cs); --strict (the release
+//        gate: data and the built DLL required) and --no-data (the cases without game data, the GitHub workflow) - Verdict.cs
+//        0.15.0: ItemBench --live-probe <probe.json of a newer game build> [--probe <fixture>] | --packs <folder> (DriftCases.cs)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,15 +30,29 @@ namespace YazsCompanion.Bench
     {
         static int Main(string[] args)
         {
+            // 0.15.0 (C15-11): a log's health, PASS / FAIL per check (LogCheck.cs): ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off]
+            int ci = Array.IndexOf(args, "--check-log");
+            if (ci >= 0) return LogCheck.Command(args, ci);
+            if (args.Contains("--api-surface")) return ApiContract.Print();       // 0.15.0 (C15-01): the start of a new api_v<N>.txt
             // 0.13.0: replay the badge advice of a log (no game data needed, so before any path handling)
             int ri = Array.IndexOf(args, "--replay-loadout");
             if (ri >= 0) return Loadouts.ReplayFile(ri + 1 < args.Length ? args[ri + 1] : null);
+            // 0.15.0 (C15-02): the drift guard's tools (DriftCases.cs), run alone: --live-probe <newer probe.json> = the fixture's name and
+            // description diffs against it; --packs <folder> = every lent build pack under it against the kits and the fixture, counts only
+            int lpi = Array.IndexOf(args, "--live-probe"), pki = Array.IndexOf(args, "--packs");
+            if (lpi >= 0 || pki >= 0) return Drift.Tools(args, lpi, pki);
+            // 0.15.0 (C15-01): every printed line is watched from here on, the last line is the verdict and the exit code follows it
+            // (Verdict.cs); --strict = the release gate (data and the built DLL required), --no-data = the part without game data
+            var verdict = Verdict.Install();
+            bool strict = args.Contains("--strict");
+            if (args.Contains("--no-data")) return Verdict.Finish(verdict, Verdict.DataFree(strict));
             string path = args.FirstOrDefault(a => !a.StartsWith("--")) ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "data", "gamedata.json"));
             bool all = args.Contains("--all");
             int pi = Array.IndexOf(args, "--probe");
             string probe = pi >= 0 && pi + 1 < args.Length ? args[pi + 1] : Path.Combine(Path.GetDirectoryName(path) ?? ".", "probe.json");
             path = args.Where((a, i) => !a.StartsWith("--") && (pi < 0 || i != pi + 1)).FirstOrDefault() ?? path;
             if (!File.Exists(path)) { Console.Error.WriteLine("gamedata.json not found: " + path + " (run tools/extract_gamedata.py of the PC app, or pass the path)"); return 2; }
+            if (strict && !File.Exists(probe)) { Console.Error.WriteLine("probe.json not found: " + probe + " (--strict: the checks over the game's data may not be skipped)"); return 2; }
             var items = new List<KeyValuePair<string, string>>();
             using (var doc = JsonDocument.Parse(File.ReadAllText(path)))
                 foreach (var it in doc.RootElement.GetProperty("items").EnumerateArray())
@@ -99,7 +116,9 @@ namespace YazsCompanion.Bench
                 cards.Sort((a, b) => b.Item1.CompareTo(a.Item1));
                 foreach (var c in cards) Console.WriteLine("  " + c.Item1.ToString("0.00").PadLeft(5) + "  " + c.Item2.PadRight(16) + " " + c.Item3);
             }
-            return Checks.Run(probe, path);
+            int code = Checks.Run(probe, path);
+            int tail = Verdict.Tail(strict);                 // 0.15.0: --check-log's cases, the API contract (no game data needed)
+            return Verdict.Finish(verdict, code != 0 ? code : tail > 0 ? 3 : 0);
         }
     }
 }

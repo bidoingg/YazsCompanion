@@ -11,7 +11,11 @@
 //       "Trauma" chests replayed), kills that never pass the build's core, tag points to reach and to stay under, types at 10,
 //       item slots, no items, evolutions, Rare+ trainings, armor, time at full health, a quest item, a tier-3 weapon each;
 //   Q3  the gates: [Advice] QuestSteer InfoOnly / Off, objectives that match Any, a failed quest, a run that does not fit;
-//   Q4  every line a card can say for a quest within the card rails (Wording.Rails), and the sources wired (a source check).
+//   Q4  every line a card can say for a quest within the card rails (Wording.Rails), and the sources wired (a source check);
+//   Q5  0.15.0 (C15-09): the objectives the game counts and no card follows (QuestStory) - every story quest of 1.0.2 decoded
+//       (CustomGameplayEvent Main_02/04/06/09/13, KillBossRushBoss Main_05/08/11/14/15/R1), the '[quest]' words with the id and the
+//       count, the readout's info-only story row along the live 10-06 "Genesis" run, the gates, event counts and kills (log only), the
+//       advice audit's keys, and the sources (the runtime's _count, the readout's dim row behind [General] QuestProgress).
 // Generic names only (the repository is public): the game's own quest, class and card names; the lent build is "Bench Anchor".
 using System;
 using System.Collections.Generic;
@@ -57,6 +61,7 @@ namespace YazsCompanion.Bench
             Counts();
             FullTeam();
             Gates();
+            StoryProgress();                                            // 0.15.0 (C15-09)
             Rails();
             Sources();
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
@@ -283,7 +288,7 @@ namespace YazsCompanion.Bench
             Check("Q2", "Ranger_3: Good Boy 2 to 3 first, 'Quest: evolve it by the end (Level 3 of 4)'", r[0].Name == "Good Boy" && Wording.Quest(r[0].Line) == "Quest: evolve it by the end (Level 3 of 4)", Text(r));
             var evA = Card(QuestCardKind.Evolution, "Ranger", "Good Boy: Alpha", 0, 1, -1, "Kinetic"); evA.Base = "Good Boy";
             var evB = Card(QuestCardKind.Evolution, "Ranger", "Good Boy: Pack", 0, 1, -1, "Kinetic"); evB.Base = "Good Boy";
-            var r2 = Offer(rules, T(evA, 8.1), T(evB, 7.7), T(Card(QuestCardKind.Evolution, "Ranger", "Falcon: Hunting Sweep", 0, 1, -1), 8.3));
+            var r2 = Offer(rules, T(evA, 8.1), T(evB, 7.7), T(Card(QuestCardKind.Evolution, "Ranger", "Falcon: Assault", 0, 1, -1), 8.3));      // 0.15.0: the 1.0.2 name
             Check("Q2", "Ranger_3: both evolutions of Good Boy count (+1.0, the build's pick still first), over another base's evolution", r2[0].Name == "Good Boy: Alpha" && r2[1].Name == "Good Boy: Pack" && r2[0].Line == "quest: evolves Good Boy - it counts", Text(r2));
             e.Unreachable = "its evolutions are locked in the Skill Tree";
             var r3 = Offer(rules, T(Card(QuestCardKind.Ability, "Ranger", "Good Boy", 2, 4, -1), 4.2), T(Card(QuestCardKind.Ability, "Ranger", "Falcon", 3, 4, -1), 5.1));
@@ -530,6 +535,122 @@ namespace YazsCompanion.Bench
             Check("Q3", "two rules on one card: AVOID (a pick that fails the quest) wins over a lift", vb != null && vb.Avoid && vb.Score < 1);
         }
 
+        // ---------------------------------------------------------------- Q5: 0.15.0 (C15-09) the counted objectives, progress only
+        // research\review_1005\impl\c3\quest_objectives_all_out.txt (the 1.0.2 quests' objectives, read from the game's assets with UnityPy):
+        // the story quests are the only ones with CustomGameplayEvent (eventId main_story_objective_q<N>) and KillBossRushBoss objectives
+        static void StoryProgress()
+        {
+            var events = new[]
+            {   // quest, targetCount, eventId
+                Tuple.Create("GameHubQuest_Main_02", 5, "main_story_objective_q2"),
+                Tuple.Create("GameHubQuest_Main_04", 10, "main_story_objective_q4"),
+                Tuple.Create("GameHubQuest_Main_06", 5, "main_story_objective_q6"),
+                Tuple.Create("GameHubQuest_Main_09", 5, "main_story_objective_q9"),
+                Tuple.Create("GameHubQuest_Main_13", 3, "main_story_objective_q13"),
+            };
+            var bad = new List<string>();
+            foreach (var e in events)
+            {
+                var c = QuestStory.Decode("GameHubQuestObjectiveCustomGameplayEvent", e.Item2, eventId: e.Item3);
+                c.Have = 0;
+                string log = QuestStory.LogText(c), row0 = QuestStory.RowText(c);
+                c.Have = 1; string row1 = QuestStory.RowText(c);
+                c.Have = e.Item2; string rowDone = QuestStory.RowText(c);
+                string want = "id " + e.Item3 + " 0/" + e.Item2 + " - progress only";
+                if (c.Kind != CountKind.Story || !c.Story || c.Need != e.Item2 || c.Id != e.Item3 || log != want || row0 != "story objective 0 of " + e.Item2
+                    || row1 != "story objective 1 of " + e.Item2 || rowDone != "story objective " + e.Item2 + " of " + e.Item2 + ", done" || !c.Met)
+                    bad.Add(e.Item1 + ": " + c.Kind + " " + c.Id + " " + c.Need + " '" + log + "' '" + row0 + "' '" + row1 + "' '" + rowDone + "'");
+            }
+            Check("Q5", "the 5 CustomGameplayEvent story quests (Main_02/04/06/09/13) decode to their eventId and count: 'id main_story_objective_q4 0/10 - progress only', 'story objective 1 of 10', '... 10 of 10, done'",
+                bad.Count == 0, string.Join("; ", bad));
+            var bosses = new[] { "GameHubQuest_Main_05", "GameHubQuest_Main_08", "GameHubQuest_Main_11", "GameHubQuest_Main_14", "GameHubQuest_Main_15", "GameHubQuest_Main_R1" };
+            bad.Clear();
+            foreach (var q in bosses)
+            {
+                var c = QuestStory.Decode("KillBossRushBoss", 0);
+                string unread = QuestStory.LogText(c) + " | " + QuestStory.SaidOne(c);
+                c.Have = 0; c.Done = false;
+                string log = QuestStory.LogText(c), row = QuestStory.RowText(c), said = QuestStory.SaidOne(c);
+                c.Have = 1; c.Done = true;
+                string rowKilled = QuestStory.RowText(c), saidKilled = QuestStory.SaidOne(c), logKilled = QuestStory.LogText(c);
+                if (c.Kind != CountKind.BossRushBoss || !c.Story || c.Need != 1 || log != "the Boss Rush boss 0/1 - progress only" || logKilled != "the Boss Rush boss 1/1 - progress only"
+                    || unread != "the Boss Rush boss ?/1 - progress only | kill the Boss Rush boss: not read - progress only"
+                    || row != "story objective: the Boss Rush boss" || rowKilled != "story objective: Boss Rush boss killed" || said != "kill the Boss Rush boss: not yet - progress only" || saidKilled != "kill the Boss Rush boss met")
+                    bad.Add(q + ": '" + log + "' '" + row + "' '" + rowKilled + "' '" + said + "' '" + saidKilled + "' '" + unread + "'");
+            }
+            Check("Q5", "the 6 KillBossRushBoss story quests (Main_05/08/11/14/15/R1): 'the Boss Rush boss 0/1 - progress only', the row 'story objective: the Boss Rush boss' > 'Boss Rush boss killed'",
+                bad.Count == 0, string.Join("; ", bad));
+
+            // the live 10-06 run under "Genesis" (Main_06, the game's quest box: "Broken Vials 0/5"): the '[quest]' line said 'advice
+            // unchanged' and the readout nothing for six minutes; now the read line names the id and the count, and the row follows it
+            var genesis = new QuestStory { Quest = "GameHubQuest_Main_06" };
+            genesis.Counts.Add(QuestStory.Decode("CustomGameplayEvent", 5, eventId: "main_story_objective_q6"));
+            string unreadRow = genesis.Row();
+            genesis.Counts[0].Have = 0;
+            string line = "1. CustomGameplayEvent (Live) " + QuestStory.LogText(genesis.Counts[0]);
+            var rows = new List<string>(); var keys = new List<string>(); var saids = new List<string>();
+            for (int n = 0; n <= 5; n++) { genesis.Counts[0].Have = n; rows.Add(genesis.Row()); keys.Add(genesis.Key()); saids.Add(genesis.Said()); }
+            Check("Q5", "'Genesis' read: '1. CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only'; the count unread: 'story objective (needs 5)'",
+                line == "1. CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only" && unreadRow == "story objective (needs 5)", line + " | " + unreadRow);
+            Check("Q5", "'Genesis' along the run: the row 'story objective 0 of 5' ... '5 of 5, done', a new key (one log line, one readout rebuild) at every step",
+                rows[0] == "story objective 0 of 5" && rows[3] == "story objective 3 of 5" && rows[5] == "story objective 5 of 5, done" && keys.Distinct().Count() == 6,
+                string.Join(" | ", rows));
+            Check("Q5", "the log's words: '[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only', then '... met'",
+                saids[3] == "story objective main_story_objective_q6: 3 of 5 - progress only" && saids[5] == "story objective main_story_objective_q6 met", saids[3] + " | " + saids[5]);
+            // the advice audit (mod\tools\advice_audit.py) keys an open part by its words before ': ' and a met one by its words before ' met'
+            string k1 = saids[1].Split(new[] { ": " }, StringSplitOptions.None)[0], k3 = saids[3].Split(new[] { ": " }, StringSplitOptions.None)[0], km = saids[5].EndsWith(" met") ? saids[5].Substring(0, saids[5].Length - 4) : null;
+            Check("Q5", "the advice audit's time-to-met: the open part's key stays 'story objective main_story_objective_q6' at every count, and the met part ends ' met' with the same key",
+                k1 == "story objective main_story_objective_q6" && k3 == k1 && km == k1, k1 + " / " + k3 + " / " + km);
+
+            // gates: a quest the run cannot complete (QuestTeam's gate), or one the game counts as failed, shows no row; the log says why
+            var away = new QuestStory { Quest = "GameHubQuest_Main_05", NotThisRun = "this run does not fit the quest's conditions (arena, mode, difficulty or leader) - the quest cannot complete this run" };
+            away.Counts.Add(QuestStory.Decode("KillBossRushBoss", 1)); away.Counts[0].Have = 0;
+            var failed = new QuestStory { Quest = "GameHubQuest_Main_06", Failed = true };
+            failed.Counts.Add(QuestStory.Decode("CustomGameplayEvent", 5, eventId: "main_story_objective_q6")); failed.Counts[0].Have = 2;
+            var fits = new QuestStory { Quest = "GameHubQuest_Main_05" }; fits.Counts.Add(QuestStory.Decode("KillBossRushBoss", 1)); fits.Counts[0].Have = 0;
+            Check("Q5", "gates: a run that does not fit the quest (a Boss Rush quest in a Normal run) and a failed quest show no row; the log line ends ' - not followed (...)'; the gate is in the key",
+                away.Row() == null && failed.Row() == null && fits.Row() == "story objective: the Boss Rush boss" && away.Said().EndsWith(" - not followed (" + away.NotThisRun + ")")
+                && failed.Said().EndsWith(" - not followed (the game counts the quest as failed)") && away.Key() != fits.Key());
+
+            // event counts and kills of a rank: logged with their id and count, never a readout row (the roadmap's later item maps them)
+            var ghost2 = QuestStory.Decode("GameHubQuestObjectiveEventCount", 3, targetEvent: "SOSLiberate"); ghost2.Have = 1;
+            var medic2 = QuestStory.Decode("EventCount", 30, targetEvent: "MoneyCollected"); medic2.Have = 30;
+            var mech5 = QuestStory.Decode("KillEnemyFilter", 3, requireBoss: true, rankMask: 4); mech5.Have = 0;
+            var counted = new QuestStory { Quest = "GameHubQuest_Ghost_2" }; counted.Counts.Add(ghost2); counted.Counts.Add(mech5);
+            Check("Q5", "EventCount and KillEnemyFilter: 'event SOSLiberate 1/3 - progress only', 'kills of rank SuperElite, bosses only 0/3 - progress only', 'event MoneyCollected met'; no readout row",
+                QuestStory.LogText(ghost2) == "event SOSLiberate 1/3 - progress only" && QuestStory.LogText(mech5) == "kills of rank SuperElite, bosses only 0/3 - progress only"
+                && QuestStory.SaidOne(medic2) == "event MoneyCollected met" && !ghost2.Story && !mech5.Story && counted.Row() == null && QuestStory.RowText(ghost2) == null,
+                QuestStory.LogText(ghost2) + " | " + QuestStory.LogText(mech5) + " | " + QuestStory.SaidOne(medic2));
+            Check("Q5", "the rank mask in words (GameHubQuestEnemyRankMask): 15 any rank, 4 SuperElite, 6 Elite / SuperElite, 9 Regular / ArenaBoss",
+                QuestStory.Ranks(15) == "any rank" && QuestStory.Ranks(4) == "rank SuperElite" && QuestStory.Ranks(6) == "rank Elite / SuperElite" && QuestStory.Ranks(9) == "rank Regular / ArenaBoss");
+            Check("Q5", "the other objective classes are not counted here (Survive, CollectItem, StatisticThreshold: their own decoders)",
+                QuestStory.Decode("Survive", 0) == null && QuestStory.Decode("GameHubQuestObjectiveCollectItem", 1) == null && QuestStory.Decode("StatisticThreshold", 6) == null);
+            // two story objectives (none in 1.0.2): the open one is shown
+            var two = new QuestStory(); var sa = QuestStory.Decode("KillBossRushBoss", 1); sa.Have = 1; var sb = QuestStory.Decode("CustomGameplayEvent", 4, eventId: "x"); sb.Have = 2;
+            two.Counts.Add(sa); two.Counts.Add(sb);
+            var lengths = new List<string>();
+            foreach (var c in new[] { QuestStory.Decode("CustomGameplayEvent", 10, eventId: "main_story_objective_q13"), QuestStory.Decode("KillBossRushBoss", 1) })
+                foreach (double have in new[] { double.NaN, 0, 3, 10 })
+                { c.Have = have; string t = QuestStory.RowText(c); if (t == null || t.Length > 40 || t.IndexOf('<') >= 0) lengths.Add("'" + t + "'"); }
+            Check("Q5", "the row names the open story objective first; every story row text is 40 characters at most, no rich text",
+                two.Row() == "story objective 2 of 4" && lengths.Count == 0, two.Row() + (lengths.Count > 0 ? " " + string.Join(", ", lengths) : ""));
+
+            // sources: what the mod reads and where the row is drawn
+            string quest = Src("Quest.cs"), plan = Src("Plan.cs"), plugin = Src("Plugin.cs"), state = Src("GameState.cs"), panel = Src("Panel.cs"), readme = null;
+            try { string p = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "README.md")); if (File.Exists(p)) readme = File.ReadAllText(p); } catch { }
+            Check("Q5", "Quest.cs reads eventId / targetEvent / targetCount / requireBoss / rankMask and the runtimes' own counts (_count, _isBossKilled), in the decoder chain after the advice's own",
+                quest != null && quest.Contains("o.eventId") && quest.Contains("o.targetEvent.ToString()") && quest.Contains("o.targetCount") && quest.Contains("o.requireBoss") && quest.Contains("(int)o.rankMask")
+                && quest.Contains("a._count") && quest.Contains("a._isBossKilled ? 1 : 0") && quest.Contains("GameHubQuestObjectiveCustomGameplayEvent.Runtime") && quest.Contains("GameHubQuestObjectiveKillBossRushBoss.Runtime")
+                && quest.IndexOf("what = Counters(o, rules)", StringComparison.Ordinal) < quest.IndexOf("what = Counted(o, story)", StringComparison.Ordinal)
+                && quest.Contains("\"[quest] \" + (story.Quest.Length > 0 ? story.Quest : \"the quest\") + \" -> \" + story.Said()"));
+            Check("Q5", "the readout: the story row dim after the rules' items (two at most), behind [General] QuestProgress (on by default); a story step rebuilds it (QuickKey, the state key)",
+                plan != null && plan.Contains("shown.Add(C(Dim, N(story)))") && plan.Contains("shown.Count < 2 && StoryShown()") && plan.Contains("Plugin.QuestProgress.Value")
+                && plugin != null && plugin.Contains("Config.Bind(\"General\", \"QuestProgress\", true,") && state != null && state.Contains("YazsCompanion.Quest.StoryHash()") && state.Contains("YazsCompanion.Quest.Story(this)")
+                && panel != null && panel.Contains("story = st.Key()"));
+            Check("Q5", "README: the QUEST row's story progress and its switch, and the widened PLAN rule under Open checks",
+                readme != null && readme.Contains("QuestProgress") && readme.Contains("story objective 3 of 5") && readme.IndexOf("## Open checks", StringComparison.Ordinal) < readme.LastIndexOf("story objective", StringComparison.Ordinal));
+        }
+
         // ---------------------------------------------------------------- Q4: rails and sources
         static void Rails()
         {
@@ -610,7 +731,7 @@ namespace YazsCompanion.Bench
             Check("Q4", "the PLAN readout's QUEST row (QuestRules.Row), names lent by other mods", plan != null && plan.Contains("Add(\"run\", \"quest\", \"QUEST\"") && plan.Contains("r.Row(2)") && plan.Contains("Names.Text(x)"));
             Check("Q4", "the snapshot asks once (Snapshot.Rules), the team rule follows the switch (QuestTeam.Muted)", state != null && state.Contains("YazsCompanion.Quest.Rules(this)") && team != null && team.Contains("Muted == null && HasRule"));
             Check("Q4", "[Advice] QuestSteer, On by default, and its ADVICE-tab row (SAVED comes with every [Advice] change)",
-                plugin != null && plugin.Contains("Config.Bind(\"Advice\", \"QuestSteer\", QuestSteer.On") && menu != null && menu.Contains("\"ad:quest\"") && menu.Contains("eleven rows"));
+                plugin != null && plugin.Contains("Config.Bind(\"Advice\", \"QuestSteer\", QuestSteer.On") && menu != null && menu.Contains("\"ad:quest\"") && menu.Contains("Scroll(\"advice\", x, y, w, RowsRoom(y, rh, step), false, 40f"));
             Check("Q4", "QuestRules.cs is compiled into the bench (pure: no game types)", proj.Contains("QuestRules.cs") && rules != null && !rules.Contains("Il2Cpp") && !rules.Contains("UnityEngine"));
         }
     }

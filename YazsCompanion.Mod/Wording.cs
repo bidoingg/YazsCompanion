@@ -12,8 +12,8 @@
 //  - the game's words: Skill Tree, Training Yard, recruit, unlocked synergy, damage type tag, "10-tag effect", the game's own
 //    stat labels; never the ranking's (focus, style:, (Auto), #2 in, special, stack, tree boost, pts, weighs, x1.31);
 //  - "the <B> build" always, and a build's order in words (its main ability / a core ability of it / part of it / skips it);
-//  - 50 visible characters at most (56 with the "2ND   " before it: what the Deck shows at its card text size; 48 on a card
-//    that shows "AVOID   "), counted on the line as drawn - with the names another mod lends (Names.Text), which run up to 19
+//  - 50 visible characters at most (56 with the "2ND   " before it: what a card shows up to a card text size of about x1.2; 48 on
+//    a card that shows "AVOID   "; fewer at a larger size - 42 in all at the Deck's x1.56, CardTextSize.LineChars), counted on the line as drawn - with the names another mod lends (Names.Text), which run up to 19
 //    characters longer than the game's. A form that is too long loses its parenthesis first, then the next, shorter form is tried;
 //  - printable ASCII without | \ ^ ` and <, plus » and ×; '-' is the one dash (the card font has none of › · • ≥ →).
 // Pure (no game types): Ranker fills a CardWords per card while it scores it and asks here once the ranks are final (a lifted
@@ -47,7 +47,12 @@ namespace YazsCompanion
         public double Reach = 1;             // the share of the picks still needed that the clock allows (an evolution, a new ability, a weapon)
         public string Clock = "";            // "2:10 left"
         public int Owned;                    // abilities the survivor holds (a new ability)
-        public BuildStyle Style;             // weapons: the level-up style followed
+        public BuildStyle Style;             // weapons and abilities: the level-up style followed
+        // 0.15.0 (C15-07, the user's decision Q3): where that style comes from, when it is not plainly the build's or the player's -
+        // LentStyle: a build another mod lends, followed through Auto, brings its own and the player's LevelUpStyle says otherwise
+        // ([Advice] LentBuildStyle = BuildsOwn: the cards say "abilities first, the <B> build's style"); MineStyle: the player's
+        // LevelUpStyle stands in for that build's own (LentBuildStyle = Mine: "your style ...", never "the <B> build levels ...")
+        public bool LentStyle, MineStyle;
         public bool Lifted; public string LiftLeft;   // "abilities first" with the survivor's own abilities as good as done (WeaponLift)
         public string Next;                  // the weapon this one leads to once maxed / the branch a tier-3 card locks out
         public bool NextOffered = true;      // that branch can be offered (its Skill Tree node bought)
@@ -60,6 +65,7 @@ namespace YazsCompanion
         public string Boost;                 // a team passive on the squad that boosts it
         // ---- evolutions
         public string Base, Pick; public bool Mine, PickOffered = true;    // the base ability, the build's pick and whether this is it / offered
+        public int BasePriority = -1;        // 0.15.0 (C15-03 c): the base ability's place in the build's order (Priority's scale; -1: none, or skipped)
         public string Adds, AddsWith; public bool AddsNew;   // the damage type it adds over its base, who on the squad deals it (new: nobody)
         public bool Pair; public string OtherAdds;           // the other evolution of the same base is on the offer too, and what that one adds
         // ---- items, Research Pods, stat cards, rescues
@@ -69,6 +75,12 @@ namespace YazsCompanion
                                              // the note in display words, the build that wants it
         public RecruitSay Recruit;
         public string Quest;                 // 0.14.0 (C3): the active quest's rule line when it decides the card ("quest: ..."; QuestRules) - said first
+        // ---- 0.15.0 (C15-03 a): once the ranks are final (Wording.Ranks) - the card's game name and place on the offer (0: not known,
+        // a line as before), and for a weapon level the best ability card on the offer, for an ability the best weapon level card
+        // (null: none) - the WHY band says what decided between them instead of a style the order contradicts
+        public string Name;
+        public int Rank;
+        public CardWords Rival;
     }
 
     /// <summary>What the item rules reasoned (ItemRules.Evaluate fills it beside the reason lines when the context carries one).</summary>
@@ -113,7 +125,8 @@ namespace YazsCompanion
     {
         /// <summary>The visible characters a line may have (the "2ND   " before it makes 56: the Deck's width at its card text size).</summary>
         public const int Budget = 50;
-        /// <summary>What the Steam Deck shows of a card's reason line at its card text size, its "2ND" / "AVOID" included.</summary>
+        /// <summary>What a card's reason line shows, its "2ND" / "AVOID" included, up to a card text size of about x1.2 (the PC's x1);
+        /// a larger size holds fewer (CardTextSize.LineChars: 42 at the Steam Deck's x1.56 - the review of 10-06; 0.14.0 took 56 there).</summary>
         public const int DeckWidth = 56;
 
         // the line being built (Card sets them for one call): its room in visible characters, and the names another mod lends -
@@ -133,8 +146,10 @@ namespace YazsCompanion
             if (_lend == null || string.IsNullOrEmpty(name)) return name;
             try { return _lend(name) ?? name; } catch { return name; }
         }
-        /// <summary>An evolution's own part of the name it will be drawn with ("Bioweapon"; another mod's name's own part when it lends one).</summary>
-        static string ShortOf(string name) { return Short(Lend(name)); }
+        /// <summary>An evolution's own part of the name it will be drawn with ("Bioweapon"; another mod's name's own part when it lends one) -
+        /// 0.15.0 (C15-03 b): only where <paramref name="named"/> (the card's base, or the line's other name) names its base already;
+        /// else the name whole, as the card shows it (lent as drawn).</summary>
+        static string ShortOf(string name, string named) { return BaseNamed(name, named) ? Short(Lend(name)) : name; }
 
         // ================================================================ the glyphs the card font has
         /// <summary>A line as the card's font can draw it: no '&lt;' (it would open a rich-text tag), the arrows to '»', the bullets
@@ -227,6 +242,22 @@ namespace YazsCompanion
             if (own.Length < 5 || own.All(ch => char.IsDigit(ch) || ch == ' ') || TagProfile.Names.Any(t => string.Equals(t, own, StringComparison.OrdinalIgnoreCase))) return name;
             return own;
         }
+
+        /// <summary>0.15.0 (C15-03 b): <see cref="Short(string)"/> only where the base is named already - in the same line or on the same
+        /// card (<paramref name="named"/>: that card's name or base, or the line's other name): "Bioweapon" on a card of Bombing Strike,
+        /// the name whole anywhere else. The live 10-06 offer (19:33:05) drew "Frost goes first: ..." on a Sawblade Drone card for the
+        /// first card's evolution "...: Frost" - a damage type's word, not a card the player could find.</summary>
+        public static string ShortBeside(string name, string named) { return BaseNamed(name, named) ? Short(name) : name ?? ""; }
+
+        /// <summary>The base of an evolution's name ("Bombing Strike" of "Bombing Strike: Bioweapon") appears in <paramref name="named"/>.</summary>
+        public static bool BaseNamed(string name, string named)
+        {
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(named)) return false;
+            int c = name.IndexOf(':');
+            if (c <= 0) return false;
+            string head = name.Substring(0, c).Trim();
+            return head.Length > 0 && named.IndexOf(head, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
         /// <summary>The first powerup of a source list ("Handgun" of "Handgun, Medical Drone +1").</summary>
         public static string FirstSource(string src)
         {
@@ -253,8 +284,9 @@ namespace YazsCompanion
         public static string[] Role(string build, int priority)
         {
             if (string.IsNullOrEmpty(build) || priority < 0) return null;
-            if (priority == 0) return F("the " + build + " build's main ability", "the build's main ability");
-            if (priority <= 2) return F("a core ability of the " + build + " build", "core to the " + build + " build", "a core ability of the build");
+            // the last, shortest forms (0.15.0, the review of 10-06): a larger card text size - the Deck's x1.56 - holds 42 characters in all
+            if (priority == 0) return F("the " + build + " build's main ability", "the build's main ability", "the main ability");
+            if (priority <= 2) return F("a core ability of the " + build + " build", "core to the " + build + " build", "a core ability of the build", "a core ability");
             return F("part of the " + build + " build", "part of the build");
         }
         public static string[] Skips(string build) { return F("the " + build + " build skips it", "the build skips it"); }
@@ -291,7 +323,11 @@ namespace YazsCompanion
         internal static void Ambient(int room, Func<string, string> lend) { _room = room; _lend = lend; }
 
         /// <summary>The room a card's line has next to its "2ND" / "AVOID" (<paramref name="prefix"/> visible characters).</summary>
-        public static int RoomBeside(int prefix) { return Math.Max(30, Math.Min(Budget, DeckWidth - prefix)); }
+        public static int RoomBeside(int prefix) { return RoomBeside(prefix, DeckWidth); }
+
+        /// <summary>The room a card's line has next to its "2ND" / "AVOID" when the line holds <paramref name="width"/> visible characters
+        /// in all (CardTextSize.LineChars at the card text's size on this screen: 56 at the PC's, 42 at the Deck's x1.56); 30 at least.</summary>
+        public static int RoomBeside(int prefix, int width) { return Math.Max(30, Math.Min(Budget, Math.Min(DeckWidth, width) - prefix)); }
 
         static string Line(CardWords w, int rank, string first, string second)
         {
@@ -321,13 +357,13 @@ namespace YazsCompanion
             if (w.HeadRank >= 5 && w.Head != null) return Say(lead, w.Head);            // the build skips it, or a 10-tag effect switches on
             if (w.EvoOwned)
             {
-                if (w.Reach >= 0.5) return last ? Say(lead, "its evolution comes next", "evolution next") : Say(lead, "evolution unlocks at level " + w.Max);
+                if (w.Reach >= 0.5) return last ? Say(lead, "its evolution comes next", "evolution next") : Say(lead, "evolution unlocks at level " + w.Max, "evolves at level " + w.Max);
                 return Say(lead, "too late to evolve it (" + w.Clock + ")");
             }
             if (w.HeadRank >= 3 && w.Head != null) return Say(lead, w.Head);            // the build's main / core ability, a synergy, a team passive
             if (w.EvoExists) return Say(lead, "evolution locked in the Skill Tree", "evolution still locked");
             if (w.HeadRank > 0 && w.Head != null) return Say(lead, w.Head);
-            if (w.Focus) return Say(lead, "keep feeding your top ability");
+            if (w.Focus) return Say(lead, "keep feeding your top ability", "feed your top ability", "your top ability");
             return Say(lead, last ? "its full strength" : "a steady upgrade");
         }
 
@@ -347,32 +383,55 @@ namespace YazsCompanion
             bool last = w.Max > 0 && next >= w.Max;
             string lead = LevelText(next, w.Max);
             if (w.Special != null) return Say(lead, Special(w.Special));
-            if (last && w.Next != null) return Say(lead, "next tier: " + w.Next, "next tier: " + ShortOf(w.Next), "the next tier follows");
+            // 0.15.0 (C15-03 b): another card's name whole - its evolution part only where this line names its base already
+            if (last && w.Next != null) return Say(lead, "next tier: " + w.Next, "the next tier follows");
             if (w.Lifted)
             {
                 // "abilities first" with the survivor's own abilities as good as done: the weapon goes ahead of the others' levels
                 if (rank <= 1) return Say(lead, w.LiftLeft == null ? "your abilities are done" : "your abilities are nearly done");
-                if (rank == 2 && first != null) return Say(lead, "next, after " + first, "next, after " + ShortOf(first), "next, after the top card");
-                if (first != null && second != null) return Say(lead, "after " + first + " and " + second, "after " + ShortOf(first) + " and " + ShortOf(second), "after the two cards above it");
+                if (rank == 2 && first != null) return Say(lead, "next, after " + first, "next, after the top card");
+                if (first != null && second != null)
+                {
+                    string both = "after " + first + " and " + second, cut = "after " + first + " and " + ShortOf(second, first);
+                    return Say(lead, both, cut != both ? cut : null, "after the two cards above it");
+                }
                 return Say(lead, "after the cards above it");
             }
             bool late = w.Reach < 0.6;
             string[] share = w.ShareType != null ? Share(w.ShareType, w.SharePct) : null;
+            // 0.15.0 (C15-07, decision Q3): the style of a lent build Auto follows is said as the build's ("abilities first, the build's
+            // style"), the player's own standing in for it as theirs ("your style ..."), never as the build's
+            bool build = w.Build != null && !w.MineStyle;
             switch (w.Style)
             {
                 case BuildStyle.Ability:
                     if (rank <= 1) return Say(lead, Concat(share, "the best of this offer"));
+                    if (w.LentStyle && build) return Say(lead, LentForms("abilities first", w.Build, "this build levels abilities first"));
                     // the weapons-first sibling's words (0.14.0 review: "after the abilities (build style)" read compressed)
-                    return w.Build != null ? Say(lead, "the " + w.Build + " build levels abilities first", "this build levels abilities first")
-                        : Say(lead, "your style levels abilities first", "abilities first (your style)");
+                    return build ? Say(lead, "the " + w.Build + " build levels abilities first", "this build levels abilities first", "abilities first")
+                        : Say(lead, "your style levels abilities first", "abilities first (your style)", "abilities first");
                 case BuildStyle.Weapon:
                     if (late) return Say(lead, "too late to finish it (" + w.Clock + ")");
-                    return w.Build != null ? Say(lead, "the " + w.Build + " build levels weapons first", "this build levels weapons first")
-                        : Say(lead, "your style levels weapons first", "weapons first (your style)");
+                    if (w.LentStyle && build) return Say(lead, LentForms("weapons first", w.Build, "this build levels weapons first"));
+                    return build ? Say(lead, "the " + w.Build + " build levels weapons first", "this build levels weapons first", "weapons first")
+                        : Say(lead, "your style levels weapons first", "weapons first (your style)", "weapons first");
                 default:
                     if (late) return Say(lead, "too late to finish it (" + w.Clock + ")");
-                    return Say(lead, Concat(share, "weapon and abilities side by side"));
+                    if (w.LentStyle && build) return Say(lead, Concat(LentForms("balanced", w.Build, null), Concat(share, "weapon and abilities side by side", "balanced")));
+                    return Say(lead, Concat(share, "weapon and abilities side by side", "balanced with abilities", "balanced"));
             }
+        }
+
+        /// <summary>0.15.0 (C15-07): a lent build's own style, said as the build's - "abilities first, the Medic build's style", then
+        /// without the build's name, then <paramref name="fallback"/> (null: none, and no bare form - the caller ends the list), then the
+        /// bare style: 0.15.x (C-m2 of the 10-07 review) the Steam Deck's 42-character line held none of the longer forms, so a lent
+        /// build's #1 weapon card said "Level 2 of 4 - this build levels weapons first" (46) and shrank under its 16 px; now
+        /// "Level 2 of 4 - weapons first" (28).</summary>
+        public static string[] LentForms(string style, string build, string fallback)
+        {
+            var forms = new List<string> { style + ", the " + build + " build's style", style + ", the build's style" };
+            if (fallback != null) { forms.Add(fallback); forms.Add(style); }
+            return forms.ToArray();
         }
 
         // ---- the next weapon tier
@@ -393,8 +452,9 @@ namespace YazsCompanion
         static string OtherBranch(CardWords w)
         {
             if (w.Next == null) return Say("Next weapon tier", "a big step up");
-            if (!w.NextOffered) return Say("Next weapon tier", w.Next + " is locked, take this one", ShortOf(w.Next) + " is locked, take this one", "the other branch is locked");
-            if (w.Branch == "build") return Say(null, "locks out " + w.Next + ", the build's branch", "locks out " + ShortOf(w.Next) + ", the build's branch", "locks out the build's branch");
+            // 0.15.0 (C15-03 b): the other branch's name whole, as its card shows it
+            if (!w.NextOffered) return Say("Next weapon tier", w.Next + " is locked, take this one", "the other branch is locked");
+            if (w.Branch == "build") return Say(null, "locks out " + w.Next + ", the build's branch", "locks out the build's branch");
             return Say(null, "locks out " + w.Next + ", the better fit here", "locks out " + w.Next, "locks out the better branch");
         }
 
@@ -403,7 +463,7 @@ namespace YazsCompanion
         {
             if (w.Pick != null)
             {
-                string pick = ShortOf(w.Pick);
+                string pick = ShortOf(w.Pick, w.Base);          // the card is the base's evolution: its title names the base
                 if (w.Mine) return Say(null, "the " + w.Build + " build's evolution", "the build's evolution");
                 if (!w.PickOffered) return Say(null, pick + " isn't offered - this one still evolves it", pick + " isn't offered - this evolves it too", "the build's pick isn't offered - take this");
                 return Say(null, "the " + w.Build + " build takes " + pick + " instead", "the build takes " + pick + " instead", "the build takes the other one");
@@ -413,12 +473,45 @@ namespace YazsCompanion
                 return w.Adds == null ? Say(null, "adds no new damage type") : Say(null, Adds(w));
             const string lead = "Evolution";
             if (w.Special != null) return Say(lead, Special(w.Special));
+            // 0.15.0 (C15-03 c): a build that names no evolution for the base still ranks the base - its main or a core ability evolving
+            // is the reason (live 10-06 19:33:04: the lent build's main ability evolved under "Evolution - a big step up")
+            var role = Evolves(w);
+            if (role != null) return Say(null, role);
             if (w.Boost != null) return Say(lead, Boosted(w.Boost, null));
             if (w.ShareType != null) return Say(lead, Share(w.ShareType, w.SharePct));
             if (w.Adds != null) return Say(lead, w.AddsNew || string.IsNullOrWhiteSpace(w.AddsWith) ? F("adds " + w.Adds + " to the squad") : F("adds " + w.Adds + ", like your " + w.AddsWith, "adds " + w.Adds));
             if (w.ShortType != null) return Say(lead, w.ShortType + " is " + w.Short + " tags from its 10-tag effect", w.Short + " tags from a 10-tag effect");
             return Say(lead, "a big step up");
         }
+        /// <summary>0.15.0 (C15-03 c): an evolution whose base is the build's main ability ("evolves the Rifleman build's main ability") or a
+        /// core one (2nd, 3rd) while the build names no evolution for it; null otherwise (a pick, a skipped base, the rest of the order).</summary>
+        public static string[] Evolves(CardWords w)
+        {
+            if (w == null || w.Kind != SayKind.Evolution || w.Pick != null || string.IsNullOrEmpty(w.Build) || w.BasePriority < 0 || w.BasePriority > 2) return null;
+            return w.BasePriority == 0 ? F("evolves the " + w.Build + " build's main ability", "evolves the build's main ability")
+                : F("evolves a core ability of the " + w.Build + " build", "evolves a core ability of the build");
+        }
+
+        /// <summary>0.15.0 (C15-03 a): once the ranks are final - each card's place on the offer and game name (<paramref name="names"/>, in
+        /// the same order), and for a weapon level the best ability card on the offer, for an ability the best weapon level card (the
+        /// first of that kind in rank order). WhyText then says what decided between the two.</summary>
+        public static void Ranks(IList<CardWords> order, IList<string> names)
+        {
+            if (order == null) return;
+            for (int i = 0; i < order.Count; i++)
+            {
+                var w = order[i]; if (w == null) continue;
+                w.Rank = i + 1; w.Rival = null;
+                if (names != null && i < names.Count) w.Name = names[i];
+            }
+            foreach (var w in order)
+            {
+                if (w == null || (w.Kind != SayKind.Weapon && w.Kind != SayKind.Ability)) continue;
+                var other = w.Kind == SayKind.Weapon ? SayKind.Ability : SayKind.Weapon;
+                foreach (var o in order) if (o != null && !ReferenceEquals(o, w) && o.Kind == other) { w.Rival = o; break; }
+            }
+        }
+
         /// <summary>Two evolutions of one base on the same offer: each learns the other is there, and what the other adds - its line then
         /// says what sets it apart (Ranker runs it once the ranks are final).</summary>
         public static void Pair(IList<CardWords> offer)
@@ -658,9 +751,13 @@ namespace YazsCompanion
             if (r.Boosts != null) return Say(null, r.Boosts + " would boost " + r.Covered + " of your powerups", "would boost " + r.Covered + " of your powerups");
             if (tier != null) return Say(null, tier + " recruit in the guides");
             if (r.Unbought > 0) return Say(null, r.Unbought == 1 ? "1 synergy with your squad, not unlocked yet" : r.Unbought + " synergies with your squad, none unlocked yet");
-            if (r.RankLevels > 0) return Say(null, r.RankLevels + " class level" + (r.RankLevels > 1 ? "s" : "") + " from rank " + r.Rank);
+            if (r.RankLevels > 0) return Say(null, RankAway(r.RankLevels, r.Rank));
             return Say(null, "no synergy with this squad");
         }
+
+        /// <summary>A recruit close to its class's next rank (Farm): "4 more class levels to rank 3" (0.15.x, the 10-07 review: "4 class levels
+        /// from rank 3" read as cryptic). The card and the WHY band say it alike.</summary>
+        public static string RankAway(int levels, int rank) { return levels + " more class level" + (levels > 1 ? "s" : "") + " to rank " + rank; }
 
         /// <summary>A quest rule's reason line ("quest: stay solo - take the level-up and cash") as the card says it.</summary>
         public static string Quest(string line)

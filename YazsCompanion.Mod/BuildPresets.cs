@@ -125,9 +125,9 @@ namespace YazsCompanion
 
                 // ---------------------------------------------------------------- Ranger (thin guide coverage)
                 B("ranger-beastmaster", "Ranger", "Beastmaster", Guides, "paw", BuildStyle.Ability, "",
-                    "Marks and animals: Good Boy (Dobermann for bosses) and the Falcon (Hunting Sweep for damage) hunt what the crossbow marks. Guide coverage of Ranger is thin.",
+                    "Marks and animals: Good Boy (Dobermann for bosses) and the Falcon (Assault for damage) hunt what the crossbow marks. Guide coverage of Ranger is thin.",
                     new[] { "Good Boy", "Falcon", "Animal Whistle", "Incense" }, new[] { "abilities", "marked", "melee", "critical" },
-                    "Good Boy", "Good Boy: Doberman", "Falcon", "Falcon: Hunting Sweep"),
+                    "Good Boy", "Good Boy: Dobermann", "Falcon", "Falcon: Assault"),
                 B("ranger-stormbolt", "Ranger", "Stormbolt", Data, "bolt", BuildStyle.Weapon, "Shockspike",
                     "Shockspike: electric bolts that mark as they chain. Made for Engineer squads - marked enemies are electrified far more often (their synergy node).",
                     new[] { "Falcon", "Animal Whistle", "Good Boy", "Incense" }, new[] { "Electric", "critical", "marked", "weapons" }),

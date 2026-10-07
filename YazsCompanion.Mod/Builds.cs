@@ -29,6 +29,11 @@ namespace YazsCompanion
     /// <summary>How level-ups are split between the weapon and the abilities.</summary>
     internal enum BuildStyle { Weapon, Balanced, Ability }
 
+    /// <summary>0.15.0 (C15-07): where a survivor's level-up style comes from (Builds.StyleFor) - plain Auto ([Advice] LevelUpStyle), a
+    /// build the player selected (its own), a build another mod lends that Auto follows (its own), or that build with the player's
+    /// LevelUpStyle standing in ([Advice] LentBuildStyle = Mine).</summary>
+    internal enum StyleSource { Auto, Chosen, Lent, Mine }
+
     internal sealed class Build
     {
         public string Id = "", Survivor = "", Name = "", Summary = "";
@@ -57,14 +62,29 @@ namespace YazsCompanion
             return b;
         }
 
-        /// <summary>0 for the focus ability, 1, 2, ...; -1 when the build does not rank it.</summary>
+        /// <summary>0 for the focus ability, 1, 2, ...; -1 when the build does not rank it. 0.15.0: a name the game renamed still
+        /// finds its place by the powerup's asset (Builds.AssetOf).</summary>
         public int PriorityOf(string ability)
         {
             for (int i = 0; i < Abilities.Count; i++) if (string.Equals(Abilities[i], ability, StringComparison.OrdinalIgnoreCase)) return i;
+            string key = Builds.AssetOf(ability);
+            if (key != null) for (int i = 0; i < Abilities.Count; i++) if (key == Builds.AssetOf(Abilities[i])) return i;
             return -1;
         }
-        public bool Skips(string ability) { return Skip.Contains(ability, StringComparer.OrdinalIgnoreCase); }
-        public string EvolutionOf(string ability) { string e; return Evolution.TryGetValue(ability ?? "", out e) && !string.IsNullOrEmpty(e) ? e : null; }
+        public bool Skips(string ability)
+        {
+            if (Skip.Contains(ability, StringComparer.OrdinalIgnoreCase)) return true;
+            string key = Skip.Count == 0 ? null : Builds.AssetOf(ability);
+            return key != null && Skip.Any(s => key == Builds.AssetOf(s));
+        }
+        public string EvolutionOf(string ability)
+        {
+            string e;
+            if (Evolution.TryGetValue(ability ?? "", out e)) return !string.IsNullOrEmpty(e) ? e : null;
+            string key = Evolution.Count == 0 ? null : Builds.AssetOf(ability);
+            if (key != null) foreach (var kv in Evolution) if (key == Builds.AssetOf(kv.Key)) return !string.IsNullOrEmpty(kv.Value) ? kv.Value : null;
+            return null;
+        }
     }
 
     /// <summary>The abilities and weapon line of a survivor, by English name: what a build can be made of (the editor's choices).</summary>
@@ -101,6 +121,17 @@ namespace YazsCompanion
         public string Owner = "", Survivor = "", Title = "", Path = "";
         public List<Build> Builds = new List<Build>();
         public Build Default;                 // what Auto means for the survivor while the pack is there; null = Auto stays Auto
+        public List<string> Unmatched = new List<string>();     // 0.15.0: the names its builds gave that fit nothing in the kit (dropped), as given
+    }
+
+    /// <summary>One survivor's weapons, abilities and evolutions as a game build has them: the drift guard's view (0.15.0;
+    /// GameState.cs reads it from the live class data at the warm-up, the bench from probe.json).</summary>
+    internal sealed class GameKit
+    {
+        public string Survivor = "";
+        public readonly Dictionary<string, string> Assets = new Dictionary<string, string>(StringComparer.Ordinal);   // the game's name (trimmed) -> its asset key
+        public string Start, Upgrade;                                     // the weapon line by previousWeapon; null = not read
+        public readonly List<string> Branches = new List<string>();      // the weapons whose previous weapon is the upgrade
     }
 
     internal static class Builds
@@ -112,7 +143,9 @@ namespace YazsCompanion
         static string _path;
         public const string AutoId = "auto";
 
-        // ------------------------------------------------------------------ the kits (from the game's data, 1.0.1; the bench checks them against probe.json)
+        // ------------------------------------------------------------------ the kits (from the game's data, 1.0.2; the bench checks every name exactly against probe.json)
+        // 0.15.0: 1.0.2 renamed five Ranger evolutions (Falcon: Guardian / Assault, Good Boy: Dobermann, Animal Whistle: Panic /
+        // Rally); with the 1.0.1 names the build's evolution never matched (-0.5, "not offered"). The asset keys below catch the next one.
         public static readonly Kit[] Kits =
         {
             K("SWAT", new[] { "Pistol", "SMG", "Assault Rifle", "Sniper Rifle", "Grenade Launcher" },
@@ -140,12 +173,201 @@ namespace YazsCompanion
                 A("Remote Control Car", "Remote Control Car: Oil Spill", "Remote Control Car: Nemesis"), A("Transmitter", "Transmitter: Network", "Transmitter: Signal Boost"),
                 A("Cooling Mods", "Cooling Mods: Infinite", "Cooling Mods: Support"), A("Ice Turret", "Ice Turret: Pressure Washer", "Ice Turret: Bermuda Triangle")),
             K("Ranger", new[] { "Crossbow", "Repeater Crossbow", "Barber", "Shockspike", "Flarebolt" },
-                A("Falcon", "Falcon: Guardian Falcon", "Falcon: Hunting Sweep"), A("Good Boy", "Good Boy: Doberman", "Good Boy: Retriever"),
-                A("Animal Whistle", "Hunter's Whistle: Panic Whistle", "Hunter's Whistle: Rally Whistle"), A("Incense", "Incense: Bad Juju", "Incense: Good Vibes")),
+                A("Falcon", "Falcon: Guardian", "Falcon: Assault"), A("Good Boy", "Good Boy: Dobermann", "Good Boy: Retriever"),
+                A("Animal Whistle", "Animal Whistle: Panic", "Animal Whistle: Rally"), A("Incense", "Incense: Bad Juju", "Incense: Good Vibes")),
+        };
+
+        // The game's asset key of every name in Kits, in the same order: the line (start, upgrade, the three branches), then per
+        // ability the ability, evolution A, evolution B (the 1.0.2 probe). A game patch may rename what a powerup is called, never
+        // (so far) its asset, so a match that fails on the English name falls back to the asset: SameName, a lent pack's names
+        // (Fit) and a build's own lists. The bench checks every key against probe.json; the drift guard at the first warm-up of a
+        // session adds the names the live game uses (LearnAssets), so a name renamed later still finds its asset.
+        static readonly string[][] KitAssets =
+        {
+            new[] { "PistolUpgrade", "SmgUpgrade", "RifleUpgrade", "SniperUpgrade", "GrenadeLauncherUpgrade",
+                "Grenade Trail-Basic", "Grenade Trail-Domino", "Grenade Trail-Infite",  "Helicopter Strike-Basic", "Helicopter Strike-Firewall", "Helicopter Strike-Gunner",
+                "SpawnRifleTurret-Basic", "SpawnRifleTurret-Harbinger", "SpawnRifleTurret-Triplet",  "Ricochet-Basic", "Ricochet-Infinite", "Ricochet-Shared" },
+            new[] { "ShotgunUpgrade", "DoubleShotgunUpgrade", "MinigunUpgrade", "RocketLauncherUpgrade", "SuperShotgunUpgrade",
+                "DropMines", "DropMines-Nails", "DropMines-Taunt",  "SawbladeCircling", "SawbladeCirclingIceFire", "SawbladeCirclingScaling",
+                "BombingStrike", "BombingStrike-EMP", "BombingStrike-Toxic",  "Berserker", "Berserker-AlwaysActive", "Berserker-Shared" },
+            new[] { "TaserUpgrade", "TeslaUpgrade", "BlasterUpgrade", "LaserUpgrade", "PlasmaUpgrade",
+                "SpawnElectroTurret", "SpawnElectroTurret-Faster", "SpawnElectroTurret-Taunt",  "Backpack Electrocution", "Backpack Electrocution-CloseRange", "Backpack Electrocution-GetHit",
+                "EMP Grenade", "EMP Grenade-CDRed", "EMP Grenade-Random",  "Energy Shield", "Energy Shield-Fire", "Energy Shield-Freezing" },
+            new[] { "BowUpgrade", "BowMultishotUpgrade", "BowExplosiveUpgrade", "BowFreezingUpgrade", "BowPoisonUpgrade",
+                "Arrow Rain", "Arrow Rain-Multiple", "Arrow Rain-Single",  "Bear Trap", "Bear Trap-Arrows", "Bear Trap-Fire",
+                "Penetrating Arrows", "Penetrating Arrows-Explosion", "Penetrating Arrows-Split",  "Decoy", "Decoy-Moving", "Decoy-Toxic" },
+            new[] { "KatanaSingleUpgrade", "KatanaSplashUpgrade", "KatanaMultiSlashUpgrade", "KatanaHurricaneWaveUpgrade", "KatanaSuperSlashUpgrade",
+                "Pulsar", "Pulsar-Fire", "Pulsar-Knockback",  "Shuriken Throw", "Shuriken Throw-Boomerang", "Shuriken Throw-Single",
+                "HologhostTrap", "HologhostTrap-Freezing", "HologhostTrap-Laser Line",  "Kunais", "Kunais-Explosive", "Kunais-Toxic" },
+            new[] { "HandgunWeaponUpgrade", "SyringeGunWeaponUpgrade", "AntidoteFlaskThrowWeaponUpgrade", "FrostFlaskThrowWeaponUpgrade", "SyringeRifleWeaponUpgrade",
+                "ExperimentGrenades", "ExperimentGrenades-Chemical", "ExperimentGrenades-Ice",  "MedicalDrone", "MedicalDrone-Attack", "MedicalDrone-Heal",
+                "Resuscitation", "Resuscitation-Collect", "Resuscitation-Damage",  "Skill Stimpack", "Skill Stimpack-Armor", "Skill Stimpack-HP" },
+            new[] { "FireaxeUpgrade", "BlowtorchUpgrade", "FlamethrowerUpgrade", "InfernaxUpgrade", "AxeThrowUpgrade",
+                "MolotovCocktail", "MolotovCocktail-Ice", "MolotovCocktail-Spray",  "Excitement", "Excitement-Commando", "Excitement-Reverse",
+                "FireTrail", "FireTrail-AlwaysActive", "FireTrail-Chemical",  "NailBomb", "NailBomb-Directed", "NailBomb-Electric" },
+            new[] { "KeyBladeUpgrade", "LancerUpgrade", "ChainsawUpgrade", "NitroGunUpgrade", "ChaosEngineUpgrade",
+                "Remote Car", "Remote Car-OilSpill", "Remote Car-Slashing",  "Magnetic Field", "Magnetic Field-Network", "Magnetic Field-SignalBoost",
+                "Cooling Mods", "Cooling Mods-Infinite", "Cooling Mods-Support",  "Ice Turret", "Ice Turret-PressureWasher", "Ice Turret-Triangle" },
+            new[] { "CrossbowUpgrade", "CrossbowRepeaterUpgrade", "CrossbowBarberUpgrade", "CrossbowShockspikeUpgrade", "CrossbowFirebrandUpgrade",
+                "Falcon", "Falcon-Guardian", "Falcon-HuntingSweep",  "Good Boy", "Good Boy-Doberman", "Good Boy-Retriever",
+                "Hunters Whistle", "Hunters Whistle-Panic", "Hunters Whistle-Rally",  "Good Vibes", "Good Vibes-BadJuju", "Good Vibes-Harmonize" },
         };
         static Kit K(string survivor, string[] line, params string[][] abilities) { return new Kit { Survivor = survivor, Line = line, Abilities = abilities }; }
         static string[] A(string ability, string evoA, string evoB) { return new[] { ability, evoA, evoB }; }
         public static Kit KitOf(string survivor) { foreach (var k in Kits) if (string.Equals(k.Survivor, survivor, StringComparison.OrdinalIgnoreCase)) return k; return null; }
+
+        // ------------------------------------------------------------------ names and asset keys (0.15.0: the drift guard)
+        /// <summary>A kit's names with their asset keys (KitAssets), in kit order: the line, then ability, evolution A, evolution B.</summary>
+        public static IEnumerable<KeyValuePair<string, string>> KitNamesWithAssets(Kit kit)
+        {
+            if (kit == null) yield break;
+            int k = Array.IndexOf(Kits, kit), i = 0;
+            var keys = k >= 0 && k < KitAssets.Length ? KitAssets[k] : new string[0];
+            foreach (var n in kit.Line) { yield return new KeyValuePair<string, string>(n, i < keys.Length ? keys[i] : null); i++; }
+            foreach (var a in kit.Abilities) foreach (var n in a) { yield return new KeyValuePair<string, string>(n, i < keys.Length ? keys[i] : null); i++; }
+        }
+
+        // name (normalized) -> asset key, and asset key (normalized) -> the key; swapped whole when the live game teaches its names,
+        // so a reader on any thread sees one table or the other
+        sealed class AssetTables { public Dictionary<string, string> Names, Keys; }
+        static volatile AssetTables _assets;
+        static AssetTables Assets()
+        {
+            var t = _assets;
+            if (t != null) return t;
+            t = new AssetTables { Names = new Dictionary<string, string>(StringComparer.Ordinal), Keys = new Dictionary<string, string>(StringComparer.Ordinal) };
+            foreach (var kit in Kits) foreach (var kv in KitNamesWithAssets(kit)) PutAsset(t, kv.Key, kv.Value);
+            _assets = t;
+            return t;
+        }
+        static void PutAsset(AssetTables t, string name, string asset)
+        {
+            string n = Norm(name);
+            if (n.Length == 0 || string.IsNullOrEmpty(asset)) return;
+            t.Names[n] = asset; t.Keys[Norm(asset)] = asset;
+        }
+        static string Norm(string s)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var ch in s ?? "") if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
+            return sb.ToString();
+        }
+        static string AssetOfNorm(string n)
+        {
+            if (string.IsNullOrEmpty(n)) return null;
+            var t = Assets(); string a;
+            if (t.Names.TryGetValue(n, out a)) return a;                 // a name: the kits' own, or one the live game taught
+            return t.Keys.TryGetValue(n, out a) ? a : null;              // the asset key itself (a pack may give it; the game's name fallback is one)
+        }
+
+        /// <summary>The game's asset key of a powerup name (case and punctuation aside): the kits' names know theirs (1.0.2), the
+        /// live game adds the names it uses now (LearnAssets); an asset key stands for itself. Null = unknown.</summary>
+        public static string AssetOf(string name) { return string.IsNullOrEmpty(name) ? null : AssetOfNorm(Norm(name)); }
+
+        /// <summary>Teach the names the game build at hand uses (name -> asset key, from its class data): a kit name the game renamed
+        /// then still matches the game's new name through the asset. Replaces what an earlier call taught for the same name; returns
+        /// how many names were new or changed.</summary>
+        public static int LearnAssets(IEnumerable<KeyValuePair<string, string>> pairs)
+        {
+            if (pairs == null) return 0;
+            var old = Assets();
+            var t = new AssetTables { Names = new Dictionary<string, string>(old.Names, StringComparer.Ordinal), Keys = new Dictionary<string, string>(old.Keys, StringComparer.Ordinal) };
+            int changed = 0;
+            foreach (var kv in pairs)
+            {
+                string n = Norm(kv.Key), before;
+                if (n.Length == 0 || string.IsNullOrEmpty(kv.Value)) continue;
+                if (!t.Names.TryGetValue(n, out before) || before != kv.Value) changed++;
+                PutAsset(t, kv.Key, kv.Value);
+            }
+            _assets = t;
+            return changed;
+        }
+        /// <summary>Back to the kits' own keys (the bench, after a case taught made-up names).</summary>
+        public static void ForgetLearnedAssets() { _assets = null; }
+
+        /// <summary>Two names of one powerup: the same name forgiving case, punctuation and the "Ability: " prefix of an evolution;
+        /// 0.15.0: else the same asset key (a name the game renamed in a patch, while its asset kept its name). Ranker.SameName.</summary>
+        public static bool SameName(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            string na = Norm(a), nb = Norm(b);
+            if (na == nb) return true;
+            int ia = a.IndexOf(':'), ib = b.IndexOf(':');
+            string ta = ia >= 0 ? Norm(a.Substring(ia + 1)) : na, tb = ib >= 0 ? Norm(b.Substring(ib + 1)) : nb;
+            if (ta.Length > 2 && ta == tb) return true;
+            string ka = AssetOfNorm(na);
+            return ka != null && ka == AssetOfNorm(nb);
+        }
+        /// <summary>The same powerup by asset key alone (both names known to AssetOf).</summary>
+        public static bool SameAsset(string a, string b) { string ka = AssetOf(a); return ka != null && ka == AssetOf(b); }
+
+        /// <summary>The drift guard: every kit name the game build in <paramref name="game"/> does not have - exactly, the game's name
+        /// trimmed, as the bench checks it - with the game's name for its asset when the powerup is there under another name
+        /// ("Good Boy: Doberman (the game: 'Good Boy: Dobermann')"). <paramref name="line"/>, when given, gets the places of a
+        /// weapon line the game links otherwise (by previousWeapon). A survivor the game data does not list is not judged.</summary>
+        public static List<string> NotInGame(IEnumerable<GameKit> game, List<string> line = null)
+        {
+            var miss = new List<string>();
+            var all = game == null ? new List<GameKit>() : game.Where(g => g != null).ToList();
+            foreach (var kit in Kits)
+            {
+                var g = all.FirstOrDefault(x => string.Equals(x.Survivor, kit.Survivor, StringComparison.OrdinalIgnoreCase));
+                if (g == null || g.Assets.Count == 0) continue;
+                var nameOf = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var kv in g.Assets) if (!string.IsNullOrEmpty(kv.Value)) nameOf[kv.Value] = kv.Key;
+                foreach (var kv in KitNamesWithAssets(kit))
+                {
+                    if (g.Assets.ContainsKey((kv.Key ?? "").Trim())) continue;
+                    string now;
+                    miss.Add(kv.Value != null && nameOf.TryGetValue(kv.Value, out now) ? kv.Key + " (the game: '" + now + "')" : kv.Key);
+                }
+                if (line == null || string.IsNullOrEmpty(g.Start)) continue;
+                Func<string, bool> has = n => g.Assets.ContainsKey(n);
+                if (has(kit.Line[0]) && kit.Line[0] != g.Start) line.Add(kit.Survivor + " starts with " + g.Start + ", not " + kit.Line[0]);
+                if (string.IsNullOrEmpty(g.Upgrade)) continue;
+                if (has(kit.Line[1]) && kit.Line[1] != g.Upgrade) line.Add(kit.Survivor + "'s upgrade is " + g.Upgrade + ", not " + kit.Line[1]);
+                foreach (var br in kit.Branches) if (has(br) && !g.Branches.Contains(br)) line.Add(kit.Survivor + ": " + br + " does not follow " + g.Upgrade);
+            }
+            return miss;
+        }
+
+        /// <summary>Set by the drift guard once the live game's names are read: whether the game build at hand has a powerup by that
+        /// name or asset key (case and punctuation aside). Null until then, and in the bench unless a case sets it.</summary>
+        public static Func<string, bool> InGame;
+        static readonly HashSet<string> _notInGameSaid = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The names a lent pack gave that fit nothing in the kit and that the game does not have either, each said once a
+        /// session: "[builds] pack &lt;owner&gt;: &lt;name&gt; is not in the game". Returns how many were said now.</summary>
+        public static int SayNotInGame(BuildPack p)
+        {
+            var inGame = InGame;
+            if (p == null || inGame == null) return 0;
+            int n = 0;
+            foreach (var name in p.Unmatched)
+            {
+                if (string.IsNullOrWhiteSpace(name) || inGame(name)) continue;
+                if (_notInGameSaid.Add(p.Owner + "|" + p.Survivor + "|" + name)) { Log("pack " + p.Owner + ": " + name + " is not in the game"); n++; }
+            }
+            return n;
+        }
+
+        /// <summary>The names in the player's own builds (builds.json) that the game build at hand does not have, as
+        /// "&lt;survivor&gt;: '&lt;name&gt;'" (a copy made from a preset before a game patch renamed a powerup keeps the old name).</summary>
+        public static List<string> CustomNotInGame(Func<string, bool> inGame)
+        {
+            var o = new List<string>();
+            if (inGame == null) return o;
+            foreach (var kv in _custom.OrderBy(x => x.Key))
+            {
+                var b = kv.Value; var names = new List<string>();
+                if (b.Branch.Length > 0) names.Add(b.Branch);
+                names.AddRange(b.Abilities); names.AddRange(b.Skip);
+                foreach (var ev in b.Evolution) { names.Add(ev.Key); if (!string.IsNullOrEmpty(ev.Value)) names.Add(ev.Value); }
+                foreach (var n in names.Distinct(StringComparer.OrdinalIgnoreCase)) if (!string.IsNullOrWhiteSpace(n) && !inGame(n)) o.Add(kv.Key + ": '" + n + "'");
+            }
+            return o;
+        }
 
         // ------------------------------------------------------------------ the presets
         static List<Build> _presets;
@@ -176,6 +398,33 @@ namespace YazsCompanion
 
         /// <summary>The survivor is on Auto: by choice, or because the build selected came with a pack that is away.</summary>
         public static bool OnAuto(string survivor) { return Chosen(survivor) == null; }
+
+        /// <summary>0.15.0 (C15-07, the user's decision Q3 of 10-06): the level-up style the advice follows - a build the player selected
+        /// brings its own (Chosen); plain Auto, no build, follows the player's [Advice] LevelUpStyle <paramref name="mine"/> (Auto); a build
+        /// another mod lends, reached through Auto (<paramref name="lentAuto"/>), brings its own (Lent) unless [Advice] LentBuildStyle =
+        /// Mine (<paramref name="lentMine"/>), where the player's style wins (Mine). Pure: Ranker.StyleOf asks it, the bench runs both settings.</summary>
+        public static BuildStyle StyleFor(Build b, bool lentAuto, BuildStyle mine, bool lentMine, out StyleSource from)
+        {
+            if (b == null) { from = StyleSource.Auto; return mine; }
+            if (!lentAuto) { from = StyleSource.Chosen; return b.Style; }
+            if (lentMine) { from = StyleSource.Mine; return mine; }
+            from = StyleSource.Lent; return b.Style;
+        }
+
+        /// <summary>0.15.0 (C15-07): the words say whose style it is - a lent build's own decides (<paramref name="from"/> = Lent) where the
+        /// player's LevelUpStyle <paramref name="mine"/> would say otherwise ("abilities first, the build's style", "Handgun later - the
+        /// build's style"); the same style either way needs no word.</summary>
+        public static bool LentStyleSaid(BuildStyle style, StyleSource from, BuildStyle mine) { return from == StyleSource.Lent && style != mine; }
+
+        /// <summary>0.15.0 (C15-07): <paramref name="b"/> as the advice follows it for <paramref name="survivor"/> - a copy with the player's
+        /// style when [Advice] LentBuildStyle = Mine stands in for a lent build's own on Auto, else the build itself. The badge advice weighs
+        /// the weapon against the abilities by the style it gets.</summary>
+        public static Build Styled(string survivor, Build b, Doctrine d)
+        {
+            if (b == null || d == null || !d.LentStyleMine || b.Style == d.Style || !OnAuto(survivor)) return b;
+            var c = b.Clone(); c.Style = d.Style;
+            return c;
+        }
 
         /// <summary>What Auto means right now: null = read the squad, the tree and the guides; a build = the default of a
         /// build pack another mod lends for this survivor.</summary>
@@ -350,6 +599,7 @@ namespace YazsCompanion
                 f.Pack.Path = path;
                 Log("build pack '" + f.Pack.Title + "' of " + f.Pack.Owner + " for " + survivor + ": " + f.Pack.Builds.Count + " build(s)"
                     + (f.Pack.Default != null ? ", Auto follows " + f.Pack.Default.Name : "") + " - " + path);
+                SayNotInGame(f.Pack);              // 0.15.0: once the drift guard has read the game's names (before that, it says them itself)
             }
             catch (Exception e) { f.Pack = null; Log("build pack " + path + " unreadable (" + e.Message + "); ignored until the file changes"); }
             _packFiles[key] = f;
@@ -385,7 +635,7 @@ namespace YazsCompanion
                     b.Id = "ext:" + Slug(pack.Owner) + ":" + Slug(given.Length > 0 ? given : b.Name);
                     if (pack.Builds.Any(x => string.Equals(x.Id, b.Id, StringComparison.OrdinalIgnoreCase))) { say("'" + b.Name + "': a second build with the id '" + given + "', dropped"); continue; }
                     b.Survivor = pack.Survivor; b.Custom = false; b.Source = "pack";
-                    Fit(b, kit, s => say("'" + b.Name + "': " + s));
+                    Fit(b, kit, s => say("'" + b.Name + "': " + s), pack.Unmatched);
                     pack.Builds.Add(b); raw[b] = given;
                 }
                 if (wanted.Length > 0)
@@ -401,25 +651,30 @@ namespace YazsCompanion
         }
 
         // the names of a lent build against the kit, in the kit's own spelling; an evolution may be given by its short
-        // name ("Microbombs" for "Kunai Dance: Microbombs")
-        static void Fit(Build b, Kit kit, Action<string> say)
+        // name ("Microbombs" for "Kunai Dance: Microbombs"). 0.15.0: a name that matches none by its words still fits by the
+        // powerup's asset key (AssetOf: the key itself, or a name the live game uses now for a powerup the kit names otherwise);
+        // what fits nothing is dropped as before and kept in <paramref name="unmatched"/> (the drift guard says it once when the
+        // game does not have it either: SayNotInGame).
+        static void Fit(Build b, Kit kit, Action<string> say, List<string> unmatched = null)
         {
             // badge references: syntax only here (the badges themselves are known on the run setup screen, Loadout.Resolve)
             FitBadges(b.Badges, "badges", say); FitBadges(b.SkipBadges, "skipBadges", say);
             if (kit == null) return;
+            Action<string> drop = n => { if (unmatched != null && !string.IsNullOrWhiteSpace(n) && !unmatched.Contains(n, StringComparer.OrdinalIgnoreCase)) unmatched.Add(n.Trim()); };
             if (b.Branch.Length > 0)
             {
-                string branch = kit.BranchNamed(b.Branch);
-                if (branch == null) say("the weapon branch '" + b.Branch + "' is none of " + string.Join(", ", kit.Branches) + ": decided live");
+                string branch = kit.BranchNamed(b.Branch) ?? kit.Branches.FirstOrDefault(x => SameAsset(x, b.Branch));
+                if (branch == null) { say("the weapon branch '" + b.Branch + "' is none of " + string.Join(", ", kit.Branches) + ": decided live"); drop(b.Branch); }
                 b.Branch = branch ?? "";
             }
+            Func<string, string[]> abilityOf = n => kit.Abilities.FirstOrDefault(x => Same(x[0], n)) ?? kit.Abilities.FirstOrDefault(x => SameAsset(x[0], n));
             Func<List<string>, string, List<string>> known = (names, what) =>
             {
                 var keep = new List<string>();
                 foreach (var n in names)
                 {
-                    var a = kit.Abilities.FirstOrDefault(x => Same(x[0], n));
-                    if (a == null) say("unknown " + what + " '" + n + "' (" + kit.Survivor + " has " + string.Join(", ", kit.Abilities.Select(x => x[0])) + ")");
+                    var a = abilityOf(n);
+                    if (a == null) { say("unknown " + what + " '" + n + "' (" + kit.Survivor + " has " + string.Join(", ", kit.Abilities.Select(x => x[0])) + ")"); drop(n); }
                     else if (!keep.Contains(a[0])) keep.Add(a[0]);
                 }
                 return keep;
@@ -429,11 +684,12 @@ namespace YazsCompanion
             foreach (var ev in b.Evolution.ToList())
             {
                 b.Evolution.Remove(ev.Key);
-                var a = kit.Abilities.FirstOrDefault(x => Same(x[0], ev.Key));
-                if (a == null) { say("evolution of an unknown ability '" + ev.Key + "'"); continue; }
+                var a = abilityOf(ev.Key);
+                if (a == null) { say("evolution of an unknown ability '" + ev.Key + "'"); drop(ev.Key); continue; }
                 string pick = null;
                 for (int i = 1; i <= 2; i++) if (Same(a[i], ev.Value) || Same(a[i].Substring(a[i].IndexOf(':') + 1).Trim(), ev.Value)) pick = a[i];
-                if (pick == null) say("'" + ev.Value + "' is not an evolution of " + a[0] + " (" + a[1] + " / " + a[2] + "): decided live");
+                if (pick == null) for (int i = 1; i <= 2; i++) if (SameAsset(a[i], ev.Value)) pick = a[i];
+                if (pick == null) { say("'" + ev.Value + "' is not an evolution of " + a[0] + " (" + a[1] + " / " + a[2] + "): decided live"); drop(ev.Value); }
                 else b.Evolution[a[0]] = pick;
             }
         }
