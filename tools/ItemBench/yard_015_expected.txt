@@ -1,0 +1,410 @@
+# C16-07 STEP 0 (YB0b): the 0.15.0 Training Yard plan (TreePlan.ClassSteps + Advise, unmodified) over the 9 survivor trees of
+# data\gamedata.json with the guides' weapon branch, the badge nodes at the levels of YardBadgeCases.Profile (ranks of badges 29 / 31 / 32 closed),
+# every other node at its minimum: each tree's steps, then the advice line for 0 / 1 / 2 / 3 / 5 / 8 / 13 / 40 points. Captured from the
+# 0.15.0 code before the edit; with [Advice] YardBadges off (ClassSteps without YardBadges) the 0.16.0 code must print the same.
+# Lines starting with '#' are comments. Game names only.
+SWAT step 1/37 Helicopter Strike to 2: Cheap damage and cooldown on a starting ability (S tier).
+SWAT step 2/37 Grenade Trail to 2: Cheap damage and cooldown on a starting ability.
+SWAT step 3/37 SMG to 2: The second starting weapon carries the early run.
+SWAT step 4/37 Helicopter Strike to 3: 
+SWAT step 5/37 Grenade Trail to 3: 
+SWAT step 6/37 Pistol to 3: Levels of the first two weapons are cheap and speed up the start.
+SWAT step 7/37 SMG to 4: Levels of the first two weapons are cheap and speed up the start.
+SWAT step 8/37 Helicopter Strike Evolutions to 1: Unlocks both evolutions of Helicopter Strike: the biggest spike in the tree.
+SWAT step 9/37 Grenade Trail Evolutions to 1: Unlocks both evolutions of Grenade Trail: the biggest spike in the tree.
+SWAT step 10/37 Assault Rifle to 3: The guides' weapon branch for this survivor.
+SWAT step 11/37 Helicopter Strike to 5: Max the starting abilities (S tier).
+SWAT step 12/37 Grenade Trail to 5: Max the starting abilities.
+SWAT step 13/37 Assault Rifle to 5: 
+SWAT step 14/37 Automatic Turret to 3: Rank III ability (A tier).
+SWAT step 15/37 Ricochet to 3: Rank III ability.
+SWAT step 16/37 Leveling Badge to 1: Leveling Badge: only matters if you equip it.
+SWAT step 17/37 Synergy: Pyro to 1: Pays off when both survivors are on the squad.
+SWAT step 18/37 Automatic Turret to 5: 
+SWAT step 19/37 Ricochet to 5: 
+SWAT step 20/37 Gunner Badge to 1: Gunner Badge: only matters if you equip it.
+SWAT step 21/37 Synergy: Ranger to 1: Pays off when both survivors are on the squad.
+SWAT step 22/37 Automatic Turret Evolutions to 1: Unlocks both evolutions of Automatic Turret.
+SWAT step 23/37 Ricochet Evolutions to 1: Unlocks both evolutions of Ricochet.
+SWAT step 24/37 Critical Badge to 1: Critical Badge: only matters if you equip it.
+SWAT step 25/37 Synergy: Ghost to 1: Pays off when both survivors are on the squad.
+SWAT step 26/37 Ballistic Doctrine to 1: Rank V passive: always on.
+SWAT step 27/37 Combat Drill to 1: Rank V passive: always on.
+SWAT step 28/37 Grenade Expertise to 1: Rank V passive: always on.
+SWAT step 29/37 Ballistic Doctrine to 3: Passives scale to level 3 (1 + 3 + 5 points).
+SWAT step 30/37 Combat Drill to 3: Passives scale to level 3 (1 + 3 + 5 points).
+SWAT step 31/37 Grenade Expertise to 3: Passives scale to level 3 (1 + 3 + 5 points).
+SWAT step 32/37 Synergy: Tank to 1: Pays off when both survivors are on the squad.
+SWAT step 33/37 Sniper Rifle to 5: The other branches of the fork, for the runs that offer them.
+SWAT step 34/37 Grenade Launcher to 5: The other branches of the fork, for the runs that offer them.
+SWAT step 35/37 Leveling Badge to 5: 
+SWAT step 36/37 Gunner Badge to 5: 
+SWAT step 37/37 Critical Badge to 5: 
+SWAT 0 pts: buy nothing; save for Helicopter Strike 1>2 (2); later Grenade Trail 1>2, SMG 1>2, Pistol 1>3 | left 0
+SWAT 1 pts: buy 1 Ballistic Doctrine 0>1 (1); save for Helicopter Strike 1>2 (2); later Grenade Trail 1>2, SMG 1>2, Pistol 1>3 | left 0
+SWAT 2 pts: buy 1 Helicopter Strike 1>2 (2); later Grenade Trail 1>2, SMG 1>2, Helicopter Strike 2>3 | left 0
+SWAT 3 pts: buy 1 Helicopter Strike 1>2 (2), 2 Ballistic Doctrine 0>1 (1); save for Grenade Trail 1>2 (2); later SMG 1>2, Helicopter Strike 2>3, Pistol 1>3 | left 0
+SWAT 5 pts: buy 1 Helicopter Strike 1>2 (2), 2 Grenade Trail 1>2 (2), 3 Ballistic Doctrine 0>1 (1); save for SMG 1>2 (2); later Helicopter Strike 2>3, Grenade Trail 2>3, Pistol 1>3 | left 0
+SWAT 8 pts: buy 1 Helicopter Strike 1>2 (2), 2 Grenade Trail 1>2 (2), 3 SMG 1>2 (2), 4 Pistol 1>2 (2); save for Helicopter Strike 2>3 (3); later Grenade Trail 2>3, Pistol 2>3, SMG 2>4 | left 0
+SWAT 13 pts: buy 1 Helicopter Strike 1>3 (5), 2 Grenade Trail 1>3 (5), 3 SMG 1>2 (2), 4 Ballistic Doctrine 0>1 (1); save for Pistol 1>2 (2); later SMG 2>4, Helicopter Strike Evolutions 0, Grenade Trail Evolutions 0 | left 0
+SWAT 40 pts: buy 1 Helicopter Strike 1>3 (5), 2 Grenade Trail 1>3 (5), 3 SMG 1>4 (9), 4 Pistol 1>3 (5), 5 Helicopter Strike Evolutions 0 (5), 6 Grenade Trail Evolutions 0 (5), 7 Assault Rifle 1>3 (5), 8 Ballistic Doctrine 0>1 (1); save for Helicopter Strike 3>4 (4); later Grenade Trail 3>5, Assault Rifle 3>5, Automatic Turret 1>3 | left 0
+Tank step 1/37 Sawblade Drone to 2: Cheap damage and cooldown on a starting ability (A tier).
+Tank step 2/37 Minefield to 2: Cheap damage and cooldown on a starting ability.
+Tank step 3/37 Pump-Action Shotgun to 2: The second starting weapon carries the early run.
+Tank step 4/37 Sawblade Drone to 3: 
+Tank step 5/37 Minefield to 3: 
+Tank step 6/37 Shotgun to 3: Levels of the first two weapons are cheap and speed up the start.
+Tank step 7/37 Pump-Action Shotgun to 4: Levels of the first two weapons are cheap and speed up the start.
+Tank step 8/37 Sawblade Drone Evolutions to 1: Unlocks both evolutions of Sawblade Drone: the biggest spike in the tree.
+Tank step 9/37 Minefield Evolutions to 1: Unlocks both evolutions of Minefield: the biggest spike in the tree.
+Tank step 10/37 Rocket Launcher to 3: The guides' weapon branch for this survivor.
+Tank step 11/37 Sawblade Drone to 5: Max the starting abilities (A tier).
+Tank step 12/37 Minefield to 5: Max the starting abilities.
+Tank step 13/37 Rocket Launcher to 5: 
+Tank step 14/37 Bombing Strike to 3: Rank III ability (A tier).
+Tank step 15/37 Fury Unleashed to 3: Rank III ability.
+Tank step 16/37 Tough Badge to 1: Tough Badge: only matters if you equip it.
+Tank step 17/37 Synergy: Pyro to 1: Pays off when both survivors are on the squad.
+Tank step 18/37 Bombing Strike to 5: 
+Tank step 19/37 Fury Unleashed to 5: 
+Tank step 20/37 Bomber Badge to 1: Bomber Badge: only matters if you equip it.
+Tank step 21/37 Synergy: Medic to 1: Pays off when both survivors are on the squad.
+Tank step 22/37 Bombing Strike Evolutions to 1: Unlocks both evolutions of Bombing Strike.
+Tank step 23/37 Fury Unleashed Evolutions to 1: Unlocks both evolutions of Fury Unleashed.
+Tank step 24/37 Power Badge to 1: Power Badge: only matters if you equip it.
+Tank step 25/37 Synergy: Engineer to 1: Pays off when both survivors are on the squad.
+Tank step 26/37 Sweeping Strike to 1: Rank V passive: always on.
+Tank step 27/37 Best Defense Is Offense to 1: Rank V passive: always on.
+Tank step 28/37 Reinforced Frame to 1: Rank V passive: always on.
+Tank step 29/37 Sweeping Strike to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Tank step 30/37 Best Defense Is Offense to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Tank step 31/37 Reinforced Frame to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Tank step 32/37 Synergy: SWAT to 1: Pays off when both survivors are on the squad.
+Tank step 33/37 Minigun to 5: The other branches of the fork, for the runs that offer them.
+Tank step 34/37 Super Shotgun to 5: The other branches of the fork, for the runs that offer them.
+Tank step 35/37 Tough Badge to 5: 
+Tank step 36/37 Bomber Badge to 5: 
+Tank step 37/37 Power Badge to 5: 
+Tank 0 pts: buy nothing; save for Sawblade Drone 1>2 (2); later Minefield 1>2, Pump-Action Shotgun 1>2, Shotgun 1>3 | left 0
+Tank 1 pts: buy 1 Sweeping Strike 0>1 (1); save for Sawblade Drone 1>2 (2); later Minefield 1>2, Pump-Action Shotgun 1>2, Shotgun 1>3 | left 0
+Tank 2 pts: buy 1 Sawblade Drone 1>2 (2); later Minefield 1>2, Pump-Action Shotgun 1>2, Sawblade Drone 2>3 | left 0
+Tank 3 pts: buy 1 Sawblade Drone 1>2 (2), 2 Sweeping Strike 0>1 (1); save for Minefield 1>2 (2); later Pump-Action Shotgun 1>2, Sawblade Drone 2>3, Shotgun 1>3 | left 0
+Tank 5 pts: buy 1 Sawblade Drone 1>2 (2), 2 Minefield 1>2 (2), 3 Sweeping Strike 0>1 (1); save for Pump-Action Shotgun 1>2 (2); later Sawblade Drone 2>3, Minefield 2>3, Shotgun 1>3 | left 0
+Tank 8 pts: buy 1 Sawblade Drone 1>2 (2), 2 Minefield 1>2 (2), 3 Pump-Action Shotgun 1>2 (2), 4 Shotgun 1>2 (2); save for Sawblade Drone 2>3 (3); later Minefield 2>3, Shotgun 2>3, Pump-Action Shotgun 2>4 | left 0
+Tank 13 pts: buy 1 Sawblade Drone 1>3 (5), 2 Minefield 1>3 (5), 3 Pump-Action Shotgun 1>2 (2), 4 Sweeping Strike 0>1 (1); save for Shotgun 1>2 (2); later Pump-Action Shotgun 2>4, Sawblade Drone Evolutions 0, Minefield Evolutions 0 | left 0
+Tank 40 pts: buy 1 Sawblade Drone 1>3 (5), 2 Minefield 1>3 (5), 3 Pump-Action Shotgun 1>4 (9), 4 Shotgun 1>3 (5), 5 Sawblade Drone Evolutions 0 (5), 6 Minefield Evolutions 0 (5), 7 Rocket Launcher 1>3 (5), 8 Sweeping Strike 0>1 (1); save for Sawblade Drone 3>4 (4); later Minefield 3>5, Rocket Launcher 3>5, Bombing Strike 1>3 | left 0
+Engineer step 1/37 Electrocution to 2: Cheap damage and cooldown on a starting ability (A tier).
+Engineer step 2/37 Electric Turret to 2: Cheap damage and cooldown on a starting ability (A tier).
+Engineer step 3/37 Tesla to 2: The second starting weapon carries the early run.
+Engineer step 4/37 Electrocution to 3: 
+Engineer step 5/37 Electric Turret to 3: 
+Engineer step 6/37 Taser to 3: Levels of the first two weapons are cheap and speed up the start.
+Engineer step 7/37 Tesla to 4: Levels of the first two weapons are cheap and speed up the start.
+Engineer step 8/37 Electrocution Evolutions to 1: Unlocks both evolutions of Electrocution: the biggest spike in the tree.
+Engineer step 9/37 Electric Turret Evolutions to 1: Unlocks both evolutions of Electric Turret: the biggest spike in the tree.
+Engineer step 10/37 Laser to 3: One tier-3 weapon first: the one you levelled most.
+Engineer step 11/37 Electrocution to 5: Max the starting abilities (A tier).
+Engineer step 12/37 Electric Turret to 5: Max the starting abilities (A tier).
+Engineer step 13/37 Laser to 5: 
+Engineer step 14/37 Energy Shield to 3: Rank III ability (S tier).
+Engineer step 15/37 EMP Grenade to 3: Rank III ability.
+Engineer step 16/37 Coverage Badge to 1: Coverage Badge: only matters if you equip it.
+Engineer step 17/37 Synergy: Huntress to 1: Pays off when both survivors are on the squad.
+Engineer step 18/37 Energy Shield to 5: 
+Engineer step 19/37 EMP Grenade to 5: 
+Engineer step 20/37 Thunder Badge to 1: Thunder Badge: only matters if you equip it.
+Engineer step 21/37 Synergy: Ghost to 1: Pays off when both survivors are on the squad.
+Engineer step 22/37 Energy Shield Evolutions to 1: Unlocks both evolutions of Energy Shield.
+Engineer step 23/37 EMP Grenade Evolutions to 1: Unlocks both evolutions of EMP Grenade.
+Engineer step 24/37 Reload Badge to 1: Reload Badge: only matters if you equip it.
+Engineer step 25/37 Synergy: Ranger to 1: Pays off when both survivors are on the squad.
+Engineer step 26/37 Turret Expertise to 1: Rank V passive: always on.
+Engineer step 27/37 Closed Circuit to 1: Rank V passive: always on.
+Engineer step 28/37 High Voltage to 1: Rank V passive: always on.
+Engineer step 29/37 Turret Expertise to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Engineer step 30/37 Closed Circuit to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Engineer step 31/37 High Voltage to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Engineer step 32/37 Synergy: Tank to 1: Pays off when both survivors are on the squad.
+Engineer step 33/37 Blaster to 5: The other branches of the fork, for the runs that offer them.
+Engineer step 34/37 Plasma to 5: The other branches of the fork, for the runs that offer them.
+Engineer step 35/37 Coverage Badge to 5: 
+Engineer step 36/37 Thunder Badge to 5: 
+Engineer step 37/37 Reload Badge to 5: 
+Engineer 0 pts: buy nothing; save for Electrocution 1>2 (2); later Electric Turret 1>2, Tesla 1>2, Taser 1>3 | left 0
+Engineer 1 pts: buy 1 Turret Expertise 0>1 (1); save for Electrocution 1>2 (2); later Electric Turret 1>2, Tesla 1>2, Taser 1>3 | left 0
+Engineer 2 pts: buy 1 Electrocution 1>2 (2); later Electric Turret 1>2, Tesla 1>2, Electrocution 2>3 | left 0
+Engineer 3 pts: buy 1 Electrocution 1>2 (2), 2 Turret Expertise 0>1 (1); save for Electric Turret 1>2 (2); later Tesla 1>2, Electrocution 2>3, Taser 1>3 | left 0
+Engineer 5 pts: buy 1 Electrocution 1>2 (2), 2 Electric Turret 1>2 (2), 3 Turret Expertise 0>1 (1); save for Tesla 1>2 (2); later Electrocution 2>3, Electric Turret 2>3, Taser 1>3 | left 0
+Engineer 8 pts: buy 1 Electrocution 1>2 (2), 2 Electric Turret 1>2 (2), 3 Tesla 1>2 (2), 4 Taser 1>2 (2); save for Electrocution 2>3 (3); later Electric Turret 2>3, Taser 2>3, Tesla 2>4 | left 0
+Engineer 13 pts: buy 1 Electrocution 1>3 (5), 2 Electric Turret 1>3 (5), 3 Tesla 1>2 (2), 4 Turret Expertise 0>1 (1); save for Taser 1>2 (2); later Tesla 2>4, Electrocution Evolutions 0, Electric Turret Evolutions 0 | left 0
+Engineer 40 pts: buy 1 Electrocution 1>3 (5), 2 Electric Turret 1>3 (5), 3 Tesla 1>4 (9), 4 Taser 1>3 (5), 5 Electrocution Evolutions 0 (5), 6 Electric Turret Evolutions 0 (5), 7 Laser 1>3 (5), 8 Turret Expertise 0>1 (1); save for Electrocution 3>4 (4); later Electric Turret 3>5, Laser 3>5, Energy Shield 1>3 | left 0
+Huntress step 1/37 Arrow Rain to 2: Cheap damage and cooldown on a starting ability (S tier).
+Huntress step 2/37 Bear Trap to 2: Cheap damage and cooldown on a starting ability.
+Huntress step 3/37 Multishot to 2: The second starting weapon carries the early run.
+Huntress step 4/37 Arrow Rain to 3: 
+Huntress step 5/37 Bear Trap to 3: 
+Huntress step 6/37 Bow to 3: Levels of the first two weapons are cheap and speed up the start.
+Huntress step 7/37 Multishot to 4: Levels of the first two weapons are cheap and speed up the start.
+Huntress step 8/37 Arrow Rain Evolutions to 1: Unlocks both evolutions of Arrow Rain: the biggest spike in the tree.
+Huntress step 9/37 Bear Trap Evolutions to 1: Unlocks both evolutions of Bear Trap: the biggest spike in the tree.
+Huntress step 10/37 Explosive Arrows to 3: One tier-3 weapon first: the one you levelled most.
+Huntress step 11/37 Arrow Rain to 5: Max the starting abilities (S tier).
+Huntress step 12/37 Bear Trap to 5: Max the starting abilities.
+Huntress step 13/37 Explosive Arrows to 5: 
+Huntress step 14/37 Zombie Decoy to 3: Rank III ability.
+Huntress step 15/37 Arrow Penetration to 3: Rank III ability.
+Huntress step 16/37 Speed Badge to 1: Speed Badge: only matters if you equip it.
+Huntress step 17/37 Synergy: Tank to 1: Pays off when both survivors are on the squad.
+Huntress step 18/37 Zombie Decoy to 5: 
+Huntress step 19/37 Arrow Penetration to 5: 
+Huntress step 20/37 Physical Badge to 1: Physical Badge: only matters if you equip it.
+Huntress step 21/37 Synergy: SWAT to 1: Pays off when both survivors are on the squad.
+Huntress step 22/37 Decoy Evolutions to 1: Unlocks both evolutions of Zombie Decoy.
+Huntress step 23/37 Arrow Penetration Evolutions to 1: Unlocks both evolutions of Arrow Penetration.
+Huntress step 24/37 Boss Badge to 1: Boss Badge: only matters if you equip it.
+Huntress step 25/37 Synergy: Ranger to 1: Pays off when both survivors are on the squad.
+Huntress step 26/37 Trap Expertise to 1: Rank V passive: always on.
+Huntress step 27/37 Keen Eye to 1: Rank V passive: always on.
+Huntress step 28/37 Predator's Rhythm to 1: Rank V passive: always on.
+Huntress step 29/37 Trap Expertise to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Huntress step 30/37 Keen Eye to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Huntress step 31/37 Predator's Rhythm to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Huntress step 32/37 Synergy: Medic to 1: Pays off when both survivors are on the squad.
+Huntress step 33/37 Freezing Arrows to 5: The other branches of the fork, for the runs that offer them.
+Huntress step 34/37 Toxic Arrows to 5: The other branches of the fork, for the runs that offer them.
+Huntress step 35/37 Speed Badge to 5: 
+Huntress step 36/37 Physical Badge to 5: 
+Huntress step 37/37 Boss Badge to 5: 
+Huntress 0 pts: buy nothing; save for Arrow Rain 1>2 (2); later Bear Trap 1>2, Multishot 1>2, Bow 1>3 | left 0
+Huntress 1 pts: buy 1 Trap Expertise 0>1 (1); save for Arrow Rain 1>2 (2); later Bear Trap 1>2, Multishot 1>2, Bow 1>3 | left 0
+Huntress 2 pts: buy 1 Arrow Rain 1>2 (2); later Bear Trap 1>2, Multishot 1>2, Arrow Rain 2>3 | left 0
+Huntress 3 pts: buy 1 Arrow Rain 1>2 (2), 2 Trap Expertise 0>1 (1); save for Bear Trap 1>2 (2); later Multishot 1>2, Arrow Rain 2>3, Bow 1>3 | left 0
+Huntress 5 pts: buy 1 Arrow Rain 1>2 (2), 2 Bear Trap 1>2 (2), 3 Trap Expertise 0>1 (1); save for Multishot 1>2 (2); later Arrow Rain 2>3, Bear Trap 2>3, Bow 1>3 | left 0
+Huntress 8 pts: buy 1 Arrow Rain 1>2 (2), 2 Bear Trap 1>2 (2), 3 Multishot 1>2 (2), 4 Bow 1>2 (2); save for Arrow Rain 2>3 (3); later Bear Trap 2>3, Bow 2>3, Multishot 2>4 | left 0
+Huntress 13 pts: buy 1 Arrow Rain 1>3 (5), 2 Bear Trap 1>3 (5), 3 Multishot 1>2 (2), 4 Trap Expertise 0>1 (1); save for Bow 1>2 (2); later Multishot 2>4, Arrow Rain Evolutions 0, Bear Trap Evolutions 0 | left 0
+Huntress 40 pts: buy 1 Arrow Rain 1>3 (5), 2 Bear Trap 1>3 (5), 3 Multishot 1>4 (9), 4 Bow 1>3 (5), 5 Arrow Rain Evolutions 0 (5), 6 Bear Trap Evolutions 0 (5), 7 Explosive Arrows 1>3 (5), 8 Trap Expertise 0>1 (1); save for Arrow Rain 3>4 (4); later Bear Trap 3>5, Explosive Arrows 3>5, Zombie Decoy 1>3 | left 0
+Ghost step 1/37 Pulsar to 2: Cheap damage and cooldown on a starting ability.
+Ghost step 2/37 Shuriken to 2: Cheap damage and cooldown on a starting ability.
+Ghost step 3/37 Katana Splash to 2: The second starting weapon carries the early run.
+Ghost step 4/37 Pulsar to 3: 
+Ghost step 5/37 Shuriken to 3: 
+Ghost step 6/37 Katana to 3: Levels of the first two weapons are cheap and speed up the start.
+Ghost step 7/37 Katana Splash to 4: Levels of the first two weapons are cheap and speed up the start.
+Ghost step 8/37 Pulsar Evolutions to 1: Unlocks both evolutions of Pulsar: the biggest spike in the tree.
+Ghost step 9/37 Shuriken Evolutions to 1: Unlocks both evolutions of Shuriken: the biggest spike in the tree.
+Ghost step 10/37 Thousand Cuts to 3: The guides' weapon branch for this survivor.
+Ghost step 11/37 Pulsar to 5: Max the starting abilities.
+Ghost step 12/37 Shuriken to 5: Max the starting abilities.
+Ghost step 13/37 Thousand Cuts to 5: 
+Ghost step 14/37 Holo-bait to 3: Rank III ability.
+Ghost step 15/37 Kunai Dance to 3: Rank III ability.
+Ghost step 16/37 Ninja Badge to 1: Ninja Badge: only matters if you equip it.
+Ghost step 17/37 Synergy: Engineer to 1: Pays off when both survivors are on the squad.
+Ghost step 18/37 Holo-bait to 5: 
+Ghost step 19/37 Kunai Dance to 5: 
+Ghost step 20/37 Carver Badge to 1: Carver Badge: only matters if you equip it.
+Ghost step 21/37 Synergy: Medic to 1: Pays off when both survivors are on the squad.
+Ghost step 22/37 Holo-bait Evolutions to 1: Unlocks both evolutions of Holo-bait.
+Ghost step 23/37 Kunai Dance Evolutions to 1: Unlocks both evolutions of Kunai Dance.
+Ghost step 24/37 Chance Badge to 1: Chance Badge: only matters if you equip it.
+Ghost step 25/37 Synergy: Mechanic to 1: Pays off when both survivors are on the squad.
+Ghost step 26/37 Flow State to 1: Rank V passive: always on.
+Ghost step 27/37 Afterimage to 1: Rank V passive: always on.
+Ghost step 28/37 On Blade's Edge to 1: Rank V passive: always on.
+Ghost step 29/37 Flow State to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ghost step 30/37 Afterimage to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ghost step 31/37 On Blade's Edge to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ghost step 32/37 Synergy: SWAT to 1: Pays off when both survivors are on the squad.
+Ghost step 33/37 Windcutter to 5: The other branches of the fork, for the runs that offer them.
+Ghost step 34/37 Soul Reaper to 5: The other branches of the fork, for the runs that offer them.
+Ghost step 35/37 Ninja Badge to 5: 
+Ghost step 36/37 Carver Badge to 5: 
+Ghost step 37/37 Chance Badge to 5: 
+Ghost 0 pts: buy nothing; save for Pulsar 1>2 (2); later Shuriken 1>2, Katana Splash 1>2, Katana 1>3 | left 0
+Ghost 1 pts: buy 1 Chance Badge 0>1 (1); save for Pulsar 1>2 (2); later Shuriken 1>2, Katana Splash 1>2, Katana 1>3 | left 0
+Ghost 2 pts: buy 1 Pulsar 1>2 (2); later Shuriken 1>2, Katana Splash 1>2, Pulsar 2>3 | left 0
+Ghost 3 pts: buy 1 Pulsar 1>2 (2), 2 Chance Badge 0>1 (1); save for Shuriken 1>2 (2); later Katana Splash 1>2, Pulsar 2>3, Katana 1>3 | left 0
+Ghost 5 pts: buy 1 Pulsar 1>2 (2), 2 Shuriken 1>2 (2), 3 Chance Badge 0>1 (1); save for Katana Splash 1>2 (2); later Pulsar 2>3, Shuriken 2>3, Katana 1>3 | left 0
+Ghost 8 pts: buy 1 Pulsar 1>2 (2), 2 Shuriken 1>2 (2), 3 Katana Splash 1>2 (2), 4 Katana 1>2 (2); save for Pulsar 2>3 (3); later Shuriken 2>3, Katana 2>3, Katana Splash 2>4 | left 0
+Ghost 13 pts: buy 1 Pulsar 1>3 (5), 2 Shuriken 1>3 (5), 3 Katana Splash 1>2 (2), 4 Chance Badge 0>1 (1); save for Katana 1>2 (2); later Katana Splash 2>4, Pulsar Evolutions 0, Shuriken Evolutions 0 | left 0
+Ghost 40 pts: buy 1 Pulsar 1>3 (5), 2 Shuriken 1>3 (5), 3 Katana Splash 1>4 (9), 4 Katana 1>3 (5), 5 Pulsar Evolutions 0 (5), 6 Shuriken Evolutions 0 (5), 7 Thousand Cuts 1>3 (5), 8 Chance Badge 0>1 (1); save for Pulsar 3>4 (4); later Shuriken 3>5, Thousand Cuts 3>5, Holo-bait 1>3 | left 0
+Medic step 1/37 Experiment 21 to 2: Cheap damage and cooldown on a starting ability (A tier).
+Medic step 2/37 Medical Drone to 2: Cheap damage and cooldown on a starting ability.
+Medic step 3/37 Syringe Gun to 2: The second starting weapon carries the early run.
+Medic step 4/37 Experiment 21 to 3: 
+Medic step 5/37 Medical Drone to 3: 
+Medic step 6/37 Handgun to 3: Levels of the first two weapons are cheap and speed up the start.
+Medic step 7/37 Syringe Gun to 4: Levels of the first two weapons are cheap and speed up the start.
+Medic step 8/37 Experiment 21 Evolutions to 1: Unlocks both evolutions of Experiment 21: the biggest spike in the tree.
+Medic step 9/37 Medical Drone Evolutions to 1: Unlocks both evolutions of Medical Drone: the biggest spike in the tree.
+Medic step 10/37 Antidote Flasks to 3: One tier-3 weapon first: the one you levelled most.
+Medic step 11/37 Experiment 21 to 5: Max the starting abilities (A tier).
+Medic step 12/37 Medical Drone to 5: Max the starting abilities.
+Medic step 13/37 Antidote Flasks to 5: 
+Medic step 14/37 Resuscitation to 3: Rank III ability.
+Medic step 15/37 Stimpack to 3: Rank III ability.
+Medic step 16/37 Growth Badge to 1: Growth Badge: only matters if you equip it.
+Medic step 17/37 Synergy: SWAT to 1: Pays off when both survivors are on the squad.
+Medic step 18/37 Resuscitation to 5: 
+Medic step 19/37 Stimpack to 5: 
+Medic step 20/37 Soul Badge to 1: Soul Badge: only matters if you equip it.
+Medic step 21/37 Synergy: Ranger to 1: Pays off when both survivors are on the squad.
+Medic step 22/37 Resuscitation Evolutions to 1: Unlocks both evolutions of Resuscitation.
+Medic step 23/37 Stimpack Evolutions to 1: Unlocks both evolutions of Stimpack.
+Medic step 24/37 Healing Badge to 1: Healing Badge: only matters if you equip it.
+Medic step 25/37 Synergy: Pyro to 1: Pays off when both survivors are on the squad.
+Medic step 26/37 Code Blue to 1: Rank V passive: always on.
+Medic step 27/37 Emergency Protocol to 1: Rank V passive: always on.
+Medic step 28/37 Clinical Practice to 1: Rank V passive: always on.
+Medic step 29/37 Code Blue to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Medic step 30/37 Emergency Protocol to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Medic step 31/37 Clinical Practice to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Medic step 32/37 Synergy: Huntress to 1: Pays off when both survivors are on the squad.
+Medic step 33/37 Freezing Flasks to 5: The other branches of the fork, for the runs that offer them.
+Medic step 34/37 Syringer to 5: The other branches of the fork, for the runs that offer them.
+Medic step 35/37 Growth Badge to 5: 
+Medic step 36/37 Soul Badge to 5: 
+Medic step 37/37 Healing Badge to 5: 
+Medic 0 pts: buy nothing; save for Experiment 21 1>2 (2); later Medical Drone 1>2, Syringe Gun 1>2, Handgun 1>3 | left 0
+Medic 1 pts: buy 1 Code Blue 0>1 (1); save for Experiment 21 1>2 (2); later Medical Drone 1>2, Syringe Gun 1>2, Handgun 1>3 | left 0
+Medic 2 pts: buy 1 Experiment 21 1>2 (2); later Medical Drone 1>2, Syringe Gun 1>2, Experiment 21 2>3 | left 0
+Medic 3 pts: buy 1 Experiment 21 1>2 (2), 2 Code Blue 0>1 (1); save for Medical Drone 1>2 (2); later Syringe Gun 1>2, Experiment 21 2>3, Handgun 1>3 | left 0
+Medic 5 pts: buy 1 Experiment 21 1>2 (2), 2 Medical Drone 1>2 (2), 3 Code Blue 0>1 (1); save for Syringe Gun 1>2 (2); later Experiment 21 2>3, Medical Drone 2>3, Handgun 1>3 | left 0
+Medic 8 pts: buy 1 Experiment 21 1>2 (2), 2 Medical Drone 1>2 (2), 3 Syringe Gun 1>2 (2), 4 Handgun 1>2 (2); save for Experiment 21 2>3 (3); later Medical Drone 2>3, Handgun 2>3, Syringe Gun 2>4 | left 0
+Medic 13 pts: buy 1 Experiment 21 1>3 (5), 2 Medical Drone 1>3 (5), 3 Syringe Gun 1>2 (2), 4 Code Blue 0>1 (1); save for Handgun 1>2 (2); later Syringe Gun 2>4, Experiment 21 Evolutions 0, Medical Drone Evolutions 0 | left 0
+Medic 40 pts: buy 1 Experiment 21 1>3 (5), 2 Medical Drone 1>3 (5), 3 Syringe Gun 1>4 (9), 4 Handgun 1>3 (5), 5 Experiment 21 Evolutions 0 (5), 6 Medical Drone Evolutions 0 (5), 7 Antidote Flasks 1>3 (5), 8 Code Blue 0>1 (1); save for Experiment 21 3>4 (4); later Medical Drone 3>5, Antidote Flasks 3>5, Resuscitation 1>3 | left 0
+Pyro step 1/37 No Pain, No Gain to 2: Cheap damage and cooldown on a starting ability.
+Pyro step 2/37 Molotov Cocktail to 2: Cheap damage and cooldown on a starting ability.
+Pyro step 3/37 Blowtorch to 2: The second starting weapon carries the early run.
+Pyro step 4/37 No Pain, No Gain to 3: 
+Pyro step 5/37 Molotov Cocktail to 3: 
+Pyro step 6/37 Fireaxe to 3: Levels of the first two weapons are cheap and speed up the start.
+Pyro step 7/37 Blowtorch to 4: Levels of the first two weapons are cheap and speed up the start.
+Pyro step 8/37 No pain no gain Evolutions to 1: Unlocks both evolutions of No Pain, No Gain: the biggest spike in the tree.
+Pyro step 9/37 Molotov Cocktail Evolutions to 1: Unlocks both evolutions of Molotov Cocktail: the biggest spike in the tree.
+Pyro step 10/37 Infernax to 3: The guides' weapon branch for this survivor.
+Pyro step 11/37 No Pain, No Gain to 5: Max the starting abilities.
+Pyro step 12/37 Molotov Cocktail to 5: Max the starting abilities.
+Pyro step 13/37 Infernax to 5: 
+Pyro step 14/37 Fire Walk to 3: Rank III ability (A tier).
+Pyro step 15/37 Makeshift Bomb to 3: Rank III ability.
+Pyro step 16/37 Gamble Badge to 1: Gamble Badge: only matters if you equip it.
+Pyro step 17/37 Synergy: Huntress to 1: Pays off when both survivors are on the squad.
+Pyro step 18/37 Fire Walk to 5: 
+Pyro step 19/37 Makeshift Bomb to 5: 
+Pyro step 20/37 Heat Badge to 1: Heat Badge: only matters if you equip it.
+Pyro step 21/37 Synergy: Tank to 1: Pays off when both survivors are on the squad.
+Pyro step 22/37 Fire Walk Evolutions to 1: Unlocks both evolutions of Fire Walk.
+Pyro step 23/37 Makeshift Bomb Evolutions to 1: Unlocks both evolutions of Makeshift Bomb.
+Pyro step 24/37 Elemental Badge to 1: Elemental Badge: only matters if you equip it.
+Pyro step 25/37 Synergy: Mechanic to 1: Pays off when both survivors are on the squad.
+Pyro step 26/37 Expanded Combustion to 1: Rank V passive: always on.
+Pyro step 27/37 Backdraft to 1: Rank V passive: always on.
+Pyro step 28/37 Heat Overflow to 1: Rank V passive: always on.
+Pyro step 29/37 Expanded Combustion to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Pyro step 30/37 Backdraft to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Pyro step 31/37 Heat Overflow to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Pyro step 32/37 Synergy: Medic to 1: Pays off when both survivors are on the squad.
+Pyro step 33/37 Flamethrower to 5: The other branches of the fork, for the runs that offer them.
+Pyro step 34/37 Axerangs to 5: The other branches of the fork, for the runs that offer them.
+Pyro step 35/37 Gamble Badge to 5: 
+Pyro step 36/37 Heat Badge to 5: 
+Pyro step 37/37 Elemental Badge to 5: 
+Pyro 0 pts: buy nothing; save for No Pain, No Gain 1>2 (2); later Molotov Cocktail 1>2, Blowtorch 1>2, Fireaxe 1>3 | left 0
+Pyro 1 pts: buy 1 Expanded Combustion 0>1 (1); save for No Pain, No Gain 1>2 (2); later Molotov Cocktail 1>2, Blowtorch 1>2, Fireaxe 1>3 | left 0
+Pyro 2 pts: buy 1 No Pain, No Gain 1>2 (2); later Molotov Cocktail 1>2, Blowtorch 1>2, No Pain, No Gain 2>3 | left 0
+Pyro 3 pts: buy 1 No Pain, No Gain 1>2 (2), 2 Expanded Combustion 0>1 (1); save for Molotov Cocktail 1>2 (2); later Blowtorch 1>2, No Pain, No Gain 2>3, Fireaxe 1>3 | left 0
+Pyro 5 pts: buy 1 No Pain, No Gain 1>2 (2), 2 Molotov Cocktail 1>2 (2), 3 Expanded Combustion 0>1 (1); save for Blowtorch 1>2 (2); later No Pain, No Gain 2>3, Molotov Cocktail 2>3, Fireaxe 1>3 | left 0
+Pyro 8 pts: buy 1 No Pain, No Gain 1>2 (2), 2 Molotov Cocktail 1>2 (2), 3 Blowtorch 1>2 (2), 4 Fireaxe 1>2 (2); save for No Pain, No Gain 2>3 (3); later Molotov Cocktail 2>3, Fireaxe 2>3, Blowtorch 2>4 | left 0
+Pyro 13 pts: buy 1 No Pain, No Gain 1>3 (5), 2 Molotov Cocktail 1>3 (5), 3 Blowtorch 1>2 (2), 4 Expanded Combustion 0>1 (1); save for Fireaxe 1>2 (2); later Blowtorch 2>4, No pain no gain Evolutions 0, Molotov Cocktail Evolutions 0 | left 0
+Pyro 40 pts: buy 1 No Pain, No Gain 1>3 (5), 2 Molotov Cocktail 1>3 (5), 3 Blowtorch 1>4 (9), 4 Fireaxe 1>3 (5), 5 No pain no gain Evolutions 0 (5), 6 Molotov Cocktail Evolutions 0 (5), 7 Infernax 1>3 (5), 8 Expanded Combustion 0>1 (1); save for No Pain, No Gain 3>4 (4); later Molotov Cocktail 3>5, Infernax 3>5, Fire Walk 1>3 | left 0
+Mechanic step 1/37 Transmitter to 2: Cheap damage and cooldown on a starting ability (C tier).
+Mechanic step 2/37 Remote Control Car to 2: Cheap damage and cooldown on a starting ability (C tier).
+Mechanic step 3/37 Lancer to 2: The second starting weapon carries the early run.
+Mechanic step 4/37 Transmitter to 3: 
+Mechanic step 5/37 Remote Control Car to 3: 
+Mechanic step 6/37 Trusty Spanner to 3: Levels of the first two weapons are cheap and speed up the start.
+Mechanic step 7/37 Lancer to 4: Levels of the first two weapons are cheap and speed up the start.
+Mechanic step 8/37 Transmitter Evolutions to 1: Unlocks both evolutions of Transmitter: the biggest spike in the tree.
+Mechanic step 9/37 Remote Control Car Evolutions to 1: Unlocks both evolutions of Remote Control Car: the biggest spike in the tree.
+Mechanic step 10/37 Nitro-Gun to 3: The guides' weapon branch for this survivor.
+Mechanic step 11/37 Transmitter to 5: Max the starting abilities (C tier).
+Mechanic step 12/37 Remote Control Car to 5: Max the starting abilities (C tier).
+Mechanic step 13/37 Nitro-Gun to 5: 
+Mechanic step 14/37 Cooling Mods to 3: Rank III ability (A tier).
+Mechanic step 15/37 Ice Turret to 3: Rank III ability (A tier).
+Mechanic step 16/37 Gatherer Badge to 1: Gatherer Badge: only matters if you equip it.
+Mechanic step 17/37 Synergy: Engineer to 1: Pays off when both survivors are on the squad.
+Mechanic step 18/37 Cooling Mods to 5: 
+Mechanic step 19/37 Ice Turret to 5: 
+Mechanic step 20/37 Glacier Badge to 1: Glacier Badge: only matters if you equip it.
+Mechanic step 21/37 Synergy: Ranger to 1: Pays off when both survivors are on the squad.
+Mechanic step 22/37 Cooling Mods Evolutions to 1: Unlocks both evolutions of Cooling Mods.
+Mechanic step 23/37 Ice Turret Evolutions to 1: Unlocks both evolutions of Ice Turret.
+Mechanic step 24/37 Thief Badge to 1: Thief Badge: only matters if you equip it.
+Mechanic step 25/37 Synergy: Ghost to 1: Pays off when both survivors are on the squad.
+Mechanic step 26/37 Magnetic Salvage to 1: Rank V passive: always on.
+Mechanic step 27/37 Fine Tuning to 1: Rank V passive: always on.
+Mechanic step 28/37 Cold Chain to 1: Rank V passive: always on.
+Mechanic step 29/37 Magnetic Salvage to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Mechanic step 30/37 Fine Tuning to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Mechanic step 31/37 Cold Chain to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Mechanic step 32/37 Synergy: Pyro to 1: Pays off when both survivors are on the squad.
+Mechanic step 33/37 Chainsaw to 5: The other branches of the fork, for the runs that offer them.
+Mechanic step 34/37 Spanner Spammer to 5: The other branches of the fork, for the runs that offer them.
+Mechanic step 35/37 Gatherer Badge to 5: 
+Mechanic step 36/37 Glacier Badge to 5: 
+Mechanic step 37/37 Thief Badge to 5: 
+Mechanic 0 pts: buy nothing; save for Transmitter 1>2 (2); later Remote Control Car 1>2, Lancer 1>2, Trusty Spanner 1>3 | left 0
+Mechanic 1 pts: buy 1 Glacier Badge 0>1 (1); save for Transmitter 1>2 (2); later Remote Control Car 1>2, Lancer 1>2, Trusty Spanner 1>3 | left 0
+Mechanic 2 pts: buy 1 Transmitter 1>2 (2); later Remote Control Car 1>2, Lancer 1>2, Transmitter 2>3 | left 0
+Mechanic 3 pts: buy 1 Transmitter 1>2 (2), 2 Glacier Badge 0>1 (1); save for Remote Control Car 1>2 (2); later Lancer 1>2, Transmitter 2>3, Trusty Spanner 1>3 | left 0
+Mechanic 5 pts: buy 1 Transmitter 1>2 (2), 2 Remote Control Car 1>2 (2), 3 Glacier Badge 0>1 (1); save for Lancer 1>2 (2); later Transmitter 2>3, Remote Control Car 2>3, Trusty Spanner 1>3 | left 0
+Mechanic 8 pts: buy 1 Transmitter 1>2 (2), 2 Remote Control Car 1>2 (2), 3 Lancer 1>2 (2), 4 Trusty Spanner 1>2 (2); save for Transmitter 2>3 (3); later Remote Control Car 2>3, Trusty Spanner 2>3, Lancer 2>4 | left 0
+Mechanic 13 pts: buy 1 Transmitter 1>3 (5), 2 Remote Control Car 1>3 (5), 3 Lancer 1>2 (2), 4 Glacier Badge 0>1 (1); save for Trusty Spanner 1>2 (2); later Lancer 2>4, Transmitter Evolutions 0, Remote Control Car Evolutions 0 | left 0
+Mechanic 40 pts: buy 1 Transmitter 1>3 (5), 2 Remote Control Car 1>3 (5), 3 Lancer 1>4 (9), 4 Trusty Spanner 1>3 (5), 5 Transmitter Evolutions 0 (5), 6 Remote Control Car Evolutions 0 (5), 7 Nitro-Gun 1>3 (5), 8 Glacier Badge 0>1 (1); save for Transmitter 3>4 (4); later Remote Control Car 3>5, Nitro-Gun 3>5, Cooling Mods 1>3 | left 0
+Ranger step 1/37 Falcon to 2: Cheap damage and cooldown on a starting ability.
+Ranger step 2/37 Good Boy to 2: Cheap damage and cooldown on a starting ability.
+Ranger step 3/37 Repeater Crossbow to 2: The second starting weapon carries the early run.
+Ranger step 4/37 Falcon to 3: 
+Ranger step 5/37 Good Boy to 3: 
+Ranger step 6/37 Crossbow to 3: Levels of the first two weapons are cheap and speed up the start.
+Ranger step 7/37 Repeater Crossbow to 4: Levels of the first two weapons are cheap and speed up the start.
+Ranger step 8/37 Unlock Falcon Evolutions to 1: Unlocks both evolutions of Falcon: the biggest spike in the tree.
+Ranger step 9/37 Unlock Good Boy Evolutions to 1: Unlocks both evolutions of Good Boy: the biggest spike in the tree.
+Ranger step 10/37 Barber to 3: One tier-3 weapon first: the one you levelled most.
+Ranger step 11/37 Falcon to 5: Max the starting abilities.
+Ranger step 12/37 Good Boy to 5: Max the starting abilities.
+Ranger step 13/37 Barber to 5: 
+Ranger step 14/37 Animal Whistle to 3: Rank III ability.
+Ranger step 15/37 Incense to 3: Rank III ability.
+Ranger step 16/37 Dexterity Badge to 1: Dexterity Badge: only matters if you equip it.
+Ranger step 17/37 Synergy: Mechanic to 1: Pays off when both survivors are on the squad.
+Ranger step 18/37 Animal Whistle to 5: 
+Ranger step 19/37 Incense to 5: 
+Ranger step 20/37 Refresh Badge to 1: Refresh Badge: only matters if you equip it.
+Ranger step 21/37 Synergy: Ghost to 1: Pays off when both survivors are on the squad.
+Ranger step 22/37 Unlock Whistle Evolutions to 1: Unlocks both evolutions of Animal Whistle.
+Ranger step 23/37 Unlock Incense Evolutions to 1: Unlocks both evolutions of Incense.
+Ranger step 24/37 Training Badge to 1: Training Badge: only matters if you equip it.
+Ranger step 25/37 Synergy: Engineer to 1: Pays off when both survivors are on the squad.
+Ranger step 26/37 Seasoned Tracker to 1: Rank V passive: always on.
+Ranger step 27/37 Trophy Hunter to 1: Rank V passive: always on.
+Ranger step 28/37 Pack Tactics to 1: Rank V passive: always on.
+Ranger step 29/37 Seasoned Tracker to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ranger step 30/37 Trophy Hunter to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ranger step 31/37 Pack Tactics to 3: Passives scale to level 3 (1 + 3 + 5 points).
+Ranger step 32/37 Synergy: Huntress to 1: Pays off when both survivors are on the squad.
+Ranger step 33/37 Shockspike to 5: The other branches of the fork, for the runs that offer them.
+Ranger step 34/37 Flarebolt to 5: The other branches of the fork, for the runs that offer them.
+Ranger step 35/37 Dexterity Badge to 5: 
+Ranger step 36/37 Refresh Badge to 5: 
+Ranger step 37/37 Training Badge to 5: 
+Ranger 0 pts: buy nothing; save for Falcon 1>2 (2); later Good Boy 1>2, Repeater Crossbow 1>2, Crossbow 1>3 | left 0
+Ranger 1 pts: buy 1 Seasoned Tracker 0>1 (1); save for Falcon 1>2 (2); later Good Boy 1>2, Repeater Crossbow 1>2, Crossbow 1>3 | left 0
+Ranger 2 pts: buy 1 Falcon 1>2 (2); later Good Boy 1>2, Repeater Crossbow 1>2, Falcon 2>3 | left 0
+Ranger 3 pts: buy 1 Falcon 1>2 (2), 2 Seasoned Tracker 0>1 (1); save for Good Boy 1>2 (2); later Repeater Crossbow 1>2, Falcon 2>3, Crossbow 1>3 | left 0
+Ranger 5 pts: buy 1 Falcon 1>2 (2), 2 Good Boy 1>2 (2), 3 Seasoned Tracker 0>1 (1); save for Repeater Crossbow 1>2 (2); later Falcon 2>3, Good Boy 2>3, Crossbow 1>3 | left 0
+Ranger 8 pts: buy 1 Falcon 1>2 (2), 2 Good Boy 1>2 (2), 3 Repeater Crossbow 1>2 (2), 4 Crossbow 1>2 (2); save for Falcon 2>3 (3); later Good Boy 2>3, Crossbow 2>3, Repeater Crossbow 2>4 | left 0
+Ranger 13 pts: buy 1 Falcon 1>3 (5), 2 Good Boy 1>3 (5), 3 Repeater Crossbow 1>2 (2), 4 Seasoned Tracker 0>1 (1); save for Crossbow 1>2 (2); later Repeater Crossbow 2>4, Unlock Falcon Evolutions 0, Unlock Good Boy Evolutions 0 | left 0
+Ranger 40 pts: buy 1 Falcon 1>3 (5), 2 Good Boy 1>3 (5), 3 Repeater Crossbow 1>4 (9), 4 Crossbow 1>3 (5), 5 Unlock Falcon Evolutions 0 (5), 6 Unlock Good Boy Evolutions 0 (5), 7 Barber 1>3 (5), 8 Seasoned Tracker 0>1 (1); save for Falcon 3>4 (4); later Good Boy 3>5, Barber 3>5, Animal Whistle 1>3 | left 0

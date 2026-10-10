@@ -84,9 +84,10 @@ namespace YazsCompanion.Bench
         static Dictionary<int, int> AllAt(int level) { return Fixture().ToDictionary(b => b.Id, b => level); }
 
         static readonly Dictionary<string, PowerFacts> Powers = new Dictionary<string, PowerFacts>(StringComparer.Ordinal);
-        static PowerFacts Fact(string name) { PowerFacts f; return name != null && Powers.TryGetValue(name, out f) ? f : null; }
+        // internal since 0.16.0: YardBadgeCases (C16-07) reads the same probe facts
+        internal static PowerFacts Fact(string name) { PowerFacts f; return name != null && Powers.TryGetValue(name, out f) ? f : null; }
 
-        static void LoadProbe(string probePath)
+        internal static void LoadProbe(string probePath)
         {
             Powers.Clear();
             using (var doc = JsonDocument.Parse(File.ReadAllText(probePath)))
@@ -117,11 +118,14 @@ namespace YazsCompanion.Bench
         static Knowledge KRecruits() { var k = K(); k.BadgeRules.RecruitWeight = 0.3; return k; }
         static Build Preset(string id) { return id == null ? null : Builds.Presets.First(b => b.Id == id); }
 
-        static LoadoutInput Input(Sc sc, Knowledge k, int slots = -1, Build build = null)
+        // facts: the powerups' probe facts (Fact: data\probe.json once a data section loaded it - none in --no-data); a pure case passes
+        // its own (NoFacts) so both bench forms give it the same advice
+        static PowerFacts NoFacts(string name) { return null; }
+        static LoadoutInput Input(Sc sc, Knowledge k, int slots = -1, Build build = null, Func<string, PowerFacts> facts = null)
         {
             var d = new Doctrine { Farming = sc.Farming, Caution = sc.Caution, TagPlan = sc.TagPlan };
             var rec = sc.Recruits.Select(r => new KeyValuePair<string, Build>(r, Builds.PresetsOf(r).First())).ToList();
-            var inp = Loadout.Prepare(sc.Leader, build ?? Preset(sc.Preset), sc.Mode, sc.Diff, d, k, Fact, rec);
+            var inp = Loadout.Prepare(sc.Leader, build ?? Preset(sc.Preset), sc.Mode, sc.Diff, d, k, facts ?? Fact, rec);
             inp.Slots = slots >= 0 ? slots : sc.Slots;
             foreach (var kv in sc.Levels) inp.Levels[kv.Key] = kv.Value;
             if (sc.SaveRanks) foreach (var id in SaveClosed) inp.RankOpen[id] = false;
@@ -307,6 +311,128 @@ namespace YazsCompanion.Bench
         static string Ids(IEnumerable<int> ids) { var l = ids.ToList(); return l.Count == 0 ? "-" : string.Join(",", l); }
         static string Names(LoadoutAdvice a) { return string.Join(", ", a.Picks.Select(p => p.Badge.Short + " " + P(p.Score))); }
 
+        /// <summary>0.16.0: the pure badge-advice cases (C16-16 L6c: the summary row's join forms, the marker digits) - also in --no-data
+        /// (Verdict.DataFree).</summary>
+        public static int RunPure()
+        {
+            int was = _bad; _bad = 0;
+            Console.WriteLine("\n=== 0.16.0: SELECT LOADOUT at 1280 x 800 - the second summary row joins the EQUIP row in a shorter form, the marker digits at 15 px (C16-16)");
+            JoinCases();
+            DigitCases();
+            int mine = _bad;
+            Console.WriteLine("  " + (mine == 0 ? "all as wanted" : mine + " BAD"));
+            _bad = was + mine;
+            return mine;
+        }
+
+        // the joined row's width at the 15 px floor (units): a line fitted to the five joined widths the Deck logged on 2026-10-07 (the 20261007_195304
+        // session's companion.log :130 1293, :138 1154, :141 1590, :148 1397, :158 1131 - research\roadmap_1007\scratch\gap_companion\loadout_rows.py)
+        const string Dot = "·", Bar = "   |   ";
+        static SummaryRow Row(string kind, string label, string shortLabel, params string[] items)
+        {
+            var r = new SummaryRow { Kind = kind, Label = label, Short = shortLabel, Sep = Dot };
+            foreach (var i in items) r.Items.Add(new SummaryItem { Text = i, Equipped = !char.IsDigit(i[0]) });
+            return r;
+        }
+        static string Joined(KeyValuePair<SummaryRow, SummaryRow> f) { return f.Key.Text() + Bar + f.Value.Text(); }
+
+        static void JoinCases()
+        {
+            var equip = Row("equip", "EQUIP", "", "1 Gunner", "2 Critical", "3 Power", "4 Speed");
+            var swap = Row("swap", "SWAP OUT", "OUT", "Bomber", "Tough");
+            var close = Row("close", "CLOSE CALLS - KEEP", "KEEP", "Tough");
+            var free = Row("free", "NOTHING TO SWAP OUT - FILL THE FREE SLOTS", "FILL THE FREE SLOTS");
+            var match = Row("match", "YOUR BADGES MATCH THE ADVICE", "ALL EQUIPPED");
+            string e1 = "EQUIP  1 Gunner " + Dot + " 2 Critical " + Dot + " 3 Power " + Dot + " 4 Speed", e2 = "EQUIP  Gunner " + Dot + " Critical " + Dot + " Power " + Dot + " Speed";
+            var want = new Dictionary<string, string[]>
+            {
+                { "swap", new[] { e1 + Bar + "SWAP OUT  Bomber " + Dot + " Tough", e2 + Bar + "SWAP OUT  Bomber " + Dot + " Tough", e2 + Bar + "OUT  Bomber " + Dot + " Tough" } },
+                { "close", new[] { e1 + Bar + "CLOSE CALLS - KEEP  Tough", e2 + Bar + "CLOSE CALLS - KEEP  Tough", e2 + Bar + "KEEP  Tough" } },
+                { "free", new[] { e1 + Bar + "NOTHING TO SWAP OUT - FILL THE FREE SLOTS", e2 + Bar + "NOTHING TO SWAP OUT - FILL THE FREE SLOTS", e2 + Bar + "FILL THE FREE SLOTS" } },
+                { "match", new[] { e1 + Bar + "YOUR BADGES MATCH THE ADVICE", e2 + Bar + "YOUR BADGES MATCH THE ADVICE", e2 + Bar + "ALL EQUIPPED" } },
+            };
+            var seconds = new[] { swap, close, free, match };
+            var bad = new List<string>();
+            foreach (var s in seconds)
+            {
+                var forms = LoadoutView.JoinForms(equip, s).Select(Joined).ToList();
+                for (int i = 0; i < 3; i++) if (forms.Count != 3 || forms[i] != want[s.Kind][i]) { bad.Add(s.Kind + " form " + (i + 1) + ": '" + (i < forms.Count ? forms[i] : "-") + "'"); break; }
+            }
+            Check("L6c JoinForms: (1) as 0.15.x, (2) the EQUIP row without its ranks, (3) and the second row under its short label - exactly, for SWAP OUT / CLOSE CALLS / FILL THE FREE SLOTS / MATCH",
+                bad.Count == 0, bad.Count > 0 ? bad[0] : "");
+
+            // the width model: units = a x characters + b, least squares over the five logged joins (form 1)
+            var live = new[] { new KeyValuePair<string, double>("SWAP OUT  Bomber " + Dot + " Tough", 1293), new KeyValuePair<string, double>("SWAP OUT  Bomber", 1154),
+                new KeyValuePair<string, double>("NOTHING TO SWAP OUT - FILL THE FREE SLOTS", 1590), new KeyValuePair<string, double>("YOUR BADGES MATCH THE ADVICE", 1397), new KeyValuePair<string, double>("SWAP OUT  Tough", 1131) };
+            var xs = live.Select(kv => (double)(e1 + Bar + kv.Key).Length).ToArray(); var ys = live.Select(kv => kv.Value).ToArray();
+            double mx = xs.Average(), my = ys.Average();
+            double a = xs.Zip(ys, (x, y) => (x - mx) * (y - my)).Sum() / xs.Sum(x => (x - mx) * (x - mx)), b = my - a * mx;
+            Func<string, double> width = t => a * t.Length + b;
+            const double room = 1213;
+            var chosen = new List<string>(); var widths = new List<string>();
+            foreach (var s in seconds)
+            {
+                var forms = LoadoutView.JoinForms(equip, s);
+                int pick = 0;
+                for (int i = 0; i < forms.Count && pick == 0; i++) if (width(Joined(forms[i])) <= room) pick = i + 1;
+                chosen.Add(s.Kind + " " + pick);
+                widths.Add(s.Kind + " " + string.Join(" / ", forms.Select(f => width(Joined(f)).ToString("0", IC))));
+            }
+            Check("L6c the Deck's band (1213 units at the floor; the logged widths' model " + a.ToString("0.00", IC) + " u per character " + b.ToString("+0.0;-0.0", IC) + "): swap form 2, close form 2, free form 3, match form 3 - never dropped",
+                string.Join(", ", chosen) == "swap 2, close 2, free 3, match 3" && Math.Abs(a - 17.80) < 0.01, string.Join(", ", chosen) + " | " + string.Join("; ", widths));
+
+            var bare = equip.WithoutRanks();
+            var odd = Row("equip", "EQUIP", "", "Speed", "2 Critical", "10 Power").WithoutRanks();
+            Check("L6c a row without its ranks keeps its order and its equipped marks; an item without a rank is left as it is",
+                string.Join(",", bare.Items.Select(i => i.Text)) == "Gunner,Critical,Power,Speed" && bare.Items.Select(i => i.Equipped).SequenceEqual(equip.Items.Select(i => i.Equipped))
+                && string.Join(",", odd.Items.Select(i => i.Text)) == "Speed,Critical,Power" && equip.Items[0].Text == "1 Gunner" && bare.Label == "EQUIP",
+                string.Join(",", bare.Items.Select(i => i.Text)) + " | " + string.Join(",", odd.Items.Select(i => i.Text)));
+
+            // the short labels as the view sets them (SummaryOf): a real advice with the equipped set made to match, to keep a close call (the
+            // best badge not advised in the last slot), to have a swap (the worst rated badge there) and to leave every slot free. The advice is
+            // built without the probe's facts (NoFacts), so the full bench and --no-data see the same four rows
+            var k = K(); var sc = new Sc { Leader = "SWAT", Diff = 1, Levels = SaveLevels, SaveRanks = true };
+            var adv = Loadout.Recommend(Input(sc, k, facts: NoFacts), Fixture(), k, 0);
+            var advised = adv.Picks.Where(p => !p.Forced).Select(p => p.Badge.Id).ToList();
+            var others = adv.Rows.Where(r => r.Unlocked && r.Rated && !advised.Contains(r.Badge.Id)).ToList();
+            int best = others.Select(r => r.Badge.Id).FirstOrDefault(), worst = others.OrderBy(r => r.Score).Select(r => r.Badge.Id).FirstOrDefault();
+            var seen = new List<string>();
+            foreach (var eq in new[] { advised, advised.Take(advised.Count - 1).Concat(new[] { best }).ToList(), advised.Take(advised.Count - 1).Concat(new[] { worst }).ToList(), new List<int>() })
+            {
+                var v = LoadoutView.Of(adv, eq, new int[0], 4, LoadoutDetail.NumbersAndReason, k);
+                var r2 = v.Rows.Count > 1 ? v.Rows[1] : null;
+                seen.Add(r2 == null ? "no second row" : r2.Kind + " '" + r2.Short + "'");
+            }
+            Check("L6c the view sets the short label of each second row: match 'ALL EQUIPPED', close 'KEEP' (the best badge not advised kept), swap 'OUT' (the worst rated one), free 'FILL THE FREE SLOTS'",
+                advised.Count > 1 && others.Count > 1 && best != worst && string.Join(", ", seen) == "match 'ALL EQUIPPED', close 'KEEP', swap 'OUT', free 'FILL THE FREE SLOTS'", string.Join(", ", seen));
+        }
+
+        static void DigitCases()
+        {
+            var deck143 = Mock(800, new R4(0, -120, 3840, 2280)); var o143 = LoadoutLayout.Choose(deck143);
+            var deck200 = MockReal(true); var o200 = LoadoutLayout.Choose(deck200);
+            var pc = MockReal(false); var opc = LoadoutLayout.Choose(pc);
+            var pcMock = Mock(1440, new R4(-660, 0, 4500, 2160)); var opm = LoadoutLayout.Choose(pcMock);
+            Func<LayoutOut, LayoutIn, string> px = (o, i) => Math.Round(o.MarkerUnits).ToString(IC) + " u, digits " + (o.NumberUnits * i.UnitPx).ToString("0.00", IC) + " px";
+            Check("L6c the marker digits at 1280 x 800: the 143-unit cells 75 u -> 15.00 px (13.00 before), the 200-unit cells 80 u -> 15.00 px (13.87 before); never over 0.60 x the diamond",
+                Math.Round(o143.MarkerUnits) == 75 && Math.Abs(o143.NumberUnits * deck143.UnitPx - 15) < 0.01 && Math.Round(o200.MarkerUnits) == 80 && Math.Abs(o200.NumberUnits * deck200.UnitPx - 15) < 0.01
+                && o143.NumberUnits <= 0.60f * o143.MarkerUnits + 1e-3 && o200.NumberUnits <= 0.60f * o200.MarkerUnits + 1e-3, "143: " + px(o143, deck143) + " | 200: " + px(o200, deck200));
+            Check("L6c the PC keeps 0.52 x the diamond (57 u, 19.8 px digits; the real 200-unit cells too)",
+                Math.Abs(opm.NumberUnits - 0.52f * opm.MarkerUnits) < 1e-3 && Math.Round(opm.MarkerUnits) == 57 && Math.Abs(opc.NumberUnits - 0.52f * opc.MarkerUnits) < 1e-3, px(opm, pcMock) + " | " + px(opc, pc));
+            string ui = null, lui = null, badges = null;
+            try
+            {
+                string dir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "YazsCompanion.Mod"));
+                ui = File.ReadAllText(Path.Combine(dir, "Ui.cs")); lui = File.ReadAllText(Path.Combine(dir, "LoadoutUi.cs")); badges = File.ReadAllText(Path.Combine(dir, "Menu.Badges.cs"));
+            }
+            catch { }
+            var calls = badges == null ? new List<string>() : Regex.Matches(badges, @"Ui\.Marker\(([^()]*)\)").Cast<Match>().Select(m => m.Groups[1].Value).ToList();
+            Check("L6c sources: Ui.Marker takes the digits' share (0.52 by default), the run setup screen passes NumberUnits / MarkerUnits, the menu's BADGES page keeps the default",
+                ui != null && ui.Contains("float numberShare = 0.52f)") && ui.Contains("m.Text.fontSize = size * numberShare;") && lui != null && lui.Contains("Ui.Marker(on, MarkName, size, _numTemplate, share);")
+                && lui.Contains("_lo.NumberUnits / _lo.MarkerUnits") && calls.Count >= 2 && calls.All(c => c.Split(',').Length == 4),
+                ui == null ? "sources not found" : calls.Count + " BADGES page call(s): " + string.Join(" | ", calls));
+        }
+
         public static int Run(string probePath, string gamedataPath)
         {
             _bad = 0;
@@ -321,6 +447,7 @@ namespace YazsCompanion.Bench
             Layout();
             Safety();
             Replay();
+            RunPure();                                          // 0.16.0 (C16-16): L6c and the digits, also in --no-data (Verdict.DataFree)
             Console.WriteLine("\n  badge advice: " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
         }
@@ -876,9 +1003,10 @@ namespace YazsCompanion.Bench
                 && opc.NumberUnits * pc.UnitPx >= 13 && opc.WhyFontUnits * pc.UnitPx >= 15 - 1e-3 && opc.Why.Size == "943x143" && opc.Sum.Size == "1090x205", say(opc) + " | bands " + opc.Bands);
             // L2 Deck 1280x800
             var deck = Mock(800, new R4(0, -120, 3840, 2280), rows: 3, detail: LoadoutDetail.Full); var odeck = LoadoutLayout.Choose(deck); L7("Deck", deck, odeck, l7);
-            Check("L2 Deck 1280x800: WHY grid-gap 2 lines at 45 u; summary under-slots rows 1-2 at 15 px, Full's row 3 dropped (not shrunk); marker 75 u = 25 px, number 13 px",
+            // 0.16.0 (C16-16, DK-C05): the marker digits at the 15 px floor (13 px before: 0.52 x the diamond)
+            Check("L2 Deck 1280x800: WHY grid-gap 2 lines at 45 u; summary under-slots rows 1-2 at 15 px, Full's row 3 dropped (not shrunk); marker 75 u = 25 px, number 15 px",
                 odeck.WhyAt == "grid-gap" && odeck.WhyLines == 2 && Math.Abs(odeck.WhyFontUnits - 45) < 0.05 && odeck.SumAt == "under-slots" && odeck.SumRows == 2 && Math.Abs(odeck.SumFontUnits * deck.UnitPx - 15) < 0.01
-                && odeck.Dropped.Contains("yard") && Math.Round(odeck.MarkerUnits) == 75 && Math.Round(odeck.MarkerUnits * deck.UnitPx) == 25 && Math.Round(odeck.NumberUnits * deck.UnitPx) == 13, say(odeck));
+                && odeck.Dropped.Contains("yard") && Math.Round(odeck.MarkerUnits) == 75 && Math.Round(odeck.MarkerUnits * deck.UnitPx) == 25 && odeck.NumberUnits * deck.UnitPx >= 15 - 1e-3, say(odeck));
             // L3 1920x1080
             var hd = Mock(1080, new R4(0, 0, 3840, 2160)); var ohd = LoadoutLayout.Choose(hd); L7("1080p", hd, ohd, l7);
             Check("L3 1920x1080: as L1, in the same view bands", ohd.WhyAt == "grid-gap" && ohd.WhyLines == 2 && ohd.SumAt == "under-slots" && ohd.SumRows == 2 && Math.Abs(ohd.FontUnits - 40.5) < 0.05, say(ohd));
@@ -897,9 +1025,11 @@ namespace YazsCompanion.Bench
             // row - SWAP OUT Bomber · Tough - was gone without a word; it joins the EQUIP row when both fit at the floor, else the drawn line says so
             string uiSrc = null;
             try { var p = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "YazsCompanion.Mod", "LoadoutUi.cs")); uiSrc = File.Exists(p) ? File.ReadAllText(p) : null; } catch { uiSrc = null; }
-            Check("L6b one summary row: the dropped SWAP OUT row joins the EQUIP row when both fit the band at the floor, else the [loadout] drawn line names the drop (C-m3)",
-                uiSrc != null && uiSrc.Contains("if (_lo.Dropped.Contains(\"swap\") && rows.Count > 1) { second = rows[1]; rows.RemoveAt(1); }") && uiSrc.Contains("if (jw > 0f && jw * minU / f <= width) { texts[0] = joined;")
-                && uiSrc.Contains(" row dropped (one row fits; joined it needs ") && uiSrc.Contains("LoadoutLayout.Drawn(_lo, _unitPx) + (detail >= LoadoutDetail.NumbersAndReason ? _sumNote : \"\")"),
+            // 0.16.0 (C16-16, DK-C05): a ladder of shorter joined forms before the drop (LoadoutView.JoinForms; L6c in RunPure)
+            Check("L6b one summary row: the dropped second row joins the EQUIP row in the first form that fits the band at the floor (as 0.15.x, the ranks left to the markers, the short label), else the [loadout] drawn line names the drop (C-m3)",
+                uiSrc != null && uiSrc.Contains("if (_lo.Dropped.Contains(\"swap\") && rows.Count > 1) { second = rows[1]; rows.RemoveAt(1); }") && uiSrc.Contains("var forms = LoadoutView.JoinForms(rows[0], second);")
+                && uiSrc.Contains("if (jw > 0f && need <= width) { joined = cand; form = fi + 1; jwAt = jw; }") && uiSrc.Contains("\"form 2: the ranks left to the markers; \"") && uiSrc.Contains("\"form 3: short label; \"")
+                && uiSrc.Contains(" row dropped (one row fits; the shortest joined form needs ") && uiSrc.Contains("LoadoutLayout.Drawn(_lo, _unitPx) + (detail >= LoadoutDetail.NumbersAndReason ? _sumNote : \"\")"),
                 uiSrc == null ? "LoadoutUi.cs not found" : "");
             // 0.15.x (C-m5 of the 10-07 review): the CHOSEN BADGES markers on one layer drawn after every slot (the next slot cut the '3' and
             // the rust diamonds since 0.13.0), each on a stand-in that follows its slot every frame; the layer goes with the screen

@@ -36,6 +36,9 @@
 //  18. (0.15.0) the Training Yard purchase log (TreeDiff: bought / refunded between two reads, 'advice #n' against the advice shown,
 //      'not advised', a points reset, other tabs) and the sources of the proof lines (first input, ribbon, the wide Off / back
 //      step of the pause walk): TreeCases.cs.
+//  19. (0.16.0) the item book - a rule per chest item (C16-02, C16-12): ItemBookCases.cs (after 11); the held-item rules (C16-01):
+//      HeldCases.cs; stat cards by their own value, the Research Pod by fit, the ties (C16-05, C16-08): RankSmallCases.cs; the
+//      Training Yard's badge steering (C16-07): YardBadgeCases.cs. Their pure parts also run in --no-data (Verdict.DataFree).
 // Usage: ItemBench [gamedata.json] --probe path\to\probe.json
 using System;
 using System.Collections.Generic;
@@ -46,7 +49,11 @@ using YazsCompanion;
 
 namespace YazsCompanion.Bench
 {
-    sealed class ProbeItem { public string Name, Desc; public List<string> Stats = new List<string>(); public bool Healing; }
+    sealed class ProbeItem
+    {
+        public string Name, Desc; public List<string> Stats = new List<string>(); public bool Healing;
+        public bool InPool, Animal;         // 0.16.0: the probe's 'inPool' (C16-02, the item book's coverage) and 'animal' (C16-01i) flags
+    }
     sealed class ProbeWeapon { public string Asset, Name, Class, Previous, Tier; }
 
     static class Checks
@@ -97,6 +104,8 @@ namespace YazsCompanion.Bench
                     JsonElement e;
                     if (it.TryGetProperty("desc", out e)) pi.Desc = e.GetString();
                     if (it.TryGetProperty("healing", out e)) pi.Healing = e.GetBoolean();
+                    if (it.TryGetProperty("inPool", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.InPool = e.GetBoolean();     // 0.16.0 (C16-02)
+                    if (it.TryGetProperty("animal", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.Animal = e.GetBoolean();     // 0.16.0 (C16-01i)
                     if (it.TryGetProperty("stats", out e)) foreach (var t in e.EnumerateArray()) pi.Stats.Add(t.GetString());
                     Items.Add(pi);
                 }
@@ -119,6 +128,7 @@ namespace YazsCompanion.Bench
             bad += MatchFixes.Run(Find, Items);                        // 0.13.0 C1 / C2 / C3 / C5 from the 10-04 match (MatchFixCases.cs)
             bad += RunFixes.Run();                                      // 0.14.0 B1 / B3 / B4 / A1 / B5 / B6 from the 10-05 run (RunFixCases.cs)
             bad += Wordings.Run(Powers.Values.ToList(), Items, Weapons);       // 0.14.0 A1 stage 2: the plain words under the cards (WordingCases.cs)
+            bad += ItemBookCases.Run(Items);                            // 0.16.0 C16-02 / C16-12: the item book - a rule per chest item (ItemBookCases.cs)
             bad += QuestCases.Run(probePath);                           // 0.14.0 C3: the active quest's objectives as advice (QuestCases.cs)
             bad += HintCases.Run(Items);                                // 0.14.0 C4: action hints, WHY on highlight, CLOSE CALL, the band manager (HintCases.cs)
             bad += ReviewCases.Run();                                   // 0.14.0: the integration review's findings replayed (ReviewCases.cs)
@@ -126,6 +136,9 @@ namespace YazsCompanion.Bench
             bad += Drift.Run(probePath, exact);                         // 0.15.0 C15-02: the asset fallback, the run-time drift guard (DriftCases.cs)
             bad += RankCases.Run();                                     // 0.15.0 C15-07: a lent build's level-up style shown and switchable (RankCases.cs)
             bad += TreeCases.Run();                                     // 0.15.0 C15-08: the Training Yard purchase log and the proof lines (TreeCases.cs)
+            bad += HeldCases.Run(Items);                                // 0.16.0 C16-01: the held-item rules (HeldCases.cs)
+            bad += RankSmall.Run();                                     // 0.16.0 C16-05 / C16-08 (RankSmallCases.cs)
+            bad += YardBadgeCases.Run(probePath, gamedataPath);         // 0.16.0 C16-07: the Training Yard's badge steering (YardBadgeCases.cs)
             return bad == 0 ? 0 : 3;
         }
 
@@ -336,7 +349,7 @@ namespace YazsCompanion.Bench
         // rank open), the weapon nodes tagged with the depth of the weapon they boost as TreeState does live. What is
         // printed: the weapon steps in plan order ("Infernax>3 @10" = step 10 takes Infernax to 3); the check: the main
         // branch comes before the two other tier-3 weapons, and those come after the rank V passives.
-        static List<TNode> TreeOf(JsonElement nodes, string tree, string branch, Dictionary<string, int> levels = null)
+        internal static List<TNode> TreeOf(JsonElement nodes, string tree, string branch, Dictionary<string, int> levels = null)
         {
             var k = Knowledge.FromJson(Knowledge.DefaultJson); var list = new List<TNode>();
             var kinds = new Dictionary<string, TKind>(StringComparer.OrdinalIgnoreCase) { { "weapon", TKind.Weapon }, { "ability", TKind.Ability }, { "evolution", TKind.Evolution }, { "synergy", TKind.Synergy }, { "badge", TKind.Badge }, { "passive", TKind.Passive }, { "stat", TKind.Stat }, { "mechanic", TKind.Mechanic } };

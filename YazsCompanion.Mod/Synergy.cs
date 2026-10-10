@@ -16,6 +16,7 @@
 // Pure C# (no game types): GameState.cs fills PowerFacts and TeamBoost from the live objects, the bench by hand.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace YazsCompanion
@@ -165,17 +166,22 @@ namespace YazsCompanion
         }
 
         // ---- the stat cards (Ranker.ScoreMilitary; pure, so the bench replays the logged cards)
-        /// <summary>The rarity factor of a stat card: Common 1, Rare 2, Legendary 3 - the cards' own numbers go about 1 : 2 : 3-4 by
-        /// rarity - and an Endless card <see cref="EndlessWeight"/> of <paramref name="endlessRatio"/>.</summary>
-        public static double RarityWeight(string rarity, double endlessRatio)
+        /// <summary>The rarity factor of a stat card (0.16.0, C16-05): its own value against the Common card of its stat, ratio = |own[0]| / |bonuses[0]| (Ranker.OwnRatio). Common 1 whatever the ratio; Rare held to 1 - 4 (1.875 - 2.5 in 1.0.2's data), 2 when unreadable; Legendary held to 1 - 6 (3 - 5), 3 when unreadable; Endless <see cref="EndlessWeight"/>; any other rarity 1. Up to 0.15.0 Rare and Legendary were a flat 2 and 3.</summary>
+        public static double RarityWeight(string rarity, double ratio)
         {
             switch (rarity)
             {
-                case "Legendary": return 3.0;
-                case "Rare": return 2.0;
-                case "Endless": return EndlessWeight(endlessRatio);
+                case "Legendary": return OwnWeight(ratio, 3.0, 1.0, 6.0);
+                case "Rare": return OwnWeight(ratio, 2.0, 1.0, 4.0);
+                case "Endless": return EndlessWeight(ratio);
                 default: return 1.0;
             }
+        }
+
+        static double OwnWeight(double ratio, double fallback, double lo, double hi)
+        {
+            if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0) return fallback;
+            return Math.Max(lo, Math.Min(hi, ratio));
         }
 
         /// <summary>0.14.0 (B1): an Endless card's factor is its own value against the Common card of its stat
@@ -351,6 +357,19 @@ namespace YazsCompanion
             return v;
         }
 
+        /// <summary>0.16.0 (C16-17): two evolutions' fits (<see cref="EvolutionFit"/>) closer than this are a toss-up - the PLAN names
+        /// neither as preferred (Plan.PickEvolution) and the other one's card says nothing about closing it (Ranker.ScoreEvolution).</summary>
+        public const double EvolutionTossUp = 0.25;
+
+        /// <summary>0.16.0 (C16-17): which of two evolutions of one base the squad prefers by their fits - +1 the first
+        /// (<paramref name="fitA"/>), -1 the second, 0 a toss-up (less than <see cref="EvolutionTossUp"/> apart). The one rule of the
+        /// PLAN's "(X preferred)" and the evolution card's "closes X".</summary>
+        public static int Preferred(double fitA, double fitB)
+        {
+            if (double.IsNaN(fitA) || double.IsNaN(fitB) || Math.Abs(fitA - fitB) < EvolutionTossUp) return 0;
+            return fitA > fitB ? 1 : -1;
+        }
+
         /// <summary>How well a weapon branch (a tier-3 weapon) fits what the REST of the squad deals (the survivor's own current weapon
         /// is about to be replaced, so the caller leaves it out of <paramref name="others"/>). The score is the branch's own;
         /// the REASON names only what sets it apart from the <paramref name="rivals"/> (the other branches of the fork):
@@ -481,6 +500,78 @@ namespace YazsCompanion
             int r = TierRank(b.Tier).CompareTo(TierRank(a.Tier)); if (r != 0) return r;
             r = b.Bought.CompareTo(a.Bought); if (r != 0) return r;
             return a.Class.CompareTo(b.Class);
+        }
+    }
+
+    /// <summary>0.16.0 (C16-08): what settles an exact tie of two cards on every screen but the rescue one (Ranker.Rank; the rescue screen keeps Recruit.Ties): the build's order, then the stat card's own value, then the squad's tag points in the card's damage types; equal keys: the card further left.</summary>
+    internal sealed class TieKey
+    {
+        public static readonly TieKey None = new TieKey();   // shared: never written to
+        public int BuildRank = int.MaxValue;   // its place in its owner's build (0 = first; an evolution: its base's); int.MaxValue: none
+        public double Value = 1.0;             // a stat card's rarity factor to the hundredth; any other card 1.0 = a Common card's
+        public int TagPoints;                  // the squad's tag points in its damage types (a Research Pod card: its type, negated under Spread)
+        public bool Stat, Pod, Spread;         // for the words only
+    }
+
+    /// <summary>0.16.0 (C16-08): the order of two cards with the same score to the hundredth, lexicographic (the first difference
+    /// decides; a total preorder, so the sort is well defined): (1) the build's order - an ability's place in its owner's build, an
+    /// evolution its base's, lower first; (2) the value - a stat card's own rarity factor (Synergy.RarityWeight), every other card a
+    /// Common card's 1.0, higher first: two stat cards go by their own value and the level-up's Endless filler (0.1 - 1.0) loses an
+    /// exact tie to any other card and never wins one by it; (3) the squad's tag points in the card's damage types, higher first (a
+    /// Research Pod card: its type, negated under the "Spread" tag plan, so fewer first). Equal keys: the card further left (the
+    /// caller's last key). The verifier's "value only between two stat cards" would not be transitive (stat 2 ~ weapon ~ stat 1,
+    /// but stat 2 before stat 1); the neutral 1.0 of a non-stat card keeps the order a preorder.</summary>
+    internal static class CardTies
+    {
+        public static int Compare(TieKey a, TieKey b)
+        {
+            a = a ?? TieKey.None; b = b ?? TieKey.None;
+            int c = a.BuildRank.CompareTo(b.BuildRank); if (c != 0) return c;
+            c = b.Value.CompareTo(a.Value); if (c != 0) return c;
+            return b.TagPoints.CompareTo(a.TagPoints);
+        }
+
+        public static readonly IComparer<TieKey> Comparer = Comparer<TieKey>.Create(Compare);
+
+        static string Place(int r) { return r == int.MaxValue ? "none" : "#" + (r + 1); }
+        static string X(double v) { return "x" + v.ToString("0.00", CultureInfo.InvariantCulture); }
+
+        /// <summary>The log's words for what put <paramref name="f"/> before <paramref name="s"/>; null: nothing (the position decided).</summary>
+        public static string Rule(TieKey f, TieKey s)
+        {
+            f = f ?? TieKey.None; s = s ?? TieKey.None;
+            if (f.BuildRank != s.BuildRank) return "the build's order (" + Place(f.BuildRank) + " before " + Place(s.BuildRank) + ")";
+            if (f.Value != s.Value)
+                return f.Stat && s.Stat ? "its own value (" + X(f.Value) + " before " + X(s.Value) + ")"
+                    : "the stat card's own value (" + X(f.Stat ? f.Value : s.Value) + " against a Common card's x1.00)";
+            if (f.TagPoints != s.TagPoints) return "tag points (" + Math.Abs(f.TagPoints) + " before " + Math.Abs(s.TagPoints) + (f.Spread ? ", Spread" : "") + ")";
+            return null;
+        }
+
+        /// <summary>The WHY band's words for the first card (C16-08c), a phrase after 'is'; null: none.</summary>
+        public static string Say(TieKey f, TieKey s)
+        {
+            f = f ?? TieKey.None; s = s ?? TieKey.None;
+            if (f.BuildRank != s.BuildRank) return f.BuildRank == int.MaxValue ? null : s.BuildRank == int.MaxValue ? "in the build's order" : "higher in the build's order";
+            if (f.Value != s.Value) return f.Stat && s.Stat && f.Value > s.Value ? "the bigger bonus" : null;
+            if (f.TagPoints != s.TagPoints) return f.Pod ? (f.Spread ? "the type with fewer tags" : "the type with more tags") : f.TagPoints > s.TagPoints ? "backed by more of your tags" : null;
+            return null;
+        }
+
+        /// <summary>The squad's tag points summed over the distinct damage types <paramref name="types"/> (Ranker.TagPointsOf reads
+        /// them of a powerup; 0 with no profile).</summary>
+        public static int TagPoints(IEnumerable<string> types, TagProfile tags)
+        {
+            if (types == null || tags == null) return 0;
+            int n = 0; var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in types) if (!string.IsNullOrEmpty(t) && seen.Add(t)) n += tags.PointsOf(t);
+            return n;
+        }
+
+        /// <summary>Card indexes as Ranker.Rank orders them (the bench's mirror).</summary>
+        public static List<int> Order(IList<double> scores, IList<TieKey> keys)
+        {
+            return Enumerable.Range(0, scores.Count).OrderByDescending(i => Math.Round(scores[i], 2)).ThenBy(i => keys[i] ?? TieKey.None, Comparer).ThenBy(i => i).ToList();
         }
     }
 

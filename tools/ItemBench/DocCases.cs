@@ -33,11 +33,11 @@ namespace YazsCompanion.Bench
             return File.Exists(p) ? File.ReadAllText(p).Replace("\r\n", "\n") : null;
         }
 
-        // every release published before the CHANGELOG existed; the running VERSION joins them
+        // every release published before the running VERSION (0.16.0: 0.15.0 joined the list); the running VERSION joins them
         static readonly string[] Released =
         {
             "0.5.0", "0.5.1", "0.5.2", "0.5.3", "0.5.4", "0.5.5", "0.6.0", "0.7.0", "0.8.0", "0.9.0",
-            "0.10.0", "0.10.1", "0.10.2", "0.11.0", "0.12.0", "0.12.1", "0.12.2", "0.13.0", "0.14.0",
+            "0.10.0", "0.10.1", "0.10.2", "0.11.0", "0.12.0", "0.12.1", "0.12.2", "0.13.0", "0.14.0", "0.15.0",
         };
 
         public static int Run()

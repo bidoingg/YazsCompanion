@@ -306,7 +306,9 @@ namespace YazsCompanion
             o.LineUnits = LineFactor * fontU;
             float bw = i.Grid.Length > 0 ? i.Grid[0].W : 143;
             o.MarkerUnits = MarkerUnits(bw, unit, i.Size);
-            o.NumberUnits = 0.52f * o.MarkerUnits;
+            // 0.16.0 (C16-16, DK-C05): the digits at the 15 px floor where the diamond allows it (0.52 x the diamond gave 14 px on the Deck's
+            // 200-unit cells), never over 0.60 x the diamond; the PC keeps 0.52 (57 u diamond, 19.8 px digits). The diamond keeps its size
+            o.NumberUnits = Math.Max(0.52f * o.MarkerUnits, Math.Min(MinPx / unit, 0.60f * o.MarkerUnits));
             var blocked = Blocked(i);
 
             // the grid gap is made of the grid's own cells, inside every frame around the grid: no clip (the smallest container

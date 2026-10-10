@@ -90,8 +90,10 @@ namespace YazsCompanion
             var bf = G.Facts(baseAbility);
             double a = Synergy.EvolutionFit(G.Facts(v.EvoA), bf, s.Tags, s.Boosts, s.Ctx, null);
             double b = Synergy.EvolutionFit(G.Facts(v.EvoB), bf, s.Tags, s.Boosts, s.Ctx, null);
-            if (Math.Abs(a - b) < 0.25) return null;
-            return a > b ? v.EvoA : v.EvoB;
+            // 0.16.0 (C16-17): one rule with the evolution card's "closes X" (Ranker.ScoreEvolution): a toss-up under 0.25 names neither
+            int pref = Synergy.Preferred(a, b);
+            if (pref == 0) return null;
+            return pref > 0 ? v.EvoA : v.EvoB;
         }
 
         /// <summary>The compact plan (the default during play): one row per survivor holding only what to pick next - the
@@ -199,6 +201,7 @@ namespace YazsCompanion
         static PowerupBase NextAbility(Survivor sv, Snapshot s)
         {
             PowerupBase best = null; double bestScore = double.MinValue;
+            TieKey bestKey = null;
             foreach (var a in G.Each(sv.Props.abilityBasePowerups))
             {
                 if (a == null || sv.LevelOf(a) >= 1) continue;
@@ -208,8 +211,10 @@ namespace YazsCompanion
                 if (RankClosed(a, node, sv, s)) continue;
                 var v = Ranker.AbilityScore(a, sv, s);
                 if (v.Skipped) continue;
-                double sc = v.Score;
-                if (sc > bestScore) { bestScore = sc; best = a; }
+                // 0.16.0 (C16-08): to the hundredth, a tie as on the cards (CardTies: the build's order, then the squad's tag points)
+                double sc = Math.Round(v.Score, 2);
+                var key = new TieKey { BuildRank = v.Priority >= 0 ? v.Priority : int.MaxValue, TagPoints = Ranker.TagPointsOf(a, s) };
+                if (sc > bestScore || (sc == bestScore && CardTies.Compare(key, bestKey) < 0)) { bestScore = sc; best = a; bestKey = key; }
             }
             return best;
         }
@@ -311,7 +316,8 @@ namespace YazsCompanion
         void Recruits(Snapshot s)
         {
             if (s.SquadFull || s.Squad.Count == 0) return;
-            bool late = s.Ctx.RecruitValue < RerollCall.Late;
+            // 0.16.0 (C16-01b): with a recruit's own level-ups (Reserve Bench, HeldRules) late is no reason for Liberate
+            bool late = s.Ctx.RecruitValue < RerollCall.Late && HeldRules.RecruitLevelUps(s.Held) < 1;
             // 0.13.0 (C1): the active quest's team rule - "SOS  quest: stay solo", "SOS  quest: Huntress", or the recruits late in
             // a run with "quest: full team" where the row would say Liberate
             bool replace = false; string quest = null;
@@ -319,7 +325,12 @@ namespace YazsCompanion
             if (quest != null && replace) { Add("run", "sos", "SOS", N(quest)); return; }
             var ranked = Ranker.Recruitable(s);          // who could join, by the SOS cards' rules (shared with the reroll hint, 0.12.2)
             if (ranked.Count == 0) return;
-            if (late && quest == null) { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + s.Ctx.ClockText)); return; }
+            // 0.16.0 (C16-01d): with Hijacked Signal a Liberate gives two level-ups - the row names it once it outscores every recruit
+            // (HeldRules.PlanSaysLiberate; without the item the clock rule above, unchanged)
+            int libUps = HeldRules.LiberateLevelUps(s.Held);
+            double liberate = HeldRules.LiberateScore(s.Ctx.RecruitValue, Doctrine.Current.Farming, false, libUps);
+            if (HeldRules.PlanSaysLiberate(late, libUps, ranked.Max(r => r.Score), liberate) && quest == null)
+            { Add("run", "sos", "SOS", C(Dim, "Liberate") + C(Dim, Sep + (libUps > 1 ? "two level-ups" : s.Ctx.ClockText))); return; }
             // the order the SOS cards use (0.12.2, F12): an exact tie is settled the same way here and on the card
             ranked.Sort(Recruit.Compare);
             Add("run", "sos", "SOS", string.Join(", ", ranked.Take(2).Select(r => N(Names.Class((CT)r.Class)))) + (quest != null ? C(Dim, Sep + quest) : ""));

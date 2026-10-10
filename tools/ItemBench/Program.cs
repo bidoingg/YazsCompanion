@@ -5,9 +5,12 @@
 //   - the Research Pod cards a squad would see and how they rank.
 // Usage: ItemBench [gamedata.json] [--all]   |   ItemBench --replay-loadout <companion log>   (default path: <project root>\data\gamedata.json, i.e. six levels
 //        up from the exe in tools\ItemBench\bin\Release\net8.0; --all prints every item's score for every squad)
-//        0.15.0: ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] (LogCheck.cs); --strict (the release
+//        0.15.0: ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] [--expect kind,kind] (LogCheck.cs); --strict (the release
 //        gate: data and the built DLL required) and --no-data (the cases without game data, the GitHub workflow) - Verdict.cs
 //        0.15.0: ItemBench --live-probe <probe.json of a newer game build> [--probe <fixture>] | --packs <folder> (DriftCases.cs)
+//        0.16.0: ItemBench --write-itembook [--probe <probe.json>] rewrites itembook_expected.txt (ItemBookCases.cs, C16-02)
+//        0.16.0: --timings (with a full or --strict run) prints YB8's milliseconds (YardBadgeCases.cs); without it a bench log is
+//        the same bytes on every run of one tree
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -30,13 +33,16 @@ namespace YazsCompanion.Bench
     {
         static int Main(string[] args)
         {
-            // 0.15.0 (C15-11): a log's health, PASS / FAIL per check (LogCheck.cs): ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off]
+            // 0.15.0 (C15-11): a log's health, PASS / FAIL per check (LogCheck.cs): ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] [--expect kind,kind]
             int ci = Array.IndexOf(args, "--check-log");
             if (ci >= 0) return LogCheck.Command(args, ci);
             if (args.Contains("--api-surface")) return ApiContract.Print();       // 0.15.0 (C15-01): the start of a new api_v<N>.txt
             // 0.13.0: replay the badge advice of a log (no game data needed, so before any path handling)
             int ri = Array.IndexOf(args, "--replay-loadout");
             if (ri >= 0) return Loadouts.ReplayFile(ri + 1 < args.Length ? args[ri + 1] : null);
+            // 0.16.0 (C16-02): rewrite tools\ItemBench\itembook_expected.txt (the item book's IB3 table, from data\probe.json or --probe <file>)
+            // and exit - the parity file the next bench run compares against
+            if (args.Contains("--write-itembook")) return ItemBookCases.WriteExpected(args);
             // 0.15.0 (C15-02): the drift guard's tools (DriftCases.cs), run alone: --live-probe <newer probe.json> = the fixture's name and
             // description diffs against it; --packs <folder> = every lent build pack under it against the kits and the fixture, counts only
             int lpi = Array.IndexOf(args, "--live-probe"), pki = Array.IndexOf(args, "--packs");

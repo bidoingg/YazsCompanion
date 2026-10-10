@@ -9,9 +9,12 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <NoWarn>CS8632;CS0649</NoWarn>
+    <!-- 0.16.0 (C16-11a): Menu.Walk016.cs is linked for its pure key parser (PauseRecruit); YAZS_BENCH leaves its game side out -->
+    <DefineConstants>$(DefineConstants);YAZS_BENCH</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\YazsCompanion.Mod\ItemRules.cs" Link="mod\ItemRules.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\ItemBook.cs" Link="mod\ItemBook.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Knowledge.cs" Link="mod\Knowledge.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Tags.cs" Link="mod\Tags.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Context.cs" Link="mod\Context.cs" />
@@ -29,10 +32,16 @@
     <Compile Include="..\..\YazsCompanion.Mod\QuestRules.cs" Link="mod\QuestRules.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\WhyText.cs" Link="mod\WhyText.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\ScreenCall.cs" Link="mod\ScreenCall.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\HeldRules.cs" Link="mod\HeldRules.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\ScreenBand.cs" Link="mod\ScreenBand.cs" />
+    <Compile Include="..\..\YazsCompanion.Mod\Menu.Walk016.cs" Link="mod\Menu.Walk016.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- the parity file of the badge advice: research\badges_1004\tools\value_model.py's report (1.0.2, leader only) -->
     <None Include="loadout_expected.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 0.16.0: the item book's table (C16-02, IB3; the bench's write-itembook flag rewrites it) and the Training Yard's 0.15
+         goldens (C16-07, YB0b) -->
+    <None Include="itembook_expected.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="yard_015_expected.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

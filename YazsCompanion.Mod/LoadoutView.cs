@@ -103,6 +103,9 @@ namespace YazsCompanion
         public string Label = "";                   // "EQUIP", "SWAP OUT", ... or a whole sentence when there are no items
         public readonly List<SummaryItem> Items = new List<SummaryItem>();
         public string Sep = "·";
+        // 0.16.0 (C16-16): the label a second row takes when it has to share the EQUIP row's line at 1280 x 800 (JoinForms' form 3):
+        // swap "OUT", close "KEEP", free "FILL THE FREE SLOTS", match "ALL EQUIPPED"; "" = none (the row keeps its label)
+        public string Short = "";
 
         /// <summary>The row as text; rich = equipped names in <paramref name="equippedHex"/>, missing ones in <paramref name="missingHex"/>.</summary>
         public string Text(bool rich = false, string equippedHex = "#FFFFFF", string missingHex = "#F5C752")
@@ -112,6 +115,28 @@ namespace YazsCompanion
             return Label + "  " + string.Join(" " + Sep + " ", parts);
         }
         public override string ToString() { return Text(); }
+
+        static readonly Regex RankLead = new Regex(@"^\d+ ");
+
+        /// <summary>A copy whose item texts lose a leading "&lt;digits&gt; " ("1 Gunner" -> "Gunner"): the EQUIP row without its ranks,
+        /// which the grid's markers already show (C16-16). The order of the items is kept.</summary>
+        public SummaryRow WithoutRanks()
+        {
+            var r = Copy(Label);
+            r.Items.Clear();
+            foreach (var i in Items) r.Items.Add(new SummaryItem { Text = RankLead.Replace(i.Text ?? "", ""), Equipped = i.Equipped });
+            return r;
+        }
+
+        /// <summary>A copy under its short label (unchanged when it has none).</summary>
+        public SummaryRow Shortened() { return Copy(Short.Length > 0 ? Short : Label); }
+
+        SummaryRow Copy(string label)
+        {
+            var r = new SummaryRow { Kind = Kind, Label = label, Sep = Sep, Short = Short };
+            foreach (var i in Items) r.Items.Add(new SummaryItem { Text = i.Text, Equipped = i.Equipped });
+            return r;
+        }
     }
 
     internal sealed class LoadoutView
@@ -324,6 +349,21 @@ namespace YazsCompanion
         static string Plus(double d) { return "+" + (Math.Abs(d) >= 10 ? Math.Round(d).ToString("0", IC) : d.ToString("0.0", IC)); }
         static string Behind(double d) { return d < 0.05 ? "a hair" : d.ToString("0.0", IC) + " score"; }
 
+        /// <summary>0.16.0 (C16-16): the ways the second summary row can share the first row's line where the band holds one row (1280 x 800),
+        /// longest first: (1) first | second as 0.15.x; (2) the first row without its ranks (the grid's markers show them) | second;
+        /// (3) the first row without its ranks | second under its short label ("OUT", "KEEP", "FILL THE FREE SLOTS", "ALL EQUIPPED").
+        /// LoadoutUi.DrawSummary takes the first that fits the band at the 15 px floor, else the note says the row was dropped.</summary>
+        internal static List<KeyValuePair<SummaryRow, SummaryRow>> JoinForms(SummaryRow first, SummaryRow second)
+        {
+            var bare = first.WithoutRanks();
+            return new List<KeyValuePair<SummaryRow, SummaryRow>>
+            {
+                new KeyValuePair<SummaryRow, SummaryRow>(first, second),
+                new KeyValuePair<SummaryRow, SummaryRow>(bare, second),
+                new KeyValuePair<SummaryRow, SummaryRow>(bare, second.Shortened()),
+            };
+        }
+
         static void SummaryOf(LoadoutView v, Func<BadgeFacts, string> name, Func<string, string> className, string sep, Knowledge k)
         {
             var a = v.Advice;
@@ -340,18 +380,18 @@ namespace YazsCompanion
             if (advised.Count > 0)
             {
                 SummaryRow r2;
-                if (v.Matches) r2 = new SummaryRow { Kind = "match", Label = "YOUR BADGES MATCH THE ADVICE", Sep = sep };
+                if (v.Matches) r2 = new SummaryRow { Kind = "match", Label = "YOUR BADGES MATCH THE ADVICE", Short = "ALL EQUIPPED", Sep = sep };
                 else if (v.Swaps.Count > 0)
                 {
-                    r2 = new SummaryRow { Kind = "swap", Label = "SWAP OUT", Sep = sep };
+                    r2 = new SummaryRow { Kind = "swap", Label = "SWAP OUT", Short = "OUT", Sep = sep };
                     foreach (var s in v.Swaps) r2.Items.Add(new SummaryItem { Text = name(a.RowOf(s.Key).Badge), Equipped = true });
                 }
                 else if (v.Kept.Count > 0)
                 {
-                    r2 = new SummaryRow { Kind = "close", Label = "CLOSE CALLS - KEEP", Sep = sep };
+                    r2 = new SummaryRow { Kind = "close", Label = "CLOSE CALLS - KEEP", Short = "KEEP", Sep = sep };
                     foreach (var s in v.Kept) r2.Items.Add(new SummaryItem { Text = name(a.RowOf(s.Key).Badge), Equipped = true });
                 }
-                else r2 = new SummaryRow { Kind = "free", Label = "NOTHING TO SWAP OUT - FILL THE FREE SLOTS", Sep = sep };
+                else r2 = new SummaryRow { Kind = "free", Label = "NOTHING TO SWAP OUT - FILL THE FREE SLOTS", Short = "FILL THE FREE SLOTS", Sep = sep };
                 v.Rows.Add(r2);
             }
             if (v.Detail < LoadoutDetail.Full) return;

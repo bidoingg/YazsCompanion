@@ -11,6 +11,8 @@
 // 0.14.0 (A1): the ribbon steps aside while the game shows its own "Skill Tree 3 / 5" label under the hovered recommended card
 // (the label sat right under it): Tick follows the label's fade. And the size follows the card's own scale (the card is drawn
 // at 0.77 of the canvas): on the Steam Deck the line came out at about 12 px, now about 13.
+// 0.16.0 (C16-11g): the gold frame's bottom edge stops either side of the game's TIER / NEW / RECRUIT plate (Cut) - the plate being
+// the card's class label's plate 'Content/AddonDescription' (r1 fix of 10-08; r1 measured the portrait's level diamond).
 // All of it is parented to the card root, so it rises with a hovered card and disappears with the screen.
 // Nothing here captures clicks. Colours and primitives are the shared ones in Ui.cs.
 using System;
@@ -41,6 +43,9 @@ namespace YazsCompanion
 
                 var frame = Frame(root);
                 frame.gameObject.SetActive(best);
+                // 0.16.0 (C16-11g): the frame's bottom edge stops either side of the game's plate on the card's bottom edge (TIER / NEW /
+                // RECRUIT), as the game's own highlight passes behind it - measured now and again 0.5 s later, once the plate has settled
+                if (best) { Cut(frame, root, c.Button); CutAgain(frame, root, c.Button); }
 
                 var ribbon = Ribbon(root, c.Button, CardTextSize.RibbonScale(s));        // 0.15.0: no larger than x1.3 - a larger size goes to the words
                 if (ribbon != null) ribbon.gameObject.SetActive(best);
@@ -93,6 +98,7 @@ namespace YazsCompanion
         /// <summary>Once a frame from the HUD's tick (P_HudTick): nothing unless a recommended skill card's ribbon is on screen.</summary>
         public static void Tick()
         {
+            if (_cutAt > 0f && Time.realtimeSinceStartup >= _cutAt) CutDue();      // 0.16.0 (C16-11g): the second measure with Motion off
             if (_follow == null) return;
             try
             {
@@ -173,6 +179,178 @@ namespace YazsCompanion
             var f = Ui.Frame(root, FrameName, FrameInset, FrameThick, Theme.Gold, CornerDiamond);
             f.SetAsLastSibling();
             return f;
+        }
+
+        // ---- 0.16.0 (C16-11g, C-m9 of the 10-07 review): the frame's bottom edge cut round the game's plate ----
+        // The frame stays the card root's last child (drawn over the card art), so since 0.13.0 its bottom edge - a 6-unit bar along the
+        // frame's bottom, the frame being the root inset 5 units - ran through the plate the game hangs on the card's bottom edge: TIER I
+        // on a weapon card, NEW on an ability, RECRUIT on a rescue card (series 1007b at 3440 x 1440; the game's own highlight passes
+        // behind its plate). Now the edge stops CutGap units either side of the plate (ScreenBand.EdgeCut, pure: G13 on the bench): the
+        // frame's 'Bottom' child spans the left piece, a second child 'Bottom2' the right one, both anchored in fractions of the frame's
+        // width, so the frame's entrance scale does not move the cut. The corner diamonds stay. Which object is the plate is read per
+        // card class (PlateOf); item, military and hashtag cards have none known and keep the whole edge. A plate not found, hidden or
+        // not on the edge: the edge whole. Measured when the offer shows the frame and again CutSettle later (the plate's layout may
+        // settle after the offer's first frame); the second measure logs one '[badge] plate: ...' proof line per card class and outcome
+        // a session (not verbose), naming the object measured.
+        // r1 fix (10-08): 0.16.0 r1 took powerupLevelObject - in all 20 r1 runs that logged a plate line, skill and rescue cards alike,
+        // '544x224 units, y 212..436 (the frame's bottom edge -726..-720) - no overlap, edge whole': that object ('Content/PowerupLevel')
+        // is the level diamond on the portrait, and the C_rescue shot still showed the gold line through RECRUIT. The plate is the
+        // image 'Content/AddonDescription' (sprite GenericStatBoost_Rarity_Base_01, 400 x 150 at (-0.9, -707): x -201 .. 199, y -782 ..
+        // -632 in the root's units, astride the edge), and the label written on it - TIER I / NEW / RECRUIT - is the card's className
+        // field (the field order of both cards' serialized scripts in the game's level2 scene, read offline; the card Animator's clips
+        // never move it). So PlateOf takes className's parent. The decision and the line are ScreenBand's (PlateCut / PlateLine, pure:
+        // G13 on the bench with these prefab numbers). A plate not cut says, once per card class, what does lie on the edge (DumpEdge).
+        const float CutGap = 10f, CutSettle = 0.5f;
+        const string CutKey = "badge:cut:", Bottom2Name = "Bottom2";
+        static readonly Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<Vector3> _corners = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<Vector3>(4);
+        static readonly System.Collections.Generic.HashSet<string> _plateSaid = new System.Collections.Generic.HashSet<string>();
+        static bool _cutWarned;
+        // the second measure while [General] Motion is off (Fx runs a tween at once then): from Tick
+        static RectTransform _cutFrame, _cutRoot; static UIPowerupButtonBase _cutCard; static float _cutAt = -1f;
+
+        /// <summary>The frame's bottom edge on the recommended card <paramref name="b"/> (root <paramref name="root"/>): cut round the game's plate
+        /// where the plate sits on it with room either side, else whole.</summary>
+        public static void Cut(RectTransform frame, RectTransform root, UIPowerupButtonBase b) { Cut(frame, root, b, false); }
+
+        static void Cut(RectTransform frame, RectTransform root, UIPowerupButtonBase b, bool say)
+        {
+            RectTransform bottom = null;
+            try
+            {
+                if (frame == null || root == null || b == null) return;
+                var bt = frame.Find("Bottom"); bottom = bt == null ? null : bt.TryCast<RectTransform>();
+                if (bottom == null) return;
+                string cls = TypeName(b);
+                var rr = root.rect;
+                RectTransform plate = null;
+                try { plate = PlateOf(b); } catch { plate = null; }
+                if (plate == null)
+                {
+                    Whole(frame, bottom);
+                    if (say && SayPlate(cls + ":none", "[badge] plate: " + cls + " - no plate object known, the frame is drawn whole")) DumpEdge(root, cls);
+                    return;
+                }
+                if (!plate.gameObject.activeInHierarchy)
+                {
+                    Whole(frame, bottom);
+                    // a card without its plate (the object known, switched off - e.g. a rescue screen's Liberate card, if it has none): no dump
+                    if (say) SayPlate(cls + ":hidden", "[badge] plate: " + cls + " " + plate.name + " not shown - the frame is drawn whole");
+                    return;
+                }
+                // the plate and the frame's bottom bar in the root's units (the card's own scale and its hover growth cancel)
+                plate.GetWorldCorners(_corners);
+                var p0 = root.InverseTransformPoint(_corners[0]); var p2 = root.InverseTransformPoint(_corners[2]);
+                float px0 = Mathf.Min(p0.x, p2.x), px1 = Mathf.Max(p0.x, p2.x), py0 = Mathf.Min(p0.y, p2.y), py1 = Mathf.Max(p0.y, p2.y);
+                float a1, b0;
+                string outcome = ScreenBand.PlateCut(rr.xMin, rr.xMax, rr.yMin, FrameInset, FrameThick, px0, px1, py0, py1, CutGap, out a1, out b0);
+                float x0 = rr.xMin + FrameInset, x1 = rr.xMax - FrameInset;
+                if (outcome == "cut") Pieces(frame, bottom, (a1 - x0) / (x1 - x0), (b0 - x0) / (x1 - x0));
+                else Whole(frame, bottom);
+                if (!say) return;
+                if (SayPlate(cls + ":" + outcome, ScreenBand.PlateLine(cls, plate.name, outcome, rr.xMin, rr.xMax, rr.yMin, FrameInset, FrameThick, px0, px1, py0, py1, a1, b0)) && outcome != "cut")
+                    DumpEdge(root, cls);
+            }
+            catch (Exception e)
+            {
+                try { if (frame != null && bottom != null) Whole(frame, bottom); } catch { }
+                if (!_cutWarned) { _cutWarned = true; Plugin.Logger.LogWarning("[badge] the frame's edge not cut round the card's plate (" + e.GetType().Name + " " + e.Message + "): drawn whole - said once a session"); }
+            }
+        }
+
+        // the second measure, CutSettle after the first: an Fx timer (key 'badge:cut:' + the card's pointer); with Motion off Fx would run
+        // it at once, so Tick does it then
+        static void CutAgain(RectTransform frame, RectTransform root, UIPowerupButtonBase b)
+        {
+            try
+            {
+                string key = CutKey + b.Pointer;
+                Fx.Cancel(key);
+                if (Fx.On) { Fx.Run(key, CutSettle, 0.01f, k => { if (k >= 1f) Cut(frame, root, b, true); }); return; }
+                _cutFrame = frame; _cutRoot = root; _cutCard = b; _cutAt = Time.realtimeSinceStartup + CutSettle;
+            }
+            catch { }
+        }
+
+        static void CutDue()
+        {
+            var f = _cutFrame; var r = _cutRoot; var b = _cutCard;
+            _cutAt = -1f; _cutFrame = null; _cutRoot = null; _cutCard = null;
+            Cut(f, r, b, true);
+        }
+
+        /// <summary>The proof line, once a session per key (card class and outcome); true when it was said now.</summary>
+        static bool SayPlate(string key, string line) { if (!_plateSaid.Add(key)) return false; Plugin.Logger.LogInfo(line); return true; }
+
+        // r1 fix (10-08), the plan's 'one-time dump': a plate not cut (none known, off the edge, too wide) - what DOES lie on the
+        // frame's bottom bar, once a session per card class: every active child of the card root and of its 'Content' whose rect reaches
+        // the bar (name, size, x and y in the root's units; ours left out), so the next live log names the plate if the game moves it.
+        static readonly System.Collections.Generic.HashSet<string> _dumped = new System.Collections.Generic.HashSet<string>();
+        static void DumpEdge(RectTransform root, string cls)
+        {
+            if (root == null || !_dumped.Add(cls)) return;
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                var rr = root.rect;
+                float e0 = rr.yMin + FrameInset, e1 = e0 + FrameThick;
+                var found = new System.Collections.Generic.List<string>();
+                var content = root.Find("Content");
+                foreach (var parent in new[] { root, content })
+                {
+                    if (parent == null) continue;
+                    for (int i = 0; i < parent.childCount && found.Count < 12; i++)
+                    {
+                        var t = parent.GetChild(i); var rt = t == null ? null : t.TryCast<RectTransform>();
+                        if (rt == null || !rt.gameObject.activeInHierarchy || rt.name.StartsWith("Yazs", StringComparison.Ordinal)) continue;
+                        rt.GetWorldCorners(_corners);
+                        var q0 = root.InverseTransformPoint(_corners[0]); var q2 = root.InverseTransformPoint(_corners[2]);
+                        float y0 = Mathf.Min(q0.y, q2.y), y1 = Mathf.Max(q0.y, q2.y), x0 = Mathf.Min(q0.x, q2.x), x1 = Mathf.Max(q0.x, q2.x);
+                        if (!(y0 < e1 && y1 > e0)) continue;
+                        found.Add((parent == root ? "" : "Content/") + rt.name + " " + (x1 - x0).ToString("0", inv) + "x" + (y1 - y0).ToString("0", inv) + " at x " + x0.ToString("0", inv) + ".." + x1.ToString("0", inv) + ", y " + y0.ToString("0", inv) + ".." + y1.ToString("0", inv));
+                    }
+                }
+                Plugin.Logger.LogInfo("[badge] plate dump: " + cls + " - on the frame's bottom edge " + e0.ToString("0", inv) + ".." + e1.ToString("0", inv) + ": "
+                    + (found.Count == 0 ? "nothing of the card's" : string.Join("; ", found)) + " (once a session per card class)");
+            }
+            catch (Exception e) { Plugin.Logger.LogInfo("[badge] plate dump: " + cls + " - not read (" + e.GetType().Name + ")"); }
+        }
+
+        // the edge whole: 'Bottom' across the frame, 'Bottom2' hidden
+        static void Whole(RectTransform frame, RectTransform bottom)
+        {
+            bottom.anchorMin = new Vector2(0f, 0f); bottom.anchorMax = new Vector2(1f, 0f);
+            var t = frame.Find(Bottom2Name); if (t != null) t.gameObject.SetActive(false);
+        }
+
+        // the edge in two pieces: 'Bottom' from the frame's left to <a> of its width, 'Bottom2' (made once, as Ui.Frame makes 'Bottom', and
+        // drawn right after it) from <b> to its right
+        static void Pieces(RectTransform frame, RectTransform bottom, float a, float b)
+        {
+            a = Mathf.Clamp01(a); b = Mathf.Clamp01(b);
+            bottom.anchorMin = new Vector2(0f, 0f); bottom.anchorMax = new Vector2(a, 0f);
+            var t = frame.Find(Bottom2Name); var right = t == null ? null : t.TryCast<RectTransform>();
+            if (right == null)
+            {
+                right = Ui.Edge(frame, Bottom2Name, b, 0, 1, 0, new Vector2(0, FrameThick / 2), new Vector2(0, FrameThick), Theme.Gold);
+                try { right.SetSiblingIndex(bottom.GetSiblingIndex() + 1); } catch { }
+            }
+            right.anchorMin = new Vector2(b, 0f); right.anchorMax = new Vector2(1f, 0f);
+            right.gameObject.SetActive(true);
+        }
+
+        /// <summary>The plate the game hangs on the card's bottom edge (TIER / NEW / RECRUIT): the image its className label is written on
+        /// ('Content/AddonDescription'), on a skill card and on a rescue card; null on any other card class (none known).</summary>
+        static RectTransform PlateOf(UIPowerupButtonBase b)
+        {
+            TextMeshProUGUI label = null;
+            var skill = b.TryCast<UIPowerupButtonSkill>(); if (skill != null) label = skill.className;
+            else
+            {
+                if (_noSos) return null;
+                try { label = SosPlateLabel(b); } catch { _noSos = true; return null; }
+            }
+            var up = label == null ? null : label.transform.parent;
+            return up == null ? null : up.TryCast<RectTransform>();
         }
 
         // ---- RECOMMENDED ribbon under the card, diamond tips like the game's NEW / UPGRADE label ----
@@ -367,6 +545,14 @@ namespace YazsCompanion
             var sos = b.TryCast<UIPowerupButtonSOS>();
             if (sos == null) return null;
             return sos.shortDescription != null ? sos.shortDescription : sos.className;
+        }
+
+        // 0.16.0 (C16-11g): the label on the rescue card's plate (RECRUIT; its parent is the plate) - named only here, as SosLabel does
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static TextMeshProUGUI SosPlateLabel(UIPowerupButtonBase b)
+        {
+            var sos = b.TryCast<UIPowerupButtonSOS>();
+            return sos == null ? null : sos.className;
         }
 
         static TextMeshProUGUI Template(UIPowerupButtonBase b)

@@ -14,7 +14,9 @@
     gh        the GitHub CLI is there and logged in.
   Then it writes latest.json (version, DLL url, SHA-256) for the in-game auto-updater, tags the commit, pushes, creates the
   GitHub release with the versioned DLL, latest.json and the zip, and copies the zip into the Drive folder for hand installs.
-  The release does not deploy to the local game (build.cmd does that).
+  After publishing (not with -Draft), the released DLL is copied over the PC's deployed one when the game is closed, no
+  updater download waits and the PC does not run a newer build (-NoLocalDeploy skips it); build.cmd stays the deploy of
+  work in progress.
 
   The in-game updater reads https://github.com/<repo>/releases/latest/download/latest.json, so every
   non-draft, non-prerelease release becomes "latest" the moment it is published.
@@ -24,11 +26,12 @@
 .PARAMETER DriveDir    Folder mirrored by Drive for Desktop; pass "" to skip the copy.
 .PARAMETER GameDir     Game install: Mono.Cecil in BepInEx\core reads the DLL, and package.ps1 takes BepInEx from it.
 .PARAMETER NoBuild     Reuse the DLL in bin\Release - only when it was built from HEAD with a clean tree.
-.PARAMETER Draft       Create the release as a draft (the updater ignores drafts until published).
+.PARAMETER Draft       Create the release as a draft (the updater ignores drafts until published). The PC's DLL is left as it is.
 .PARAMETER DryRun      Run every gate, stage the zip and latest.json in dist, print the git / gh commands it would run, and stop:
                        nothing is tagged, pushed, published or copied.
 .PARAMETER AllowDirty  With -DryRun only: run the gates on a tree with uncommitted changes (the tree gate is skipped, the
                        DLL's commit may carry "-dirty"). A real release always needs a clean tree.
+.PARAMETER NoLocalDeploy  Leave the PC's deployed DLL as it is.
 .EXAMPLE
   .\release.ps1 -Notes "Sidebar gates fixed from the Deck log"
   .\release.ps1 -DryRun -Notes "0.15.0 test"
@@ -41,7 +44,8 @@ param(
     [switch]$NoBuild,
     [switch]$Draft,
     [switch]$DryRun,
-    [switch]$AllowDirty
+    [switch]$AllowDirty,
+    [switch]$NoLocalDeploy
 )
 $ErrorActionPreference = "Stop"
 
@@ -52,6 +56,19 @@ function Skip([string]$Gate, [string]$Why) { Write-Host ("[gate] skip  {0,-10}{1
 function Stop-Release([string]$Gate, [string]$Why) {
     Write-Host ("[gate] FAIL  {0,-10}{1}" -f $Gate, $Why) -ForegroundColor Red
     throw "release stopped at the '$Gate' gate - nothing was tagged, pushed or published"
+}
+
+# what the release does with the PC's deployed DLL (game closed, no updater download waiting, not newer than this release)
+function Get-LocalDeploy([string]$LocalDll, [string]$Sha, [string]$Version) {
+    if (-not (Test-Path $LocalDll)) { return @{ Act = 'none'; Was = ''; Why = "no $LocalDll" } }
+    $was = [Diagnostics.FileVersionInfo]::GetVersionInfo($LocalDll).ProductVersion
+    $wasV = $null; [void][version]::TryParse(($was -replace '\+.*$', ''), [ref]$wasV)
+    $pending = @(Get-ChildItem (Split-Path $LocalDll) -Filter 'YazsCompanionMod-*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
+    if ((Get-FileHash $LocalDll -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Sha) { return @{ Act = 'same'; Was = $was; Why = 'the PC already runs the released DLL' } }
+    if ($wasV -and $wasV -gt [version]$Version) { return @{ Act = 'skip'; Was = $was; Why = "the PC runs a newer build ($was) - left as it is" } }
+    if ($pending.Count -gt 0) { return @{ Act = 'skip'; Was = $was; Why = "an updater download waits in the plugin folder ($($pending -join ', ')) - the PC's DLL ($was) left as it is" } }
+    if (Get-Process -Name 'Yet Another Zombie Survivors' -ErrorAction SilentlyContinue) { return @{ Act = 'skip'; Was = $was; Why = "the game is running - the PC keeps $was; copy the released DLL over it after it closes" } }
+    return @{ Act = 'copy'; Was = $was; Why = "the PC runs $was" }
 }
 
 # The DLL's identity without loading it: the BepInPlugin attribute's version and the InformationalVersion the build stamps
@@ -235,6 +252,7 @@ try {
     # the versioned DLL the updater downloads, and the feed it reads (staged in dist, also on a dry run)
     $vdll = Join-Path $dist "YazsCompanionMod-$version.dll"
     Copy-Item $dll $vdll -Force
+    $localDll = Join-Path $GameDir 'BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll'
     $feed = [ordered]@{
         version   = $version
         dll       = "https://github.com/$Repo/releases/download/$tag/YazsCompanionMod-$version.dll"
@@ -256,6 +274,10 @@ try {
         Write-Host "  git push origin HEAD --tags"
         Write-Host ("  gh " + (($ghArgs | ForEach-Object { Quote $_ }) -join ' '))
         if ($DriveDir) { Write-Host "  copy $($zip.Name) to $DriveDir$(if (-not (Test-Path $DriveDir)) { ' (not there now: the copy would be skipped)' })" }
+        if (-not $NoLocalDeploy -and -not $Draft) {
+            try { $ld = Get-LocalDeploy $localDll $sha $version; Write-Host ('  local DLL: ' + $(if ($ld.Act -eq 'copy') { "copy $vdll over $localDll ($($ld.Why))" } else { $ld.Why })) }
+            catch { Write-Host "  local DLL: not checked ($($_.Exception.Message))" }
+        }
         Write-Host "[dry run] every gate passed ($($script:passed -join ', ')); nothing was tagged, pushed, published or copied"
         return
     }
@@ -270,6 +292,14 @@ try {
     if ($DriveDir -and (Test-Path $DriveDir)) {
         Copy-Item $zip.FullName (Join-Path $DriveDir $zip.Name) -Force
         Write-Host "Copied $($zip.Name) to $DriveDir"
+    }
+    if (-not $NoLocalDeploy -and -not $Draft) {
+        try {
+            $ld = Get-LocalDeploy $localDll $sha $version
+            if ($ld.Act -eq 'copy') { Copy-Item $vdll $localDll -Force -ErrorAction Stop; Write-Host "[local] the PC now runs the released DLL ($($id.Info); was $($ld.Was))" }
+            elseif ($ld.Act -ne 'none') { Write-Host "[local] $($ld.Why)" }
+        }
+        catch { Write-Host "[local] WARNING the PC's DLL was not replaced ($($_.Exception.Message)) - copy $vdll to $localDll by hand with the game closed; the release itself is out" -ForegroundColor Yellow }
     }
     Write-Host "Released $tag -> https://github.com/$Repo/releases/tag/$tag (gates: $($script:passed -join ', '))"
 }

@@ -100,6 +100,16 @@ namespace YazsCompanion
         public RunContext Ctx = new RunContext();             // mode, clock, pace: what the timing curves read
         public readonly List<TeamBoost> Boosts = new List<TeamBoost>();   // owned team passives whose owner is on the squad
         public int ItemsHeld;
+        // 0.16.0 (C16-01): what the held items change - names, assets, slots, the leader's cooldown reduction, the time since the last
+        // join, the cooldowns, the [Debug] HeldPretend names (HeldRules.cs; read by HeldRead.Fill)
+        public HeldFacts Held = new HeldFacts();
+        // 0.16.0 (C16-02b): the item book's live needs, read once per snapshot (ItemStats.Fill; NaN = not read) and where the free slots
+        // were read from ('team', 'leader', 'max - equipped'; '?' until read)
+        public double FreeSlots = double.NaN, Luck = double.NaN, Pickup = double.NaN, MoveSpeed = double.NaN;
+        public string FreeFrom = "?";
+        // 0.16.0 (C16-02 section 8): LOCKDOWN on the run and advised by its rule - read by the item book's 'lockdown' need; both stay
+        // false in 0.16.0 (the LOCKDOWN lane, 0.16.1, sets them)
+        public bool LockdownOn, LockdownAdvised;
         public bool SquadFull { get { return Squad.Count >= 3; } }
         public Survivor Find(CT t) { foreach (var s in Squad) if (s.Type == t) return s; return null; }
         public bool OnSquad(CT t) { return Find(t) != null; }
@@ -357,7 +367,11 @@ namespace YazsCompanion
         /// <summary>What the item rules read of an item: its English text, its highlighted statistics, whether it heals,
         /// how many can be carried. Asset data, so it is read once per item for the session (keyed by the item's id and
         /// checked against its name) - the GRAB row alone scores every item that can still drop, after every pick.</summary>
-        internal sealed class ItemFacts { public string Name, Desc; public List<string> Stats; public bool Healing; public int MaxCarry = 1; }
+        internal sealed class ItemFacts
+        {
+            public string Name, Desc; public List<string> Stats; public bool Healing; public int MaxCarry = 1;
+            public bool Animal;         // 0.16.0 (C16-01i): the game's isAnimalItem flag (Last Unicorn counts the animal items held)
+        }
         static readonly Dictionary<int, ItemFacts> _itemFacts = new Dictionary<int, ItemFacts>();
 
         public static ItemFacts FactsOf(ItemBase it)
@@ -374,6 +388,7 @@ namespace YazsCompanion
             if (f.Desc == null) f.Desc = "";
             try { foreach (var st in Each(it.highlightedStatistics)) if (st != null) f.Stats.Add(st.statisticType.ToString()); } catch { }
             try { f.Healing = it.isHealingItem; } catch { }
+            try { f.Animal = it.isAnimalItem; } catch { }       // 0.16.0 (C16-01i)
             try { f.MaxCarry = it.numMaxCanCarry; } catch { }
             if (keyed && english) _itemFacts[id] = f;      // the localized fallback text follows the language: not kept
             return f;
@@ -504,6 +519,9 @@ namespace YazsCompanion
                 if (!sv.Leader || sv.Player == null) continue;
                 try { var h = sv.Player.health; if (h != null && h.MaxHealth > 0 && h.MaxHealth < 1e7f) c.Health = Math.Max(0, Math.Min(1, h.CurrentHealth / h.MaxHealth)); } catch { }
             }
+            // 0.16.0 (C16-12): the active quest asks to survive the run and is followed - the item book's revive rule reads it through
+            // the context (cached quest state only: no game reads)
+            try { c.SurviveQuest = YazsCompanion.Quest.SurviveFollowed(); } catch { c.SurviveQuest = false; }
         }
 
         // the team passives (Grenade / Turret / Trap Expertise, Cold Chain) that are bought and whose owner is on the squad
@@ -645,8 +663,21 @@ namespace YazsCompanion
             try { ReadContext(master, s); } catch (Exception e) { Plugin.Logger.LogWarning("[ctx] " + e.Message); }
             try { ReadBoosts(s); } catch (Exception e) { Plugin.Logger.LogWarning("[boosts] " + e.Message); }
             foreach (var sv in s.Squad) foreach (var kv in sv.Items) s.ItemsHeld += Math.Max(1, kv.Value);
+            // 0.16.0 (C16-02b): the item book's live needs - free item slots, luck, pickup range, speed - read once per snapshot
+            // (ItemStats.cs); first, since the held-item read takes its free slots from here
+            try { ItemStats.Fill(master, s); }
+            catch (Exception e) { if (!_itemStatsSaid) { _itemStatsSaid = true; Plugin.Logger.LogWarning("[items] statistics not read: " + e.Message); } }
+            // 0.16.0 (C16-01 / C16-01k): what the squad holds and what the held-item rules read beside it (HeldRead.cs) - only while a
+            // game mode runs (the main menu's GameplayMaster has none)
+            bool inMode = false; try { inMode = master.currentGameMode != null; } catch { }
+            if (inMode)
+            {
+                try { HeldRead.Fill(master, s); }
+                catch (Exception e) { if (!_heldSaid) { _heldSaid = true; Plugin.Logger.LogInfo("[held] held items not read (" + e.GetType().Name + ": " + e.Message + ")"); } }
+            }
             return s;
         }
+        static bool _itemStatsSaid, _heldSaid;          // 0.16.0: a failed read said once a session
     }
 
     /// <summary>0.15.0, the drift guard at run time. Once a session, at the warm-up on the main menu (Warmup.cs): the Companion's

@@ -24,7 +24,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.15.0";
+        public const string VERSION = "0.16.0";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
 
         /// <summary>The commit this DLL was built from (0.15.0): "abc1234", "abc1234-dirty" (built with uncommitted changes), or null
@@ -76,6 +76,9 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> PerfFlag;
         internal static ConfigEntry<bool> PreviewMenu;
         internal static ConfigEntry<bool> PreviewPause;
+        internal static ConfigEntry<string> PreviewPauseRecruit;       // 0.16.0 (C16-11a): one hero joins the pause walk's run at 3 s (Menu.Walk016.cs)
+        internal static ConfigEntry<string> HeldPretend;               // 0.16.0 (C16-01): the advice treats these items as held (advice test only; HeldRules.cs)
+        internal static ConfigEntry<bool> ItemKeywords;                // 0.16.0 (C16-02): the 0.15.0 keyword reading instead of the item book (ItemBook.cs)
         internal static ConfigEntry<LevelUpStyle> AdviceStyle;
         internal static ConfigEntry<LentBuildStyle> AdviceLentStyle;    // 0.15.0 (C15-07, decision Q3): a lent build on Auto - its own style or LevelUpStyle
         internal static ConfigEntry<Strength> AdviceTiming;
@@ -89,6 +92,7 @@ namespace YazsCompanion
         internal static ConfigEntry<HintActions> AdviceActionHints;     // 0.14.0: REROLL / SKIP / BANISH on the other selection screens (ScreenCall.cs)
         internal static ConfigEntry<QuestSteer> AdviceQuest;           // 0.14.0 (C3): how hard the active quest steers the cards (QuestRules.cs)
         internal static ConfigEntry<LoadoutDetail> AdviceLoadout;
+        internal static ConfigEntry<bool> AdviceYardBadges;            // 0.16.0 (C16-07): the Training Yard's badge nodes follow the badge advice (TreeState.BadgeDemand)
         internal static ConfigEntry<bool> AdviceLoadoutEquip;
         internal static ConfigEntry<string> AdviceLoadoutEquipKey;
         internal static ConfigEntry<float> LoadoutSize;
@@ -180,7 +184,7 @@ namespace YazsCompanion
         {
             Logger = Log;
             ShowBadges = Config.Bind("General", "ShowBadges", true, "Frame the recommended card, hang a RECOMMENDED ribbon under it and print a reason line under every offered card.");
-            ShowWhy = Config.Bind("General", "ShowWhy", true, "While a card of a selection screen is selected (the mouse over it, or the controller's focus on it), a band under the cards - on a screen wider than 16:9 with WideMenus on, a panel beside the card in the side wing, up to four lines at the cards' own text size - says the rest of its verdict in plain words: up to four more reasons, and what the first card has that puts it first (or, on the first card, how far ahead it is) - CLOSE CALL when the first two cards are nearly even. It goes with the selection. Needs ShowBadges. false = the reason line under each card only.");
+            ShowWhy = Config.Bind("General", "ShowWhy", true, "While a card of a selection screen is selected (the mouse over it, or the controller's focus on it), a band under the cards - on a screen wider than 16:9 with WideMenus on, a panel in the side wing headed with the card's name, up to four reasons at the cards' own text size - says the rest of its verdict in plain words: up to four more reasons, and what the first card has that puts it first (or, on the first card, how far ahead it is) - CLOSE CALL when the first two cards are nearly even. It goes with the selection. Needs ShowBadges. false = the reason line under each card only.");
             ShowPanel = Config.Bind("General", "ShowPanel", true, "Show the live PLAN sidebar during play (weapon line, ability to feed, next ability, SOS and item advice).");
             ShowYard = Config.Bind("General", "ShowYard", true, "Training Yard advice: number the nodes worth buying with the points on hand (gold diamonds, in purchase order), ring the node to save for next, and print a PLAN strip under the tree (SPEND / THEN / WHY). Read-only: it never buys anything.");
             Motion = Config.Bind("General", "Motion", true, "Animate what the mod draws: Training Yard diamonds stamp in and the next purchase pings, rules draw themselves, the strip types on, the RECOMMENDED ribbon unfolds, the PLAN readout slides in and its title diamond spins when the advice changes. During play nothing loops. false = everything appears in place.");
@@ -234,6 +238,9 @@ namespace YazsCompanion
             }
             AdviceQuest = Config.Bind("Advice", "QuestSteer", QuestSteer.On, "How hard the active quest steers the advice. On = what its objectives ask for is lifted with a 'Quest: ...' reason under the card (the weapon it wants maxed, the ability or evolution it wants, health items, the Research Pods and trainings it counts), a pick that would fail it is marked AVOID (an ability of a class it forbids, a tier-3 weapon, any item, tags past its cap), kills with one survivor and the like weigh a little, and the PLAN readout shows a QUEST row while a rule changes something; your build and tag plan stay as they are. InfoOnly = the QUEST row and the reasons in the log, no card moves (the quest's team rule neither). Off = the quest is not followed at all. A quest the run cannot complete (its arena, mode, difficulty or leader condition) is never followed.");
             AdviceLoadout = Config.Bind("Advice", "LoadoutHint", LoadoutDetail.NumbersAndReason, "The run setup screen (difficulty and badges): number the badges worth equipping for the team leader and the run you picked (gold diamonds, 1 = most worth it), frame the ones not equipped yet, mark equipped ones that are not advised, explain the badge under the cursor and list the swaps under CHOSEN BADGES. Off / Numbers / NumbersAndReason / Full (adds close calls and a Training Yard hint). Advice only: it never equips a badge (unless you switch on LoadoutEquip). Off = nothing drawn (the [loadout] lines are still written to the log).");
+            // 0.16.0 (C16-07, the user's Q06 left at its defaults: every survivor you can lead, the last run setup's mode and difficulty,
+            // floor 0.15 - knowledge.json yardRules -, on by default)
+            AdviceYardBadges = Config.Bind("Advice", "YardBadges", true, "Training Yard advice (ShowYard): a survivor's badge nodes follow the badge advice of the run setup screen, worked out for every survivor you can lead (the mode and difficulty of your last run setup visit, else Normal I). A badge is unlocked and levelled when that advice would equip it and its levels pay for their points; a badge investment that only pays at a higher level is planned whole; a badge no survivor's advice equips waits until the rest of the tab is done. The run setup screen's TRAINING YARD row (LoadoutHint = Full) is for its leader alone. false = every badge to level 1 as its rank opens (0.15).");
             AdviceLoadoutEquip = Config.Bind("Advice", "LoadoutEquip", false, "The one-click EQUIP ADVICE button on the run setup screen (off by default; the mod menu's BADGES page switches it). A click on it, or LoadoutEquipKey, presses the game's own badge button for you along the advice - removes first, then adds; never a forced (quest) badge, never a locked one - exactly as clicks by hand would (the game saves the selection as usual). UNDO is offered until the screen closes. Every press is logged.");
             // 0.13.0 (C5): no key by default - F9 is another plugin's key on the screen before (and F8 / F10 / F11 / F12 / BackQuote are taken
             // by the game, this menu, other plugins or Steam); a key set here is checked against them once the plugins are loaded
@@ -242,9 +249,12 @@ namespace YazsCompanion
             MenuKey = Config.Bind("Menu", "MenuKey", "F10", "Keyboard key that opens and closes the mod menu on the main menu and while paused (a UnityEngine.KeyCode name; empty = none).");
             PreviewMenu = Config.Bind("Debug", "PreviewMenu", false, "About 6 s after launch, open the mod menu on the main menu, walk its tabs and save a screenshot of each into the shots folder. For checking the menu without touching the controls; off by default.");
             PreviewPause = Config.Bind("Debug", "PreviewPause", false, "About 7 s after launch, start a Quick Run (pressing Start on the team leader screen if it comes up), play thirty seconds taking the recommended card of every offer, pause, open the mod menu over the pause menu, close it again and log what happened (with screenshots). For checking the readout, the offers and the pause-menu button without touching the controls. Thirty seconds of play: the game writes no save; stop the game afterwards. Off by default.");
+            PreviewPauseRecruit = Config.Bind("Debug", "PreviewPauseRecruit", "", "For scripted test runs with PreviewPause only: 3 s into the walk's run, one hero joins the squad as a rescue adds one (the game's Unlock Character <Class> Powerup, applied without its rescue bonuses), so the level-ups offer four cards and the hover tour reaches cards 3 and 4. Empty = off; Auto = the first of Medic, Tank, Pyro, Engineer, Huntress, SWAT, Mechanic, Ranger, Ghost that is not the leader; or one class name (Ghost or Ninja for the Ghost).");
             PreviewSetup = Config.Bind("Debug", "PreviewSetup", false, "About 7 s after launch, walk the start flow from the main menu (Play, team leader, arena, mode) to the run setup screen, photograph the badge advice, move the game's cursor over three badges (never clicking one) and log the layout; then - with PreviewSetupRun - press the difficulty and START, measure the badge statistics 3 s into the run and log '[loadout] setup walk done' (stop the game then: no save is written that early). With PreviewPause on as well, the stage runs inside that walk. Off by default.");
             PreviewSetupRun = Config.Bind("Debug", "PreviewSetupRun", true, "PreviewSetup: true = start the run after the run setup stage (difficulty, START) for the 3 s badge measurement; false = back out of the start flow instead (CloseStartGameFlow: nothing chosen is kept, no run, no measurement).");
             PerfFlag = Config.Bind("Debug", "Perf", false, "Time the mod's own work (the per-frame ticks, the squad snapshot, a plan build, an offer) and log the sums once a minute as [perf] lines: calls, total milliseconds and the worst single call per section. For judging what the mod costs on a real run; off by default.");
+            // 0.16.0 (C16-01): the held-item rules tried without the items (the Warning once a session: PretendWarnOnce, after the log file)
+            HeldPretend = Config.Bind("Debug", "HeldPretend", "", "Advice test only: the game's English item names, comma-separated, that the advice treats as held - the held-item rules switch on as if you held them; the game itself is unchanged. Empty = off.");
             ApplyDoctrine();
             Perf.On = PerfFlag.Value;
             // a setting changed (the mod menu, or a config manager): BepInEx has written the file by now (SaveOnConfigSet);
@@ -259,6 +269,9 @@ namespace YazsCompanion
                     bool written = false;
                     try { written = (DateTime.UtcNow - File.GetLastWriteTimeUtc(Config.ConfigFilePath)).TotalSeconds < 3; } catch { }
                     Logger.LogInfo("[config] " + def.Section + "." + def.Key + " = " + args.ChangedSetting.BoxedValue + (written ? " (saved)" : " (the config file was NOT written)"));
+                    // 0.16.0: the item book or the 0.15.0 keyword reading (C16-02); a pretend list just set warns once a session (C16-01)
+                    if (def.Section == "Debug" && def.Key == "ItemKeywords" && ItemKeywords != null) { try { ItemBook.UseKeywords(ItemKeywords.Value); } catch (Exception e) { Logger.LogWarning("[items] ItemKeywords not applied: " + e.Message); } }
+                    if (def.Section == "Debug" && def.Key == "HeldPretend") PretendWarnOnce();
                     Menu.SettingSaved(written);
                 }
                 catch { }
@@ -266,6 +279,9 @@ namespace YazsCompanion
             Config.SaveOnConfigSet = true;
 
             ProbeFlag = Config.Bind("Debug", "Probe", false, "About 6 s after launch, on the main menu, write probe.json next to the DLL: every item and powerup with the exact fields the game uses (tags, damage types per level, statistics, mode availability), the input actions and the main menu's button layout. For development; off by default.");
+            // 0.16.0 (C16-02): every chest item by its rule in the item book, or - for comparison - by the 0.15.0 keyword reading
+            ItemKeywords = Config.Bind("Debug", "ItemKeywords", false, "Score every chest item by the 0.15.0 keyword reading instead of the item book, for comparison. Off by default.");
+            try { ItemBook.UseKeywords(ItemKeywords.Value); } catch (Exception e) { Logger.LogWarning("[items] ItemKeywords not applied: " + e.Message); }
 
             // BepInEx overwrites LogOutput.log on every launch; keep our own append-only copy next to the DLL.
             try { BepInEx.Logging.Logger.Listeners.Add(new FileListener(Path.Combine(PluginDir, "companion.log"))); }
@@ -301,6 +317,29 @@ namespace YazsCompanion
             try { WhyUi.LogHooks(); } catch (Exception e) { Logger.LogWarning("[why] hooks not checked: " + e.Message); }
             try { LoadoutUi.LogHooks(); LoadoutState.CheckMembers(); LoadoutState.CheckClasses(); }
             catch (Exception e) { Logger.LogWarning("[loadout] load checks skipped: " + e.Message); }
+            // 0.16.0: the debug switches that change what the advice or the walk does, said at load (into companion.log: after its listener)
+            PretendWarnOnce();          // C16-01: [Debug] HeldPretend names items - one Warning a session
+            try { if (!string.IsNullOrWhiteSpace(PreviewPauseRecruit.Value) && !PreviewPause.Value) Logger.LogInfo("[menu] PreviewPauseRecruit is set but PreviewPause is off - nothing happens"); }      // C16-11a
+            catch { }
+        }
+
+        // ---- 0.16.0 (C16-01): [Debug] HeldPretend - the held-item rules switched on as if the named items were held (advice test only).
+        // ONE Warning a session while it names items: at load, or at the change that sets it (Config.SettingChanged); the words are
+        // HeldRules.PretendWarning's (pure, benched)
+        static bool _pretendWarned;
+        internal static void PretendWarnOnce()
+        {
+            if (_pretendWarned) return;
+            try
+            {
+                var names = HeldRules.SplitNames(HeldPretend == null ? "" : HeldPretend.Value);
+                if (names.Count == 0) return;
+                string w = HeldRules.PretendWarning(names);
+                if (w == null) return;
+                _pretendWarned = true;
+                Logger.LogWarning(w);
+            }
+            catch (Exception e) { _pretendWarned = true; Logger.LogWarning("[held] HeldPretend not read: " + e.Message); }
         }
     }
 

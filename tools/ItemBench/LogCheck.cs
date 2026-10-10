@@ -1,17 +1,32 @@
 // 0.15.0 (C15-11): a companion.log's health, PASS or FAIL per check - the live series and a real session end with it, and the
 // release notes quote it:
-//   ItemBench --check-log <companion.log> [--since last|all|<session stamp prefix>] [--wide on|off]
+//   ItemBench --check-log <companion.log> [--since last|all|<session stamp prefix>] [--wide on|off] [--expect kind,kind]
 //   hooks     every session logs '[hooks] N methods patched (class by class; 0 patch classes failed)'
 //   why       every session logs '[why] hooks: ...' with every hook ok
 //   wide      at least one '[wide] ... frame off' while WideMenus is on and the screen is not 16:9 (16:9: nothing to hide)
 //   warnings  no '[Warning]' line
 //   errors    no '[Error]' / '[Fatal]' line
 //   shown     every [shown] text within the Wording rails, with the room it had as drawn (beside its "2ND" / "AVOID")
+//   items     0.16.0 (C16-02b): every chest offer has its '[items] held: ...' line before the next offer, and no
+//             '[items] no rule for '<name>'' line names an item (the game's 'Powerups/...' duplicates aside). A session is
+//             checked when its load line names 0.16.0 or later, or when it holds an '[items] ' or '[held] ' line (tags no
+//             build before 0.16.0 writes): a build of the 0.16.0 tree whose VERSION still says 0.15.0 is checked too
 // --since: 'last' (the default: the newest session of the file), 'all', or a session stamp prefix: '2026-10-06' or
 // '2026-10-06 19:02' selects every session that started then or later. --wide overrides what the cfg next to the log says
 // (BepInEx\config\bidoi.yazs.companion.cfg two folders up from the log; WideMenus = Everywhere when there is none); a
 // '[config] General.WideMenus = ... (saved)' line of the menu counts as well.
-// Exit 0 when every check passes, 1 when one fails, 2 when the file or a session is missing.
+// 0.16.0 (C16-11e): after the checks, INFO sections - the proofs a log may hold, not checks: per kind 'seen N, first at
+// HH:MM:SS: <text>' or 'not in this log', each kind's pattern anchored on the line's message (after '[Info] '):
+//   real-session proofs  first-input (prints the source: pad / key / mouse / touch), yard (a Training Yard purchase or
+//                        refund), equip (EQUIP ADVICE / UNDO pressed - prints how: touch / mouse / key; a line of a build
+//                        before 0.16.0 has no source and counts apart), ribbon (the badge ribbon stepped aside)
+//   quest proofs         quest-story (a '[quest] ... -> story objective ...' step)
+//   walk proofs          side-panel (a WHY panel in a side wing), results (a results-screen shot step), recruit-tour (the
+//                        pause walk's hover tour over cards 2 to 4 of 4)
+// --expect kind,kind turns those kinds into checks: FAIL when the kind is not in the log (equip: when no line says how it
+// was pressed). An unknown kind exits 2 with the list.
+// Exit 0 when every check passes, 1 when one fails, 2 when the file or a session is missing (or --expect names an unknown
+// kind). Without --expect the exit codes are 0.15.0's.
 // LogCheck.Cases() is its bench part: made-up logs (the game's names only) through every check, passing and failing.
 using System;
 using System.Collections.Generic;
@@ -42,6 +57,27 @@ namespace YazsCompanion.Bench
             }
             /// <summary>The session's build has a feature of <paramref name="since"/> (a build not logged counts as current).</summary>
             public bool Has(Version since) { return Build == null || Build >= since; }
+            bool? _items016;
+            /// <summary>The session's build writes the 0.16.0 '[items] held:' lines: its load line names 0.16.0 or later, or (a build of the
+            /// 0.16.0 tree whose VERSION is not bumped yet: 'YAZS Companion 0.15.0 (abc1234-dirty) loaded') it wrote an '[items] ' or
+            /// '[held] ' line - tags no build before 0.16.0 writes (ItemStats' 'item slot reads' line comes once a session, before the
+            /// first chest offer).</summary>
+            public bool Has016
+            {
+                get
+                {
+                    if (_items016.HasValue) return _items016.Value;
+                    bool has = Has(V016);
+                    if (!has)
+                        foreach (var l in Lines)
+                        {
+                            var m = RxLine.Match(l);
+                            if (m.Success && (m.Groups[2].Value.StartsWith("[items] ", StringComparison.Ordinal) || m.Groups[2].Value.StartsWith("[held] ", StringComparison.Ordinal))) { has = true; break; }
+                        }
+                    _items016 = has;
+                    return has;
+                }
+            }
         }
         internal sealed class Result { public string Id; public bool Pass; public string Text; public readonly List<string> Detail = new List<string>(); }
 
@@ -56,25 +92,150 @@ namespace YazsCompanion.Bench
         static readonly Regex RxShown = new Regex(@"^\[shown\] (\w+) (\d+:\d\d): (.*)$");
         static readonly Regex RxText = new Regex(@"^(\d+) '(.*)'$");
         static readonly Regex RxLoaded = new Regex(@"\] YAZS Companion (\d+\.\d+\.\d+)\S* (?:\([^)]*\) )?loaded");
+        // 0.16.0 (C16-02b): a chest offer as Advisor.Offer writes it ('[offer] Chest 01:20 (Normal horde 2)', a reroll's 'replaced ...'
+        // tail too - not the '[offer] Chest 01:20: no active cards' line, which returns before the [items] line), its '[items] held:'
+        // line, and the item book's fallback line (a name may hold an apostrophe: the last quote before ' - ' ends it)
+        static readonly Regex RxOfferChest = new Regex(@"^\[offer\] Chest \S+ \(");
+        static readonly Regex RxItemsHeld = new Regex(@"^\[items\] held: ");
+        static readonly Regex RxNoRule = new Regex(@"^\[items\] no rule for '(.*)'(?: - .*)?$");
+        static readonly Regex RxClock = new Regex(@"^(\d\d:\d\d:\d\d)");
         static readonly Version V013 = new Version(0, 13, 0), V014 = new Version(0, 14, 0);   // the class-by-class hooks line; the WHY band and the wide menus
+        static readonly Version V016 = new Version(0, 16, 0);                                 // the '[items] held:' line of every chest offer
+
+        // ---------------------------------------------------------------- 0.16.0 (C16-11e): the proofs a log may hold (INFO, not checks)
+        internal sealed class ProofKind
+        {
+            public readonly string Id, Group; public readonly Regex Rx; public readonly bool Source;
+            public ProofKind(string id, string group, string rx, bool source = false) { Id = id; Group = group; Rx = new Regex(rx); Source = source; }
+        }
+        /// <summary>The kinds, in the order the INFO sections print them. Each pattern is anchored on the line's message (RxLine's group 2),
+        /// so a line of another tag that quotes the same words does not count. A kind with a source prints it (its group 1).</summary>
+        internal static readonly ProofKind[] Kinds =
+        {
+            new ProofKind("first-input", "real-session proofs", @"^\[menu\] first input this session: (pad|key|mouse|touch)$", source: true),
+            new ProofKind("yard", "real-session proofs", @"^\[yard\] (bought|refunded) "),
+            new ProofKind("equip", "real-session proofs", @"^\[loadout\] equip: (?:EQUIP ADVICE \(advice #\d+\)|UNDO) pressed(?: by (touch|mouse|key))? - ", source: true),
+            new ProofKind("ribbon", "real-session proofs", @"^\[badge\] ribbon stepped aside "),
+            // Quest.cs writes the quest's key, or 'the quest' when it has none
+            new ProofKind("quest-story", "quest proofs", @"^\[quest\] (?:\S+|the quest) -> story objective "),
+            new ProofKind("side-panel", "walk proofs", @"^\[why\] \w+ .*\(side wing (left|right), header \+ \d+ lines?, "),
+            new ProofKind("results", "walk proofs", @"^\[shot\] results step [12] set up "),
+            new ProofKind("recruit-tour", "walk proofs", @"^\[menu\] pause walk: hover tour - cards 2 to 4 of 4 "),
+        };
+        static string KindList() { return string.Join(", ", Kinds.Select(k => k.Id)); }
+
+        /// <summary>What the log holds of one kind: the lines seen (for a kind with a source: the lines that name one), the first of them,
+        /// the sources by count (first seen first) and, for 'equip', the lines of a build before 0.16.0 (no source).</summary>
+        internal sealed class Proof
+        {
+            public ProofKind Kind; public int Seen, NoSource; public string FirstAt, FirstText;
+            public readonly List<KeyValuePair<string, int>> Sources = new List<KeyValuePair<string, int>>();
+            public bool Proven { get { return Seen > 0; } }
+            public void AddSource(string src)
+            {
+                int i = Sources.FindIndex(kv => kv.Key == src);
+                if (i < 0) Sources.Add(new KeyValuePair<string, int>(src, 1)); else Sources[i] = new KeyValuePair<string, int>(src, Sources[i].Value + 1);
+            }
+            public string Text
+            {
+                get
+                {
+                    const string old = " without a source (a build before 0.16.0)";
+                    if (Seen == 0) return NoSource > 0 ? "seen " + NoSource + old : "not in this log";
+                    string t = "seen " + Seen + ", first at " + FirstAt + (string.IsNullOrEmpty(FirstText) ? "" : ": " + FirstText);
+                    if (Kind.Source && Sources.Count > 1) t += " (" + string.Join(", ", Sources.Select(kv => kv.Key + " " + kv.Value)) + ")";
+                    if (NoSource > 0) t += "; " + NoSource + old;
+                    return t;
+                }
+            }
+        }
+
+        /// <summary>The INFO sections' content over the selected sessions (with several sessions, 'first at' carries the day).</summary>
+        static List<Proof> Proofs(List<Session> sessions)
+        {
+            var list = Kinds.Select(k => new Proof { Kind = k }).ToList();
+            foreach (var s in sessions)
+                foreach (var l in s.Lines)
+                {
+                    var lm = RxLine.Match(l); if (!lm.Success) continue;
+                    string msg = lm.Groups[2].Value;
+                    foreach (var p in list)
+                    {
+                        var m = p.Kind.Rx.Match(msg); if (!m.Success) continue;
+                        string src = p.Kind.Source && m.Groups[1].Success ? m.Groups[1].Value : null;
+                        if (p.Kind.Source && src == null) { p.NoSource++; continue; }     // an EQUIP line of a build before 0.16.0
+                        p.Seen++;
+                        if (src != null) p.AddSource(src);
+                        if (p.FirstAt != null) continue;
+                        var cm = RxClock.Match(l);
+                        string day = sessions.Count > 1 && !s.Stamp.StartsWith("(") ? s.Stamp.Substring(0, 10) + " " : "";
+                        p.FirstAt = day + (cm.Success ? cm.Groups[1].Value : "?");
+                        p.FirstText = src ?? (msg.Length > 90 ? msg.Substring(0, 87) + "..." : msg);
+                    }
+                }
+            return list;
+        }
+
+        /// <summary>'--expect a,b' -> the kinds (lower case, in the order given, once each); null and <paramref name="error"/> set when
+        /// the list is empty or names a kind there is none of.</summary>
+        internal static List<string> ParseExpect(string arg, out string error)
+        {
+            error = null;
+            var kinds = new List<string>(); var unknown = new List<string>();
+            foreach (var raw in (arg ?? "").Split(','))
+            {
+                string k = raw.Trim().ToLowerInvariant(); if (k.Length == 0) continue;
+                if (!Kinds.Any(x => x.Id == k)) { unknown.Add(raw.Trim()); continue; }
+                if (!kinds.Contains(k)) kinds.Add(k);
+            }
+            if (unknown.Count > 0) error = "check-log: --expect: unknown kind" + (unknown.Count == 1 ? "" : "s") + " '" + string.Join("', '", unknown) + "' - the kinds: " + KindList();
+            else if (kinds.Count == 0) error = "check-log: --expect takes a list of kinds (kind,kind) - the kinds: " + KindList();
+            return error == null ? kinds : null;
+        }
+
+        /// <summary>The kinds --expect names as checks: PASS when the log holds one (equip: one that says how it was pressed).</summary>
+        internal static List<Result> Expect(List<Proof> proofs, List<string> kinds)
+        {
+            var list = new List<Result>();
+            foreach (var k in kinds)
+            {
+                var p = proofs.First(x => x.Kind.Id == k);
+                var r = new Result { Id = "expect " + k, Pass = p.Proven, Text = p.Text };
+                if (!r.Pass) r.Text = k == "equip" && p.NoSource > 0 ? p.Text + " - none says how it was pressed" : "expected, and not in this log";
+                list.Add(r);
+            }
+            return list;
+        }
 
         static string Older(int n, string build) { return n == 0 ? "" : "; " + Count(n, "session") + " of a build before " + build + " not checked"; }
         static string OnlyOlder(int n, string build) { return "not checked - " + (n == 1 ? "the session is" : "every session is") + " of a build before " + build; }
 
         // ---------------------------------------------------------------- the command
-        public static int Command(string[] args, int at)
+        public static int Command(string[] args, int at) { return Command(args, at, Console.Out); }
+
+        /// <summary>The command, printing to <paramref name="o"/> (the bench's L13 reads it from a StringWriter).</summary>
+        internal static int Command(string[] args, int at, TextWriter o)
         {
             string file = at + 1 < args.Length && !args[at + 1].StartsWith("--") ? args[at + 1] : null;
             string since = Arg(args, "--since") ?? "last";
             string wideArg = Arg(args, "--wide");
-            if (file == null) { Console.WriteLine("usage: ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off]"); return 2; }
-            if (!File.Exists(file)) { Console.WriteLine("check-log: no file " + file); return 2; }
+            if (file == null) { o.WriteLine("usage: ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] [--expect kind,kind]"); return 2; }
+            // 0.16.0 (C16-11e): --expect kind,kind - the proof kinds that must be in the log (an unknown kind: exit 2 with the list)
+            List<string> expect = null;
+            if (Array.IndexOf(args, "--expect") >= 0)
+            {
+                string ea = Arg(args, "--expect"), err = null;
+                if (ea != null && !ea.StartsWith("--")) expect = ParseExpect(ea, out err);
+                else err = "check-log: --expect takes a list of kinds (kind,kind) - the kinds: " + KindList();
+                if (expect == null) { o.WriteLine(err); return 2; }
+            }
+            if (!File.Exists(file)) { o.WriteLine("check-log: no file " + file); return 2; }
             bool? wide = null;
             if (wideArg != null)
             {
                 if (wideArg.Equals("on", StringComparison.OrdinalIgnoreCase)) wide = true;
                 else if (wideArg.Equals("off", StringComparison.OrdinalIgnoreCase)) wide = false;
-                else { Console.WriteLine("check-log: --wide takes on or off, not '" + wideArg + "'"); return 2; }
+                else { o.WriteLine("check-log: --wide takes on or off, not '" + wideArg + "'"); return 2; }
             }
             string wideFrom = wide.HasValue ? "--wide " + wideArg : null;
             if (!wide.HasValue)
@@ -89,12 +250,14 @@ namespace YazsCompanion.Bench
             using (var rd = new StreamReader(fs))
                 for (string l; (l = rd.ReadLine()) != null;) lines.Add(l);
             var sessions = Select(Sessions(lines), since);
-            if (sessions.Count == 0) { Console.WriteLine("check-log: no session in " + file + " matches --since " + since); return 2; }
-            Console.WriteLine("check-log " + file + ": " + Count(sessions.Count, "session") + " ("
+            if (sessions.Count == 0) { o.WriteLine("check-log: no session in " + file + " matches --since " + since); return 2; }
+            o.WriteLine("check-log " + file + ": " + Count(sessions.Count, "session") + " ("
                 + (sessions.Count == 1 ? sessions[0].Stamp : sessions[0].Stamp + " .. " + sessions[sessions.Count - 1].Stamp) + "), "
                 + sessions.Sum(s => s.Lines.Count) + " lines");
             var results = Run(sessions, wide, wideFrom);
-            Print(results);
+            var proofs = Proofs(sessions);
+            if (expect != null) results.AddRange(Expect(proofs, expect));      // 0.16.0 (C16-11e): the kinds asked for, as checks
+            Print(results, proofs, o);
             return results.All(r => r.Pass) ? 0 : 1;
         }
 
@@ -146,20 +309,27 @@ namespace YazsCompanion.Bench
             return all.Where(s => !s.Stamp.StartsWith("(") && string.CompareOrdinal(s.Stamp, since) >= 0).ToList();
         }
 
-        static void Print(List<Result> results)
+        static void Print(List<Result> results, List<Proof> proofs, TextWriter o)
         {
             foreach (var r in results)
             {
-                Console.WriteLine("  " + (r.Pass ? "PASS" : "FAIL") + "  " + r.Id + ": " + r.Text);
-                foreach (var d in r.Detail.Take(8)) Console.WriteLine("        " + (d.Length > 220 ? d.Substring(0, 220) + "..." : d));
-                if (r.Detail.Count > 8) Console.WriteLine("        ... " + (r.Detail.Count - 8) + " more");
+                o.WriteLine("  " + (r.Pass ? "PASS" : "FAIL") + "  " + r.Id + ": " + r.Text);
+                foreach (var d in r.Detail.Take(8)) o.WriteLine("        " + (d.Length > 220 ? d.Substring(0, 220) + "..." : d));
+                if (r.Detail.Count > 8) o.WriteLine("        ... " + (r.Detail.Count - 8) + " more");
             }
+            // 0.16.0 (C16-11e): the INFO sections - what the log proves, not checks ('--expect kind,kind' makes kinds checks)
+            if (proofs != null)
+                foreach (var g in proofs.GroupBy(p => p.Kind.Group))
+                {
+                    o.WriteLine("  INFO  " + g.Key + " (not checks)");
+                    foreach (var p in g) o.WriteLine("        " + p.Kind.Id + ": " + p.Text);
+                }
             int failed = results.Count(r => !r.Pass);
-            Console.WriteLine("check-log: " + (failed == 0 ? "all as wanted" : failed + " check" + (failed == 1 ? "" : "s") + " not as wanted"));
+            o.WriteLine("check-log: " + (failed == 0 ? "all as wanted" : failed + " check" + (failed == 1 ? "" : "s") + " not as wanted"));
         }
 
         // ---------------------------------------------------------------- the checks
-        /// <summary>The six checks over the sessions. <paramref name="wide"/>: WideMenus on / off as known from outside the
+        /// <summary>The seven checks over the sessions (0.16.0: 'items'). <paramref name="wide"/>: WideMenus on / off as known from outside the
         /// log (null: not known - the default Everywhere, unless a [config] line of the log says otherwise).</summary>
         static List<Result> Run(List<Session> sessions, bool? wide, string wideFrom)
         {
@@ -303,6 +473,40 @@ namespace YazsCompanion.Bench
                 : shown.Pass ? shownLines + " [shown] line" + (shownLines == 1 ? "" : "s") + ", " + texts + " card texts within the Wording rails (longest " + longest.Length + " characters)"
                 : shown.Detail.Count + " of " + texts + " card texts break the Wording rails";
             results.Add(shown);
+
+            // items (0.16.0, C16-02b): every chest offer has its '[items] held:' line before the next offer, and the item book has a
+            // row for every item a chest showed ('[items] no rule for' names only the game's unlocalized 'Powerups/...' duplicates)
+            var items = new Result { Id = "items" };
+            int chests = 0, heldMissing = 0, noRule = 0, itemsOld = 0, itemsNew = 0;
+            foreach (var s in sessions)
+            {
+                if (!s.Has016) { itemsOld++; continue; }        // the version, or an [items] / [held] line (a 0.16.0 tree not bumped yet)
+                itemsNew++;
+                string at = sessions.Count > 1 && !s.Stamp.StartsWith("(") ? s.Stamp.Substring(0, 10) + " " : "";
+                string open = null;                 // the chest offer still waiting for its [items] held line
+                foreach (var l in s.Lines)
+                {
+                    var lm = RxLine.Match(l); if (!lm.Success) continue;
+                    string msg = lm.Groups[2].Value;
+                    if (RxOffer.IsMatch(msg))
+                    {
+                        if (open != null) { heldMissing++; items.Detail.Add(at + open + " - no '[items] held:' line before the next offer"); }
+                        open = RxOfferChest.IsMatch(msg) ? l : null;
+                        if (open != null) chests++;
+                        continue;
+                    }
+                    if (open != null && RxItemsHeld.IsMatch(msg)) { open = null; continue; }
+                    var nm = RxNoRule.Match(msg);
+                    if (nm.Success && !nm.Groups[1].Value.StartsWith("Powerups/", StringComparison.Ordinal)) { noRule++; items.Detail.Add(at + l + " - the item book has no row for it"); }
+                }
+                if (open != null) { heldMissing++; items.Detail.Add(at + open + " - no '[items] held:' line (the session ends)"); }
+            }
+            items.Pass = items.Detail.Count == 0;
+            items.Text = itemsNew == 0 ? OnlyOlder(itemsOld, "0.16.0")
+                : items.Pass ? (chests == 0 ? "no chest offer to check" : Count(chests, "chest offer") + ", each with its [items] held line") + "; every item has a rule" + Older(itemsOld, "0.16.0")
+                : (heldMissing > 0 ? heldMissing + " of " + Count(chests, "chest offer") + " without their [items] held line" : "every chest offer with its [items] held line")
+                    + (noRule > 0 ? "; " + Count(noRule, "item") + " without a rule" : "; every item has a rule") + Older(itemsOld, "0.16.0");
+            results.Add(items);
             return results;
         }
 
@@ -355,6 +559,12 @@ namespace YazsCompanion.Bench
 10:01:10.003 [Info] [card] #3      Potato (item) 0.60 - economy
 10:01:10.004 [Info] [shown] LevelUp 00:30: 1 'The Rifleman build's main ability' | 2 'Level 2 of 4 - this build levels abilities first' | 3 'More XP and luck over the run'
 10:01:13.000 [Info] [pick] LevelUp 00:30: Medical Drone (#1, the pick)
+10:02:00.000 [Info] [offer] Chest 01:20 (Normal horde 2)
+10:02:00.001 [Info] [items] held: none | free slots 6 (max - equipped) | luck 0 | pickup 100% | speed 100
+10:02:00.002 [Info] [card] #1 PICK Magazine Clip (item) 3.92 - A-tier item, the squad reloads magazines
+10:02:00.003 [Info] [card] #2      Pocket Watch (item) 1.50 - timed power-ups last twice as long
+10:02:00.004 [Info] [shown] Chest 01:20: 1 'A-tier, the squad reloads magazines' | 2 'Timed power-ups last twice as long'
+10:02:03.000 [Info] [pick] ChestOpened 01:20: Magazine Clip (#1, the pick)
 ");
         // the literal holds the file's own line endings: CRLF where git checks the source out with them (the CI runner), so the
         // cases' line-by-line replaces (ending in a bare LF) would miss - one form for every checkout
@@ -375,7 +585,7 @@ namespace YazsCompanion.Bench
             _bad = 0;
             Console.WriteLine("\n=== 0.15.0: --check-log - the hook lines, the WHY hooks, the wide frame, warnings and errors, the [shown] texts on the rails (C15-11)");
             var ok = RunText(Healthy);
-            Check("L1", "a healthy session passes all six checks", ok.Count == 6 && ok.All(r => r.Pass), Fails(ok) + " | " + R(ok, "shown").Text);
+            Check("L1", "a healthy session passes all seven checks", ok.Count == 7 && ok.All(r => r.Pass), Fails(ok) + " | " + R(ok, "shown").Text + " | " + R(ok, "items").Text);
 
             var hooks = RunText(Healthy.Replace("0 patch classes failed", "1 patch class failed") + "10:00:01.500 [Warning] [hooks] RerollPatch not patched: method not found\n");
             Check("L2", "a failed patch class fails 'hooks' (and its warning 'warnings'), naming the class", !R(hooks, "hooks").Pass && !R(hooks, "warnings").Pass && R(hooks, "hooks").Detail.Any(d => d.Contains("RerollPatch")), Fails(hooks));
@@ -407,7 +617,7 @@ namespace YazsCompanion.Bench
             Check("L6", "an old headline fails 'shown' (its '>', 'focus'); 50 characters pass at #1, 49 fail beside AVOID (room 48)",
                 !R(old, "shown").Pass && R(room, "shown").Detail.Count == 1 && R(room, "shown").Detail[0].Contains("#3") && R(room, "shown").Detail[0].Contains("room 48"),
                 string.Join(" / ", R(old, "shown").Detail.Concat(R(room, "shown").Detail)));
-            Check("L6", "a text with an apostrophe is read whole ('The Rifleman build's main ability')", R(ok, "shown").Text.Contains("3 card texts"), R(ok, "shown").Text);
+            Check("L6", "a text with an apostrophe is read whole ('The Rifleman build's main ability'; 3 texts of the level-up + 2 of the chest)", R(ok, "shown").Text.Contains("2 [shown] lines, 5 card texts"), R(ok, "shown").Text);
 
             string two = Healthy.Replace("[Info] [wide]", "[Warning] [wide]") + Healthy.Replace("2030-01-02 10:00:00", "2030-01-02 11:00:00");
             Check("L7", "--since: 'last' is the newest session, 'all' every one, a stamp prefix the sessions from then on",
@@ -440,8 +650,156 @@ namespace YazsCompanion.Bench
                 old13.All(r => r.Pass) && R(old13, "why hooks").Text.Contains("of a build before 0.14.0") && !R(old13Bad, "hooks").Pass,
                 R(old13, "why hooks").Text + " | " + R(old13, "wide").Text);
 
+            Console.WriteLine("\n=== 0.16.0: --check-log - the [items] held line of every chest offer (C16-02b); the proofs a log holds: INFO sections, --expect, the EQUIP press's source (C16-11e)");
+            // L11: 'items'
+            string noHeld = Healthy.Replace("10:02:00.001 [Info] [items] held: none | free slots 6 (max - equipped) | luck 0 | pickup 100% | speed 100\n", "");
+            var itemsNoHeld = RunText(noHeld);
+            Check("L11", "'items': the healthy log passes - its chest offer has its [items] held line", R(ok, "items").Pass && R(ok, "items").Text.StartsWith("1 chest offer, each with its [items] held line"), R(ok, "items").Text);
+            Check("L11", "'items': the chest block without its [items] held line fails 'items' (and nothing else), naming the offer",
+                !R(itemsNoHeld, "items").Pass && itemsNoHeld.Count(r => !r.Pass) == 1 && R(itemsNoHeld, "items").Detail.Any(d => d.Contains("[offer] Chest 01:20 (Normal horde 2)")),
+                Fails(itemsNoHeld) + " | " + R(itemsNoHeld, "items").Text);
+            var itemsWidget = RunText(Healthy + "10:02:00.002 [Info] [items] no rule for 'Bench Widget' - keyword reading\n");
+            var itemsPowerups = RunText(Healthy + "10:02:00.002 [Info] [items] no rule for 'Powerups/Item/Potato' - keyword reading\n");
+            var itemsQuote = RunText(Healthy + "10:02:00.002 [Info] [items] no rule for 'Schrodinger's Cat' - keyword reading\n");
+            Check("L11", "'items': a '[items] no rule for 'Bench Widget'' line fails 'items'; a 'Powerups/...' name passes; a name with an apostrophe is read whole",
+                !R(itemsWidget, "items").Pass && R(itemsWidget, "items").Detail.Any(d => d.Contains("'Bench Widget'")) && R(itemsPowerups, "items").Pass
+                && !R(itemsQuote, "items").Pass && R(itemsQuote, "items").Text.EndsWith("1 item without a rule"),
+                R(itemsWidget, "items").Text + " | " + R(itemsPowerups, "items").Text);
+            var items15 = RunText(noHeld.Replace("YAZS Companion 9.9.9 (abc1234) loaded", "YAZS Companion 0.15.0 (abc1234) loaded"));
+            Check("L11", "'items': a session of 0.15.0 is not checked (no [items] or [held] line before 0.16.0)", R(items15, "items").Pass && R(items15, "items").Text.Contains("not checked"), R(items15, "items").Text);
+            // a build of the 0.16.0 tree whose VERSION still says 0.15.0 (the live rounds before the release's bump): checked by its lines
+            const string unbumped = "YAZS Companion 0.15.0 (abc1234-dirty) loaded";
+            string slotReads = "10:01:00.000 [Info] [items] item slot reads: team 6 | leader 6 | max 6 - equipped 0\n";
+            var items16ok = RunText(Healthy.Replace("YAZS Companion 9.9.9 (abc1234) loaded", unbumped));
+            var items16bad = RunText(noHeld.Replace("YAZS Companion 9.9.9 (abc1234) loaded", unbumped).Replace("10:01:10.000 [Info] [offer] LevelUp", slotReads + "10:01:10.000 [Info] [offer] LevelUp"));
+            Check("L11", "'items': a 0.16.0 tree still named 0.15.0 ('0.15.0 (abc1234-dirty)') is checked by its [items] lines: it passes with its held line, and fails without it",
+                R(items16ok, "items").Pass && R(items16ok, "items").Text.StartsWith("1 chest offer, each with its [items] held line") && !R(items16ok, "items").Text.Contains("not checked")
+                && !R(items16bad, "items").Pass && R(items16bad, "items").Detail.Any(d => d.Contains("[offer] Chest 01:20 (Normal horde 2)")),
+                R(items16ok, "items").Text + " | " + R(items16bad, "items").Text);
+            string rerolled = Healthy.Replace("10:02:03.000 [Info] [pick] ChestOpened", "10:02:01.000 [Info] [offer] Chest 01:20 (Normal horde 2) replaced (reroll): gone Pocket Watch; new Potato\n10:02:03.000 [Info] [pick] ChestOpened");
+            string rerolledOk = rerolled.Replace("new Potato\n", "new Potato\n10:02:01.001 [Info] [items] held: none | free slots 6 (max - equipped) | luck 0 | pickup 100% | speed 100\n");
+            var noCards = RunText(Healthy + "10:03:00.000 [Info] [offer] Chest 01:40: no active cards\n10:03:01.000 [Info] [offer] LevelUp 01:41 (Normal horde 2)\n");
+            Check("L11", "'items': a reroll's replaced chest offer needs its own [items] held line; the 'no active cards' line needs none",
+                !R(RunText(rerolled), "items").Pass && R(RunText(rerolledOk), "items").Pass && R(RunText(rerolledOk), "items").Text.StartsWith("2 chest offers") && R(noCards, "items").Pass,
+                R(RunText(rerolled), "items").Text + " | " + R(noCards, "items").Text);
+            string isSrc = Src("ItemStats.cs"), adSrc = Src("Advisor.cs"), gsSrc = Src("GameState.cs");
+            if (isSrc == null || adSrc == null || gsSrc == null) Check("L11", "the sources are readable from the bench", false, "a file is missing next to tools\\ItemBench");
+            else
+            {
+                int chest = adSrc.IndexOf("if (screen == Screen.Chest)", StringComparison.Ordinal);
+                Check("L11", "the writer: ItemStats writes '[items] held: ' and '[items] item slot reads: '; Advisor calls HeldLine on chest offers; GameState calls ItemStats.Fill",
+                    isSrc.Contains("\"[items] held: \"") && isSrc.Contains("\"[items] item slot reads: team \"") && chest > 0 && adSrc.IndexOf("ItemStats.HeldLine(snap)", chest, StringComparison.Ordinal) > chest
+                    && gsSrc.Contains("ItemStats.Fill(master, s)"));
+                Check("L11", "the free slots are one read, the game's formula: InternalMaxItems - InternalNumEquippedItems (statistic 50 only logged)",
+                    isSrc.Contains("EType.InternalMaxItems") && isSrc.Contains("EType.InternalNumEquippedItems") && isSrc.Contains("Slots(max, equipped)")
+                    && isSrc.Contains("ReadsLine(team, leader, max, equippedRaw)"));
+            }
+
+            // L12: the INFO sections
+            var pr = ProofsText(Healthy + ProofLog);
+            var bare = ProofsText(Healthy);
+            Check("L12", "INFO: each kind seen, with its first time and its source or line; a log without them: 'not in this log' for every kind",
+                Pt(pr, "first-input") == "seen 1, first at 10:03:00: touch" && Pt(pr, "yard") == "seen 2, first at 10:03:01: [yard] bought Weapon Damage 1>2 (advice #1)"
+                && Pt(pr, "equip") == "seen 2, first at 10:03:03: touch (touch 1, mouse 1)" && Pt(pr, "ribbon").StartsWith("seen 1, first at 10:03:05: [badge] ribbon stepped aside")
+                && Pt(pr, "quest-story").StartsWith("seen 1, first at 10:03:06: [quest] GameHubQuest_Main_06 -> story objective") && Pt(pr, "side-panel").StartsWith("seen 1, first at 10:03:07: [why] LevelUp")
+                && Pt(pr, "side-panel").EndsWith("...") && Pt(pr, "results").StartsWith("seen 1, first at 10:03:08: [shot] results step 1")
+                && Pt(pr, "recruit-tour").StartsWith("seen 1, first at 10:03:09: [menu] pause walk: hover tour") && bare.All(p => p.Text == "not in this log"),
+                Pt(pr, "first-input") + " | " + Pt(pr, "equip") + " | " + Pt(bare, "yard"));
+            var twoP = ProofsText(Healthy + Healthy.Replace("2030-01-02 10:00:00", "2030-01-03 11:00:00") + ProofLog, "all");
+            Check("L12", "INFO over several sessions (--since all): 'first at' carries the day", Pt(twoP, "first-input") == "seen 1, first at 2030-01-03 10:03:00: touch", Pt(twoP, "first-input"));
+
+            // L13: --expect (through the command, on files - its output read from a StringWriter, so the bench's verdict sees none of it)
+            string tmp = Path.Combine(Path.GetTempPath(), "yazs_bench_expect_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                string logDir = Path.Combine(tmp, "BepInEx", "plugins", "YazsCompanion");      // no cfg two folders up: WideMenus = Everywhere
+                Directory.CreateDirectory(logDir);
+                string withProofs = Path.Combine(logDir, "companion.log"), plain = Path.Combine(logDir, "companion.log.1");
+                File.WriteAllText(withProofs, Healthy + ProofLog);
+                File.WriteAllText(plain, Healthy);
+                var o1 = new StringWriter(); int c1 = Command(new[] { "--check-log", withProofs, "--expect", "first-input,yard" }, 0, o1);
+                var o2 = new StringWriter(); int c2 = Command(new[] { "--check-log", plain, "--expect", "first-input,Yard" }, 0, o2);
+                var o3 = new StringWriter(); int c3 = Command(new[] { "--check-log", withProofs, "--expect", "first-input,bogus" }, 0, o3);
+                var o4 = new StringWriter(); int c4 = Command(new[] { "--check-log", withProofs, "--expect" }, 0, o4);
+                var o5 = new StringWriter(); int c5 = Command(new[] { "--check-log", plain }, 0, o5);
+                var o6 = new StringWriter(); int c6 = Command(new[] { "--check-log", plain, "--since", "2031" }, 0, o6);
+                string s1 = o1.ToString(), s2 = o2.ToString(), s3 = o3.ToString(), s5 = o5.ToString();
+                Check("L13", "--expect first-input,yard: exit 0 on a log that holds both (two more checks), 1 on one that holds neither (kinds read in any case)",
+                    c1 == 0 && s1.Contains("PASS  expect first-input: seen 1, first at 10:03:00: touch") && s1.Contains("PASS  expect yard: seen 2")
+                    && c2 == 1 && s2.Contains("  expect first-input: expected, and not in this log") && s2.Contains("  expect yard: expected, and not in this log"),
+                    "exit " + c1 + " / " + c2);
+                Check("L13", "--expect with an unknown kind exits 2 naming it and every kind; --expect without a list exits 2",
+                    c3 == 2 && s3.Contains("unknown kind 'bogus'") && Kinds.All(k => s3.Contains(k.Id)) && !s3.Contains("PASS") && c4 == 2 && o4.ToString().Contains("the kinds: first-input"),
+                    "exit " + c3 + " / " + c4);
+                Check("L13", "without --expect the exit codes are 0.15.0's (a healthy log 0, no session 2); the INFO sections print after the checks, before the verdict line",
+                    c5 == 0 && c6 == 2 && s5.IndexOf("  INFO  real-session proofs (not checks)", StringComparison.Ordinal) > s5.IndexOf("  PASS  items: ", StringComparison.Ordinal)
+                    && s5.IndexOf("check-log: all as wanted", StringComparison.Ordinal) > s5.IndexOf("  INFO  walk proofs (not checks)", StringComparison.Ordinal)
+                    && s5.Contains("        recruit-tour: not in this log") && s1.Contains("        first-input: seen 1, first at 10:03:00: touch"),
+                    "exit " + c5 + " / " + c6);
+            }
+            finally { try { Directory.Delete(tmp, true); } catch { } }
+
+            // L14: the patterns are anchored on the message - a line of another tag that quotes the words, or a near miss, does not count
+            var quoted = ProofsText(Healthy + Quoted);
+            Check("L14", "a line of another tag with the same words, a source the menu does not have, a step 3, a tour of 3 cards: nothing counts",
+                quoted.All(p => p.Text == "not in this log"), string.Join(", ", quoted.Where(p => p.Text != "not in this log").Select(p => p.Kind.Id + " " + p.Text)));
+
+            // L15: the EQUIP press's source
+            string eqNew = Lf(@"10:04:00.000 [Info] [loadout] equip: EQUIP ADVICE (advice #2) pressed by touch - remove Tough, add Gunner = 2 clicks through the game's own badge button, 0.12 s apart; selection before 20,18
+");
+            string eqOld = Lf(@"10:04:00.000 [Info] [loadout] equip: EQUIP ADVICE (advice #1) pressed - remove Tough, add Gunner = 2 clicks through the game's own badge button, 0.12 s apart; selection before 20,18
+");
+            string eqKey = Lf(@"10:04:05.000 [Info] [loadout] equip: UNDO pressed by key - remove Gunner, add Tough = 2 clicks through the game's own badge button, 0.12 s apart; selection before 20,6
+");
+            var pNew = ProofsText(Healthy + eqNew); var pOld = ProofsText(Healthy + eqOld); var pBoth = ProofsText(Healthy + eqOld + eqNew + eqKey);
+            var exOld = Expect(pOld, new List<string> { "equip" })[0]; var exNew = Expect(pNew, new List<string> { "equip" })[0];
+            Check("L15", "equip: 'pressed by touch' -> touch; a 0.15.0 'pressed - ' line -> 'seen 1 without a source'; both, and an UNDO by key -> the sources, the old line apart",
+                Pt(pNew, "equip") == "seen 1, first at 10:04:00: touch" && Pt(pOld, "equip") == "seen 1 without a source (a build before 0.16.0)"
+                && Pt(pBoth, "equip") == "seen 2, first at 10:04:00: touch (touch 1, key 1); 1 without a source (a build before 0.16.0)",
+                Pt(pBoth, "equip"));
+            Check("L15", "--expect equip: not met by the 0.15.0 line, met by the new one", !exOld.Pass && exOld.Text.EndsWith("none says how it was pressed") && exNew.Pass, exOld.Text + " | " + exNew.Text);
+            string leSrc = Src("LoadoutEquip.cs");
+            Check("L15", "the writer: LoadoutEquip's pressed line says 'pressed by <source>' - Menu.Pointer() for a click on the plate (touch / mouse), 'key' for the key",
+                leSrc != null && leSrc.Contains("\" pressed by \"") && leSrc.Contains("source = Menu.Pointer()") && leSrc.Contains("source = \"key\""));
+
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
+        }
+
+        // the 0.16.0 cases' made-up lines (the game's names only; badge names like Gunner, yard nodes like Weapon Damage)
+        static readonly string ProofLog = Lf(@"10:03:00.000 [Info] [menu] first input this session: touch
+10:03:01.000 [Info] [yard] bought Weapon Damage 1>2 (advice #1)
+10:03:02.000 [Info] [yard] refunded Armor 1>0
+10:03:03.000 [Info] [loadout] equip: EQUIP ADVICE (advice #1) pressed by touch - remove Tough, add Gunner = 2 clicks through the game's own badge button, 0.12 s apart; selection before 20,18
+10:03:04.000 [Info] [loadout] equip: UNDO pressed by mouse - remove Gunner, add Tough = 2 clicks through the game's own badge button, 0.12 s apart; selection before 20,6
+10:03:05.000 [Info] [badge] ribbon stepped aside for the Skill Tree label (ribbon alpha 0.41)
+10:03:06.000 [Info] [quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only
+10:03:07.000 [Info] [why] LevelUp 00:30: #2 Handgun 3.72 - WHY 'Medical Drone goes first' | 'Level 2 of 4' (side wing left, header + 2 lines, 20.5 px, 2 of 2 shown)
+10:03:08.000 [Info] [shot] results step 1 set up (3440x1440) - captures at 0.8 and 1.6 s
+10:03:09.000 [Info] [menu] pause walk: hover tour - cards 2 to 4 of 4 selected in turn (the game's selection, never a click), a 'why_card' shot 0.4 s after each '[why]' line
+");
+        static readonly string Quoted = Lf(@"10:03:00.000 [Info] [config] note: [menu] first input this session: pad
+10:03:01.000 [Info] [menu] first input this session: pad, then key
+10:03:02.000 [Info] [why] LevelUp 00:30: #1 Handgun 3.72 - '[yard] bought Weapon Damage 1>2 (advice #1)' (2 lines, 20.5 px, 1 of 1 shown)
+10:03:03.000 [Info] [loadout] equip: EQUIP ADVICE (advice #x) pressed by touch - add Gunner = 1 click
+10:03:04.000 [Info] [loadout] equip: EQUIP ADVICE (advice #1) pressed by finger - add Gunner = 1 click
+10:03:05.000 [Info] [card] #1 PICK Handgun (weapon, Medic) 3.72 - [badge] ribbon stepped aside for the Skill Tree label
+10:03:06.000 [Info] [quest] -> story objective main_story_objective_q6: 3 of 5 - progress only
+10:03:07.000 [Info] [why] LevelUp 00:30: #2 Handgun 3.72 - WHY 'Level 2 of 4' (band, 2 lines, 20.5 px, 2 of 2 shown) side wing left, header + 2 lines,
+10:03:08.000 [Info] [shot] results step 3 set up (3440x1440)
+10:03:09.000 [Info] [menu] pause walk: hover tour - cards 2 to 3 of 3 selected in turn
+");
+
+        static List<Proof> ProofsText(string log, string since = "last")
+        {
+            var lines = log.Replace("\r\n", "\n").Split('\n').Where(l => l.Length > 0).ToList();
+            return Proofs(Select(Sessions(lines), since));
+        }
+        static string Pt(List<Proof> ps, string id) { return ps.First(p => p.Kind.Id == id).Text; }
+        static string Src(string file)
+        {
+            string p = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "YazsCompanion.Mod", file));
+            return File.Exists(p) ? File.ReadAllText(p).Replace("\r\n", "\n") : null;
         }
     }
 }

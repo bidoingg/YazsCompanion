@@ -43,6 +43,7 @@ namespace YazsCompanion
         // the display mode back afterwards.
         static readonly string[] YardOrder = { "general", "swat", "tank", "engineer", "huntress", "ghost", "medic", "pyro", "mechanic" };   // the tab list, top to bottom
         static bool _yardDone; static int _yardStage; static float _yardAt = -1f;
+        static int _yardBadge;                        // 0.16.0 (C16-07): the Medic tab's badge stage - 0 not yet, 1 next, 2 done
         static int _backW, _backH; static FullScreenMode _backMode; static bool _resized;
 
         /// <summary>Put the game in a window of [Debug] PreviewResolution (the real layout and pixels of that screen);
@@ -114,17 +115,32 @@ namespace YazsCompanion
                     _yardAt = now + 3f; _yardStage = 2; return;
                 }
                 int tab = _yardStage - 2;
-                if (tab > YardOrder.Length + 1) { _yardDone = true; Plugin.Logger.LogInfo("[preview] yard done"); return; }
+                if (tab > YardOrder.Length + 1) { _yardDone = true; Perf.ReportNow(); Plugin.Logger.LogInfo("[preview] yard done"); return; }      // fix_a review (H6): the [perf] sums before the done line
                 var view = FindActive<UIViewSkillTree>();
                 if (view == null) { Plugin.Logger.LogWarning("[preview] yard: the Training Yard did not open"); YardRestore(); _yardDone = true; return; }
                 if (tab < YardOrder.Length)
                 {
+                    if (YardOrder[tab] == "medic" && _yardBadge == 1)
+                    {   // 0.16.0 (C16-07): the Medic tab's second stage - its held badge under the cursor, the WHY row says why it waits
+                        bool held; var node = TreeUi.PreviewBadge(out held);
+                        if (node != null)
+                        {
+                            view.OnHighlighted(node);
+                            string name = ""; try { name = node.attachedSkillTreeUpgrade.GetName(); } catch { }
+                            Plugin.Logger.LogInfo("[preview] yard: highlighted badge " + name + " (" + (held ? "held" : "planned") + ")");
+                        }
+                        else Plugin.Logger.LogInfo("[preview] yard: no badge node on this tab");
+                        Shots.Later(0.8f, "yard7b_medic_badge", true);
+                        _yardBadge = 2; _yardAt = now + 1.4f; _yardStage++; return;
+                    }
                     // the game's own tab change (what LB / RB do, a step of +1): it refreshes the levels, locks and points
                     if (tab > 0) view.ChangeTabIdx(1);
                     if (YardOrder[tab] == "pyro")   // the entrance, frame by frame: the rule draws, the rows type on, the diamonds stamp in and ping
                         for (int f = 0; f < 8; f++) Shots.Later(0.06f + 0.11f * f, "fxyard" + f, true);
                     Shots.Later(1.3f, "yard" + (tab + 1) + "_" + YardOrder[tab], true);
-                    _yardAt = now + 1.9f; _yardStage++; return;
+                    _yardAt = now + 1.9f;
+                    if (YardOrder[tab] == "medic" && _yardBadge == 0) { _yardBadge = 1; return; }     // the same stage runs again for the badge
+                    _yardStage++; return;
                 }
                 if (tab == YardOrder.Length)
                 {   // the cursor on a node outside the advice: the WHY row must follow it (the game's own highlight call)

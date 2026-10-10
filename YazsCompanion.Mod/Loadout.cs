@@ -945,6 +945,10 @@ namespace YazsCompanion
         /// <summary>The game's name of a mode ("Boss Rush" for BossRush, "One Hit" for OneHit).</summary>
         public static string ModeName(string mode) { return mode == "BossRush" ? "Boss Rush" : mode == "OneHit" ? "One Hit" : mode ?? ""; }
 
+        /// <summary>A run's name as the reasons say it: "Normal II", "Boss Rush I", "Hardcore" / "Endless" / "Infinite" (no difficulty).
+        /// 0.16.0 (C16-07): factored out of the survival reason; the Training Yard's badge reasons name the run with it.</summary>
+        public static string RunName(string mode, int difficulty) { return mode == "Hardcore" || mode == "Endless" || mode == "Infinite" ? mode : ModeName(mode) + " " + RomanOf(difficulty); }
+
         /// <summary>Why the badge fits THIS run, short (48 characters at most); the biggest term decides. A knowledge.json note
         /// replaces it; a forced badge always says the mission.</summary>
         public static string Why(BadgeFacts b, int level, List<BadgeTerm> terms, RunShape s, LoadoutCtx c, Knowledge k, bool forced)
@@ -1004,7 +1008,7 @@ namespace YazsCompanion
                         // under 1 (the early run's 0.8 over a short horizon, [Advice] Caution = Low's x0.6) it counts LESS
                         if (c.Survival < 0.95) return "survival picks count " + Pct((1 - c.Survival) * 100) + "% less";
                         if (c.Survival < 1.10) return "survival picks always help";
-                        string where = c.Mode == "Hardcore" || c.Mode == "Endless" || c.Mode == "Infinite" ? c.Mode : ModeName(c.Mode) + " " + RomanOf(c.Difficulty);
+                        string where = RunName(c.Mode, c.Difficulty);
                         return where + ": survival picks count " + Pct((c.Survival - 1) * 100) + "% more";
                     }
                 case "dodge": case "move": return "keeps you out of the horde";

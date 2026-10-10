@@ -12,6 +12,7 @@ namespace YazsCompanion
         static Screen _lastScreen;
         static string _lastClock = "";
         static float _lastT = -1f;           // the run clock (CurrentModePlayTime) of the last offer: a selection screen pauses it
+        static bool _heldLineSaid, _itemsLineSaid;      // 0.16.0: a failed [held] / [items] held line said once a session
 
         /// <summary>The HUD went away (the run ended or the scene changed): no offer is open any more.</summary>
         public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); WhyUi.Forget(); Quest.Forget(); Badge.Forget(); }
@@ -95,6 +96,21 @@ namespace YazsCompanion
                 else { bool reroll = false; try { reroll = sel.isReroll; } catch { } if (reroll) sb.Append(" reroll"); }
                 Plugin.Logger.LogInfo(sb.ToString());
                 Plugin.Logger.LogInfo("[ctx] " + snap.Ctx + BuildsText(snap) + (snap.Boosts.Count > 0 ? " | boosts: " + string.Join(", ", snap.Boosts.ConvertAll(b => b.Name + " (" + b.Tag + ")")) : "") + LoadoutUi.CtxSuffix());
+                // 0.16.0 (C16-01): what the held items change on this offer, and once a run what was read for them (HeldRules.cs)
+                try
+                {
+                    string hl = HeldRules.Line(snap.Held, snap.Ctx); if (hl != null) Plugin.Logger.LogInfo(hl);
+                    long masterKey = 0; try { var gpm = GameplayMaster.s_instance; if (gpm != null) masterKey = gpm.Pointer.ToInt64(); } catch { }
+                    if (HeldRules.NewRun(snap.Seconds, masterKey)) { string rl = HeldRules.ReadsLine(snap.Held); if (rl != null) Plugin.Logger.LogInfo(rl); }
+                }
+                catch (Exception e) { if (!_heldLineSaid) { _heldLineSaid = true; Plugin.Logger.LogWarning("[held] line not written: " + e.Message + " (said once a session)"); } }
+                // 0.16.0 (C16-02b): a chest's item reads - the items held, free slots, luck, pickup, speed - on every chest offer, not
+                // behind LogSquad (ItemStats.cs; --check-log's 'items' check looks for it)
+                if (screen == Screen.Chest)
+                {
+                    try { string il = ItemStats.HeldLine(snap); if (il != null) Plugin.Logger.LogInfo(il); }
+                    catch (Exception e) { if (!_itemsLineSaid) { _itemsLineSaid = true; Plugin.Logger.LogWarning("[items] held line not written: " + e.Message + " (said once a session)"); } }
+                }
                 if (Plugin.LogSquad.Value) Plugin.Logger.LogInfo("[squad] " + snap.SquadText());
                 if (Plugin.LogSquad.Value && (snap.Tags.Known || snap.Tags.Points.Count > 0))
                     Plugin.Logger.LogInfo("[tags] points: " + (snap.Tags.PointsText().Length > 0 ? snap.Tags.PointsText() : "none") + (snap.Tags.SpecialAt > 0 ? " (special at " + snap.Tags.SpecialAt + ")" : "")

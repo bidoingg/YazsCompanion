@@ -124,6 +124,8 @@ namespace YazsCompanion
         public string NotThisRun;                               // QuestTeam's gate: why this run cannot complete the quest
         public QuestSteer Steer = QuestSteer.On;
         public string TeamWords;                                // InfoOnly: the team rule, which the SOS row then leaves out
+        public bool Survive;                                    // 0.16.0 (C16-12): a Survive / SurviveTime / CompleteRun objective - the quest asks to
+                                                                // survive the run (Quest.SurviveFollowed; C16-09's caution reads it too)
         public readonly List<QuestRule> List = new List<QuestRule>();
         public readonly Dictionary<string, int> Points = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);     // the squad's tag points now
 

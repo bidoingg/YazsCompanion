@@ -146,12 +146,20 @@ namespace YazsCompanion.Bench
             foreach (var a in k.AbilityTier.Keys) power("knowledge ability", a, null);
             var items = k.ItemTier.Keys.Concat(k.ItemNote.Keys).Concat(k.ItemPairs.SelectMany(p => new[] { p.Key, p.Value })).Concat(k.ScalingItems).Distinct().ToList();
             foreach (var i in items) item("knowledge item", i);
+            // 0.16.0 (C16-02, C16-12): the item book's names - knowledge.json's own clashes, every row, the stated pairs and clashes, the
+            // mixed effect's two items, the conversion items - and the revive abilities (C16-13's guard reads them) as power names
+            var bookItems = k.ItemClashes.SelectMany(p => new[] { p.Key, p.Value }).Concat(ItemBook.All.Select(e => e.Name))
+                .Concat(ItemBook.Pairs.SelectMany(p => p)).Concat(ItemBook.Clashes.SelectMany(p => p))
+                .Concat(ItemBook.Mixed.SelectMany(m => new[] { m.Offered, m.Held })).Concat(ItemBook.Converts.Select(cv => cv[0])).Distinct().ToList();
+            foreach (var i in bookItems) item("item book", i);
+            foreach (var a in ItemBook.ReviveAbilities) power("item book", a, null);
             var assets = new HashSet<string>(fx.Powers.Select(p => p.Asset ?? ""), StringComparer.Ordinal);
             foreach (var m in k.MilitaryStat.Keys) if (!assets.Contains("MilitaryTraining_" + m)) miss.Add("knowledge militaryStats '" + m + "' (no MilitaryTraining_" + m + " card)");
 
             Console.WriteLine("  kits: " + Builds.Kits.Length + " survivors, " + weapons + " weapons, " + abilities + " abilities, " + evolutions + " evolutions - each the name of that survivor's powerup");
             Console.WriteLine("  presets: " + Builds.Presets.Count + " builds, " + presetNames + " names (branches, abilities and skips, evolution picks)");
             Console.WriteLine("  knowledge.json: " + survivors.Count + " survivors, " + k.WeaponBranch.Count + " weapon branches, " + k.AbilityTier.Count + " abilities, " + items.Count + " items; " + k.MilitaryStat.Count + " military stats by their card's asset");
+            Console.WriteLine("  item book (0.16.0): " + bookItems.Count + " item names (" + ItemBook.All.Length + " rows, the stated pairs / clashes / mixed effect, the conversion items, knowledge.json's itemClashes), " + ItemBook.ReviveAbilities.Length + " revive abilit" + (ItemBook.ReviveAbilities.Length == 1 ? "y" : "ies"));
             var padded = fx.Powers.Where(p => p.Name != p.Name.Trim()).Select(p => "'" + p.Name + "'").Concat(fx.Items.Values.Where(n => n != n.Trim()).Select(n => "'" + n + "'")).ToList();
             if (padded.Count > 0) Console.WriteLine("  (" + padded.Count + " game name" + (padded.Count == 1 ? " carries" : "s carry") + " stray whitespace, compared trimmed: " + string.Join(", ", padded) + ")");
             foreach (var m in miss) Console.WriteLine("  NOT EXACT  " + m);

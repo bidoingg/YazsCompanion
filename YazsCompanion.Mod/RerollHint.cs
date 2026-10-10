@@ -31,6 +31,13 @@
 // Placed 0.6 s after the cards came (the screen has flown in by then), measured from what is on screen: over the button
 // when the band up to the lowest card line is tall enough, else under it, else the frame alone. Nothing here
 // takes clicks. Motion only on appear: the frame settles, the line unfolds from its left tip and types on, the tip pings.
+// 0.16.0: the items the squad holds feed the skip's worth (C16-01b / d / e / f: Reserve Bench's level-up, Hijacked Signal's cash on a pick,
+// Life Savings' cash that heals, A Cookie's heal, Skip Rope's points - HeldRules, logged after '(worth X)'), and the revive guard (C16-13)
+// reads the survive quest and the second life on each card: no REROLL or SKIP sends a revive away while the run must be survived or the
+// squad is under 60 % health, no BANISH ever names one.
+// 0.16.0 (C16-15, DK-C04 of the 10-07 Deck round): a line drawn UNDER its button (1280 x 800: the band over it is 63 units) stands in the
+// WHY band's row and cut it (one rescue card had no WHY at all) - there it says its short words (ScreenCall.Short: 'REROLL  -  a weak
+// offer', 'REROLL  -  Tank fits better'), about half as wide; over its button (the PC) the long words stay. The frame is unchanged.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -74,6 +81,7 @@ namespace YazsCompanion
         static ScreenCall _call;
         static RerollCall _rescue;
         static string _text;                             // the line while the hint is wanted, null = hidden
+        static string _short;                            // 0.16.0 (C16-15): its short form - drawn when the line goes under its button
         static Button _button;                           // the button the hint is about (its frame)
         static float _placeAt = -1f;
         static bool _shown;
@@ -117,7 +125,10 @@ namespace YazsCompanion
                 if (screen == Screen.SOS)
                 {
                     _gin = null;
-                    var inp = new Inputs { Offered = new List<Recruit>(), RecruitValue = s.Ctx.RecruitValue, Rr = av, Quest = s.Quest };
+                    // 0.16.0 (C16-01b): with a recruit's own level-ups (Reserve Bench) a late recruit still beats Liberate - the verdict's
+                    // early 'late in the run' gate is lifted
+                    double recruitValue = HeldRules.RecruitLevelUps(s.Held) >= 1 ? Math.Max(s.Ctx.RecruitValue, RerollCall.Late) : s.Ctx.RecruitValue;
+                    var inp = new Inputs { Offered = new List<Recruit>(), RecruitValue = recruitValue, Rr = av, Quest = s.Quest };
                     foreach (var c in cards)
                     {
                         if (c.Recruit != null) inp.Offered.Add(c.Recruit);
@@ -149,11 +160,29 @@ namespace YazsCompanion
             };
             x.CanBanish = av.Banish && av.BanishUp && (x.Banishes > 0 || av.BanishFree);
             try { var q = s.Rules; if (screen == Screen.Chest && q != null && q.Moves && q.Any(QuestAsk.NoItems)) x.NoItems = "take no items"; } catch { }
+            // 0.16.0 (C16-01): what the items the squad holds add to the skip (HeldRules; nothing without them)
+            var held = s.Held;
+            x.SkipLevelUps = HeldRules.SkipLevelUps(held, x.Screen);                 // C16-01b Reserve Bench
+            x.CashHeals = HeldRules.CashHeals(held);                                  // C16-01e Life Savings
+            x.CashAlsoOnPick = HeldRules.CashAlsoOnPick(held, x.Screen);             // C16-01d Hijacked Signal
+            x.ExtraHeal = HeldRules.SkipExtraHeal(held, x.Screen);                   // C16-01f A Cookie
+            x.Economy = s.Ctx.Economy;
+            x.SkipBonus = HeldRules.SkipRopeWorth(held, x.Screen, s.Ctx.Economy);    // C16-01f Skip Rope
+            x.SkipBy = HeldRules.SkipBy(held, x.Screen);
+            x.RopePoints = HeldRules.SkipRopePoints(held, x.Screen); x.RopeReq = HeldRules.TrainingReq(held);       // C16-01f the log's words
+            x.SlotBy = HeldRules.SlotBy(held);                                        // C16-01c Wooden Stick / Empty Chest
+            // 0.16.0 (C16-13): the revive guard - the quest asks to survive the run (C16-12), a second life on a card
+            x.SurviveQuest = s.Ctx.SurviveQuest;
             foreach (var c in cards)
             {
                 var k = new HintCard { Name = c.Name, Kind = c.Kind, Score = c.Score, Rank = c.Rank, Head = c.Reason, Class = c.Owner != null ? c.Owner.Name : null };
                 var w = c.Say;
                 if (w != null) { k.Base = w.Base; k.Build = w.Build; k.Skipped = w.Kind == SayKind.Ability && w.HeadRank >= 6; }
+                if (w != null && w.Item != null) k.HeldCost = w.Item.HeldCost;      // 0.16.0 (C16-01c): the slot's cost - the merit is Score + HeldCost
+                // a revive item (the book's row, with [Debug] ItemKeywords on too), or Resuscitation not yet owned (CardWords.Level = the level
+                // before the pick)
+                k.Revive = c.Item != null ? ItemBook.Revive(c.Name)
+                    : c.Powerup != null && w != null && w.Kind == SayKind.Ability && w.Level == 0 && ItemBook.ReviveAbilities.Contains(c.Name, StringComparer.OrdinalIgnoreCase);
                 k.Banishable = Banishable(c);
                 if (c.Item != null) { var h = Quest.IsHealthItem(c.Item); k.Health = h == true; }
                 x.Cards.Add(k);
@@ -216,7 +245,7 @@ namespace YazsCompanion
         public static void Close() { Hide(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; }
 
         /// <summary>The HUD went away with the scene: nothing of ours is left to hide (the unlock cards are looked up again next run).</summary>
-        public static void Forget() { _placeAt = -1f; _text = null; _shown = false; _button = null; LineRect = new R4(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; _banishing = null; }
+        public static void Forget() { _placeAt = -1f; _text = null; _short = null; _shown = false; _button = null; LineRect = new R4(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; _banishing = null; }
 
         /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and a float compare a frame.</summary>
         public static void Tick()
@@ -328,7 +357,7 @@ namespace YazsCompanion
 
         // each class's UnlockCharacterPowerup, found once a session in the game's powerup lists (asset data)
         static Dictionary<int, PowerupBase> _unlockCards;
-        static PowerupBase UnlockCard(int cls)
+        internal static PowerupBase UnlockCard(int cls)        // 0.16.0 (C16-11a): internal - the pause walk's recruit (Menu.Walk016.cs) asks it too
         {
             if (_unlockCards == null)
             {
@@ -361,7 +390,7 @@ namespace YazsCompanion
                 bool can = CanReroll(_in.Rr, out rr);
                 var r = RerollCall.Decide(_in.Offered, _in.Liberate, _in.Possible, can, rr, _in.RecruitValue, _in.Quest);     // 0.13.0 (C1): the quest's team rule first
                 _rescue = r;
-                call = ScreenCall.FromRescue(r, r.Show ? LineText(r) : null);
+                call = ScreenCall.FromRescue(r, r.Show ? LineText(r, false) : null, r.Show ? LineText(r, true) : null);     // C16-15: both forms
             }
             else
             {
@@ -374,10 +403,12 @@ namespace YazsCompanion
             if (always || flipped) { if (_in != null) Log(_rescue, rr, when); else LogScreen(call, when); }
             if (!call.Show) { Hide(); return; }
             string text = _in != null ? call.Words : Head(call.Action) + Wording.Safe(Names.Text(call.Words));
+            // 0.16.0 (C16-15): the short words too - Place draws them when the line goes under its button
+            string brief = _in != null ? call.Short ?? call.Words : Head(call.Action) + Wording.Safe(Names.Text(call.Short ?? call.Words));
             Button b = ButtonOf(call.Action);
-            if (_shown && text == _text && b != null && _button != null && b.Pointer == _button.Pointer) return;     // the same words on screen already (a count that moved, still > 0)
+            if (_shown && text == _text && brief == _short && b != null && _button != null && b.Pointer == _button.Pointer) return;     // the same words on screen already (a count that moved, still > 0)
             if (_shown && (_button == null || b == null || b.Pointer != _button.Pointer)) Hide();                      // another action: its own button
-            _text = text; _button = b; _placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : PlaceDelay);
+            _text = text; _short = brief; _button = b; _placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : PlaceDelay);
         }
 
         static Button ButtonOf(HintAction a)
@@ -414,7 +445,7 @@ namespace YazsCompanion
             if (when != null) sb.Append("(").Append(when).Append(") ");
             sb.Append(c.Show ? "SHOWN " + ScreenCall.Name(c.Action) + " - " : "not shown - ").Append(c.Why);
             if (c.Show && c.Action != HintAction.Reroll) sb.Append(" | rerolls ").Append(_gin.RerollsText);
-            sb.Append(" | skip ").Append(_gin.CanSkip ? "+" + _gin.SkipCash + " cash, +" + _gin.SkipHeal + " health (worth " + F2(c.SkipValue) + ")" : "not offered");
+            sb.Append(" | skip ").Append(_gin.CanSkip ? "+" + _gin.SkipCash + " cash, +" + _gin.SkipHeal + " health (worth " + F2(c.SkipValue) + ")" + ScreenCall.SkipNote(_gin) : "not offered");     // 0.16.0 (C16-01): what held items add
             sb.Append(" | actions ").Append(Actions);
             if (c.Show) sb.Append(" | '").Append(c.Words).Append('\'');
             Plugin.Logger.LogInfo(sb.ToString());
@@ -425,20 +456,22 @@ namespace YazsCompanion
         // REROLL - Tank would fit this squad better; a second survivor that clears the margin too: "Tank or SWAT", and "(+1 more)"
         // when still more do; for a class the active quest needs (0.13.0, C1): REROLL - the quest needs Huntress.
         // 0.14.0 (A1): up to 0.13.0 the line ended "would rate higher (5.9 vs 4.6)" - the Companion's own scores, which counted
-        // nothing a player can see; they stay in the '[squad] reroll hint:' log line
-        static string LineText(RerollCall c)
+        // nothing a player can see; they stay in the '[squad] reroll hint:' log line.
+        // 0.16.0 (C16-15): <paramref name="brief"/> the short form for a line under the button - "REROLL - Tank fits better"
+        // (Wording.RerollShort: the first survivor alone); the quest's form keeps its words
+        static string LineText(RerollCall c, bool brief)
         {
             var who = c.Better.Take(2).Select(r => Wording.Safe(Names.Class((CT)r.Class))).ToList();
             if (who.Count == 0) who.Add(Wording.Safe(Names.Class((CT)c.Best.Class)));
             string head = Head(HintAction.Reroll);
             if (c.ForQuest) return head + "the quest needs " + (who.Count > 1 ? who[0] + " or " + who[1] : who[0]);
-            return head + Wording.Reroll(who, Math.Max(0, c.Better.Count - who.Count));
+            return head + (brief ? Wording.RerollShort(who) : Wording.Reroll(who, Math.Max(0, c.Better.Count - who.Count)));
         }
 
         // ---------------------------------------------------------------- drawing
         static void Hide()
         {
-            _placeAt = -1f; _text = null;
+            _placeAt = -1f; _text = null; _short = null;
             bool was = _shown; _shown = false;
             bool had = !LineRect.Empty; LineRect = new R4();
             if (had) WhyUi.Relayout();
@@ -504,9 +537,13 @@ namespace YazsCompanion
                 var textT = lrt.Find("Text"); var text = textT == null ? null : textT.GetComponent<TextMeshProUGUI>();
                 float k = spot.K, sk = s * k, tip = Tip * sk, pad = Pad * sk;
                 text.fontSize = Font * sk;
-                text.text = _text;
+                // 0.16.0 (C16-15): under the button the line stands in the WHY band's row (1280 x 800) - its short words there, so the band
+                // keeps its room; over the button (the PC since 0.12.2) the long words
+                string drawn = spot.Where == "under" && _short != null ? _short : _text;
+                bool brief = drawn != _text;                                         // the log's ', short form' (BANISH and the quest's rescue form have none)
+                text.text = drawn;
                 float tw = 0f; try { tw = text.preferredWidth; } catch { }
-                if (!(tw > 0f)) tw = 22f * sk * _text.Length * 0.5f;
+                if (!(tw > 0f)) tw = 22f * sk * drawn.Length * 0.5f;
                 float w = Mathf.Min(MaxW * s, tw + tip + 2 * pad + 4f), want = w;
                 // 0.14.0 (R1): the side the line grows to, and never into the team panel or the skip reward
                 float x0 = b.X0;
@@ -531,7 +568,7 @@ namespace YazsCompanion
                 lrt.gameObject.SetActive(true); lrt.SetAsLastSibling();
                 LineRect = new R4(x0, spot.Top, x0 + w, bottomY);
                 if (first)
-                    Plugin.Logger.LogInfo(Tag + "drawn " + where + (x0 > b.X0 ? ", growing left" : "") + (w < want - 0.5f ? ", cut short by the team panel" : "") + " - " + w.ToString("0") + " x " + (h * k).ToString("0") + " units, font " + (Font * sk).ToString("0.#") + " (x" + sk.ToString("0.00") + "), " + (spot.Band >= 0 ? "band " + spot.Band.ToString("0") + " units between the cards' lowest line and the button" : "the cards reach below the button's top"));
+                    Plugin.Logger.LogInfo(Tag + "drawn " + where + (x0 > b.X0 ? ", growing left" : "") + (w < want - 0.5f ? ", cut short by the team panel" : "") + (brief ? ", short form" : "") + " - " + w.ToString("0") + " x " + (h * k).ToString("0") + " units, font " + (Font * sk).ToString("0.#") + " (x" + sk.ToString("0.00") + "), " + (spot.Band >= 0 ? "band " + spot.Band.ToString("0") + " units between the cards' lowest line and the button" : "the cards reach below the button's top"));
                 _shown = true;
                 Entrance(frame, lrt, text, first);
                 WhyUi.Relayout();

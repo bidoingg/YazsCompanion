@@ -5,6 +5,302 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.0 (2026-10-10) - every item
+
+Every chest item read by its own text, the items the squad holds in the advice, and the fixes of the 10-07 Steam Deck
+round for the 1280 x 800 screen. Two parts of it have not been seen in a live run yet - the WHY side panel on a 21:9
+screen and the chest item advice in the game; see the end of this entry.
+
+### Chest cards read every item by its own text
+
+- **A rule per chest item**: the 134 items of the 1.0.2 chest pool are scored by their own 1.0.2 texts (the item book)
+  instead of keyword patterns. On the 150 logged chests the top card changes on 22. Lines stop claiming what an item does
+  not do:
+  - max HP, a revive or a health cost is no longer read as healing for the Medic ('More healing - suits Medic' under
+    Frozen Heart, Electric Personality, Chocolate Box, Devil's Deal, Glass of Milk, Jewel of Life, Plot Armor, Pills, Last
+    Unicorn);
+  - 'damage' is no longer counted for words about damage you take or a damage type ('More damage' under Plot Armor,
+    Power of Friendship, Omnigeode, the conversion items); the blanket damage bonus is gone, so most guide-rated items
+    score about 0.2 lower;
+  - items that deal damage of their own are no longer cut because nobody on the squad deals that type ('Nobody on the
+    squad deals Electric' under Accumulator; Boiling Pot, Great Nade - no more 'no grenade on the squad' for its own
+    grenade -, Annoying Trumpet, Barrel Roll, Suspicious Pendrive): the squad's tags of that type raise them instead;
+  - a cost is no longer read as a gain (Gold Medal's slower levels as XP, Life Savings' cash that heals as cash, Farming
+    Tools' class points as XP);
+  - the wrong keyword: The Word, Frying Pan and Sugar Rush are not elite / boss items; Hit Tracks halves slows on you, it
+    does not slow enemies; Fishing Pole parries, it does not dodge; A Cookie, Black Box, Hijacked Signal and Jailbroken
+    Phone are not upgrade-quality items; Pills, Nuclear Fusion, Metal Gear and Wrench are not pickup-range items;
+    Potato's hidden text is no longer XP and luck; Modchip, Solar Panel and Power Generator work with crits but give none
+    ('More crits'), Broken Glass and ACME Anvil work with slows but slow nothing, Gaslighter and Jailbroken Phone work with
+    status effects / taunts;
+  - effects the keywords never saw are scored: Well Prepped, Pocket Watch, Zugzwang Hypergaster XD, Combat Knife,
+    Omnigeode's and Magical Hat's tag grants, and the values that depend on the run (Empty Chest and Wooden Stick per
+    empty item slot, Jade Amulet per luck, the gems per damage type at 3 tags);
+  - Bulletproof Vest's 'enemy projectiles deal -50 %' is no longer read as a malus.
+- Items no guide rates are scored from their own numbers and say what they do ('+30% damage to basic enemies'); for now
+  none ranks above a guide B pick, and none is ever shown with a tier.
+- New card lines: 'Pairs with The Word', 'Clashes with your Devil's Deal', 'Needs 3 status effects, the squad has 2',
+  'Halved by your Smooth Moves; shots miss'. The pairs and clashes the item texts state are built in; knowledge.json gains
+  `itemClashes` for your own.
+- **The item book reads the run**: free item slots, luck, pickup range and movement speed are read once per snapshot
+  from the team statistics. Empty Chest, Wooden Stick, Jade Amulet, Metal Gear, Wrench, Compass and Toilet Paper say what
+  they give in this run ("+20% damage now (2 empty slots)", "+20% damage at your luck") instead of the per-unit rule. The
+  free slots use the game's own formula, InternalMaxItems - InternalNumEquippedItems (team statistics 43 - 49; `max -
+  equipped` in the log). That formula is what GamePlayer.AddItem writes into statistic 50, and it is right before the
+  run's first item too; statistic 50 (team and leader) is only logged. Every chest offer logs `[items] held: <items> |
+  free slots N (max - equipped) | luck L | pickup P% | speed S`, so chest replays are exact.
+- **Second lives are worth keeping**: Jewel of Life and Plot Armor, the only second-life items in the chest pool, rank
+  at least like an A-tier item, and higher while your quest asks you to survive the run or the squad is under 60 %
+  health: 'A second life - the squad is at 55%' / 'A second life - survive the run (quest)'. On the 10-07 Deck chest
+  Jewel of Life scored 1.27 and a REROLL hint sent it away two minutes before a defeat on a Survive quest; it now scores
+  3.95 and is the recommended card. The `[ctx]` line of an offer names the squad's health under 100 % and a followed
+  survive quest.
+- `[Debug] ItemKeywords = true` scores chests the 0.15.0 way, for comparison.
+- knowledge.json gains `itemClashes` (empty) and `yardRules` (the Training Yard's badge floor and reach): a
+  knowledge.json you never edited is refreshed on the first launch of 0.16.0 (`knowledge.json refreshed to this build's
+  defaults`, the previous copy kept as `knowledge.json.bak`); an edited one keeps its text and the code's defaults apply.
+
+### Held items change the advice
+
+- **What the squad holds** is asked of one table (`HeldRules.cs`), read once a snapshot (`HeldRead.cs`): the items held
+  (by name and asset), the item slots by the game's own formula (`GamePlayer.AddItem` keeps team statistic 50 = 43 - 49;
+  read in its machine code), the leader's ability cooldown reduction, the seconds since the last survivor joined, the
+  abilities' cooldowns. `[held] ...` after every `[ctx]` line, `[held] reads: ...` once a run. Until now the only
+  held-item rule was the pairs.
+- **Mana Potion held**: the game zeroes every ability cooldown reduction stat bonus while it is held
+  (`GamePlayer.GetStatisticFinalValue`, read in machine code) - a Chem-Light Battery card (any rarity, and the level-up's
+  Endless one) now shows AVOID `Does nothing while you hold Mana Potion` (0.80); Chick Magnet keeps half its worth,
+  Hyperactivity three quarters, Devil's Deal 90 %; Grenade Trail: Shrapnel -0.3. Chick Magnet's card says `Its cooldown
+  bonus does nothing with Mana Potion`.
+- **The Mana Potion card** weighs what it gives (an ability reset every 4 s, spread over the abilities with a cooldown)
+  against what it costs (the squad's cooldown reduction, switched off), from the live cooldowns: it keeps or raises its
+  A tier on a squad without cooldown reduction (`Resets an ability every 4s - 55% more casts here`) and falls to AVOID
+  once the reduction is high (`Switches off your 60% ability cooldown reduction`). Up to 0.15.0 it scored 3.12 whatever
+  the squad had invested.
+- **Reserve Bench held**: the skip of a weak Item Chest or Military Training is a level-up (the game's GrantLevelUp on
+  those two skips, read in machine code) - REROLL while a reroll is left, then `SKIP - the skip is a level-up (Reserve
+  Bench) - worth more than these`; a recruit brings a level-up per 2 minutes since the last join, so late recruits keep
+  beating Liberate (`Recruiting gives 3 level-ups (Reserve Bench)`), the PLAN's SOS row and the rescue reroll hint
+  included.
+- **Hijacked Signal held**: Liberate gives two level-ups (`Two level-ups and cash (Hijacked Signal)`, one more level-up
+  in its score; the SOS row says `Liberate - two level-ups` once it beats every recruit); a chest item pays the skip's
+  cash.
+- **Life Savings held**: granted cash heals instead - the skip's worth counts it as a heal, Liberate says `A level-up and
+  a heal instead of a recruit`, cash items are weighed as healing (`Its cash heals you instead (Life Savings)`).
+- **A Cookie and Skip Rope held**: the skip's worth counts A Cookie's 500 extra health and Skip Rope's points (5 make a
+  Military Training point); once no reroll is left they can tip a weak screen to a SKIP that names them. The skip's worth
+  (`ScreenCall.SkipWorth`) is generalised for these; every 0.15.0 value is unchanged (pinned over 19,250 calls).
+- **Wooden Stick / Empty Chest held**: an item that fills an empty slot costs the slot's 10 % XP (1.6 x the run's
+  economy) or 10 % damage (2.0): AVOID `Fills an empty slot: -10% XP (Wooden Stick)` where that takes the card under 1, a
+  WHY reason otherwise; no cost for a second copy of an item held, with no empty slot or more than 8; Well Prepped `Adds
+  the slot it takes - keeps your empty slots`; the PLAN's GRAB row counts it too. The chest REROLL hint is judged on the
+  best card before the cost; a good chest whose cards all cost the slot says `SKIP - an empty slot is worth more than
+  these (Wooden Stick)`.
+- **Last Unicorn** counts the animal items held, itself included (the game's own isAnimalItem flag): +0.9 per animal item
+  (two at most), `Counts 3 animal items: +30 Luck, +15% damage`; an animal item `Pairs with your Last Unicorn` while it
+  is held. (The pairs the item texts name - The Word + Pocket Watch, Omnigeode + Ruby Gem / Sapphire Gem - came with the
+  item book.)
+- **Status conversions held** (Fire Extinguisher ... Expired Sushi): a status item is judged by what still causes its
+  status on this squad (`No Electrify while you hold Battery Leakage` / `Your Electric now causes Toxify (Battery
+  Leakage)`), and a conversion item offered while a status item is held says what it would stop or feed (`Would stop
+  your Jacob's Ladder's Electrify`, -0.9; +0.6 for a fed one). Up to 0.15.0 a Jacob's Ladder kept its Electric fit
+  beside a Battery Leakage.
+- `[Debug] HeldPretend`: the advice treats the named items as held (a test switch; a Warning once a session).
+- The WHY band lists a held item's reason first.
+- Held items with no rule (checked in machine code): Black Box, Ring Of Power, Ban Hammer, Rock And Roll, Teddy Bear,
+  Jailbroken Phone with Mouse Trap, Gold Medal (beyond Skip Rope's points); the replace / swap items wait for the item
+  replace advice.
+
+### The hints never send a second life away
+
+- While the quest asks to survive the run or the squad is under 60 % health, no REROLL and no SKIP hint sends away a
+  second life on the cards (Jewel of Life, Plot Armor, a new Resuscitation) - the 10-07 Deck chest's REROLL sent Jewel of
+  Life away about 2 minutes before the defeat on a Survive quest; a BANISH never names a second life. The no-item quest's
+  SKIP keeps its place.
+
+### The cards and the WHY
+
+- **Rare and Legendary stat cards are weighed by what they give**. A military training card counts its own value against
+  the Common card of its stat at every rarity - the list the game applies for the card's rarity - not a flat 2 for Rare
+  and 3 for Legendary: in the game's data a Rare is 1.9 - 2.5 times its Common card (Chem-Light Battery, UAV System and
+  Energy Awareness 2.5) and a Legendary 3 - 5 times (Chem-Light Battery, UAV System, Energy Awareness, Fast Mover and
+  Armor Piercing 5). Replayed on the 41 logged military offers with a Rare or Legendary card, the first card changes once
+  (a Rare Chem-Light Battery, +25 % ability cooldown, over a Rare Dear John). The log gives the weight once per rarity and
+  stat: `[rank] Rare stat cards: weight x2.50 for Ability Cooldown (the card's own +0.25 vs Common +0.1)`.
+- **A Research Pod card that reaches a 10-tag effect counts it as much as the squad deals that type**. Each effect works
+  through its own type's status or explosions, so its +1.5 is now scaled by the card's fit: a type nobody on the squad
+  deals - whose card already said "but nobody deals" it - scores 2.50 where it scored 4.00. Replayed on the 19 logged
+  Research Pod offers (14 screens, rerolls counted), the first card changes twice (Electric at 44 % of the squad's damage
+  over a Chemical card at 11 % that reaches its effect; Explosive at 57 % over Slashing at 22 %).
+- **Ties go to the build's order**. Two cards with the same score on a level-up, chest, military training or Research Pod
+  screen went to the card further left, so a build's second ability could stand RECOMMENDED over its first ("A core
+  ability of the Bombardier build" framed over "The Bombardier build's main ability") and the PLAN readout named it as
+  next. Ties now go to the ability higher in its owner's build, then the stat card with more of its own value (the
+  level-up's Endless filler after any other card), then the card whose damage types carry more of the squad's tag points
+  (a Research Pod card: its type, fewer under "Spread"), then the card further left; the PLAN readout follows the same
+  order. Replayed on the offers logged since 0.13.0, 10 of the 20 exact ties for the first place change their first card
+  (a 21st, on a Research Pod screen, no longer ties under the fit rule above). The log says each one: `[rank] tie for #1
+  at 4.81: Bombing Strike before Minefield - the build's order (#1 before #2)`.
+- **The WHY band says an exact tie as one**: `Either works - even with Minefield; this one is higher in the build's
+  order`, where it said "a hair ahead" of a card with the very same score; a third card with that score says the same.
+- **An evolution card says when it closes the PLAN's preferred one**. The PLAN readout names the evolution that fits the
+  squad better ("evolve Helicopter Strike (Chemtrails preferred)"); when the other one is offered and the build names no
+  evolution for the base, its WHY band now starts with `Closes Chemtrails - the PLAN's preferred one` and its `[card]`
+  line adds `closes Helicopter Strike: Chemtrails (the PLAN's preferred evolution, fit <a> vs <b>)`. One rule for both
+  (fits at least 0.25 apart); a toss-up says neither. The score is unchanged: an evolution still outranks the rest of its
+  offer.
+- **The WHY panel in the side wing names the card it explains**: its first line reads the lead and the card's name as
+  the card shows it (`WHY  Remote Control Car`; the name on a line or two of its own when both do not fit), so a panel
+  that stands beside a neighbouring card (the middle cards of a four-card offer) is not read as that card's (the 10-07
+  review). No panel moved; where the panel goes on four-card screens is still open. The `[why]` line says which card of
+  the row it speaks for (`..., 3 of 3 shown, card 2 of 3`) and `, header in 2 rows` when the name took a row of its own;
+  `header + N lines` now counts the reasons' lines alone.
+- **The gold RECOMMENDED frame no longer runs through the card's NEW / TIER / RECRUIT plate**: its bottom line stops
+  either side of the plate, as the game's own highlight does (seen on every offer since 0.13.0). Weapon and ability cards
+  and rescue cards (the plate is the image the card's TIER / NEW / RECRUIT label is written on, `AddonDescription`);
+  chest, military and Research Pod cards keep the whole line until their plate is known. The log says once per card
+  class what it measured (`[badge] plate: UIPowerupButtonSkill AddonDescription 400x150 units, y -782..-632 (the frame's
+  bottom edge -726..-720) - edge cut -211..209`); a plate not found or not on the edge also lists, once per card class,
+  what does lie on the edge (`[badge] plate dump: ...`). The first build of 0.16.0 measured the card's level diamond on the portrait instead
+  and never cut (the 10-07 PC series: `no overlap, edge whole` on every card, the gold line still through RECRUIT); the
+  plate was found in the game's own card layout and is checked on the bench with its numbers.
+- **At 1280 x 800 the WHY band uses two 15 px lines before it leaves a reason out**: where the cards' own size is within
+  2 px of the 15 px floor (the Deck's 16 - 16.8 px), the band tries the lines it wants at 15 px (with the tighter pad in
+  a 139-unit band) before one line at the larger size, and counts the lines it wants in the band it gets (a band the
+  REROLL line cut asks for more). On the 10-07 Deck run about 40 of 97 bands lost reasons; the model of that run says
+  about 2 would now. When an item still drops, the band says the other card's lead in the side panel's short form
+  (`Medical Drone goes first`) when that shows more (`..., the short "goes first"` in the `[why]` line). The PC (20.5 px
+  at 1440p, 5.5 px over the floor) keeps every layout. A 1080p desktop (16 px) is near the floor too and takes the same
+  order.
+- **At 1280 x 800 the REROLL / SKIP line under its button no longer takes the WHY band's room** (the 10-07 Deck round:
+  one rescue card had no WHY at all, chests showed 1 - 2 of their reasons). The line drawn under its button - only there;
+  over the button (the PC) nothing changes - says its short words: `REROLL - a weak offer`, `REROLL - Tank fits better`,
+  `SKIP - every card hurts`, about half as wide (956 -> 484 units on a chest, 874 -> 614 on the rescue screen). And the
+  WHY takes the selected card's own part of the band only when it holds its first reason at 15 px, else the band's
+  widest part: the rescue card's 640-unit part left of the line gives way to the 1028 (1348 with the short words) right
+  of it. The log: `[squad] action hint: ... drawn under the Reroll button (...), short form - 484 x 74 units`, the
+  `[why]` line `..., the widest stretch` when the WHY moved off the card's own part.
+
+### The Training Yard and the run setup screen
+
+- **The Training Yard plans badges by the badge advice** (`[Advice] YardBadges`, on by default; ADVICE tab: Training Yard
+  badges - Follow the badge advice / As their ranks open): a survivor's badge nodes follow the run setup screen's badge
+  advice, worked out for every survivor you can lead (the mode and difficulty of your last run setup visit, else Normal
+  I). A badge is unlocked and levelled when that advice would equip it and its levels pay for their points; a badge
+  investment that only pays at a higher level (Growth Badge 1>3: no survivor's advice equips it at level 2) is planned
+  whole - it is never partly bought, THEN asks to save for the whole chunk (`save 3 more for Growth Badge 1>3`) and the
+  leftover points still go to cheaper steps; a badge no survivor's advice equips is held until every other open step of
+  the tab is done. This changes the leftover rule for badges: on 10-06 the Medic tab's last point bought Healing Badge
+  0>1, a level no advice equips (it pays from level 4) - now that point stays and Healing Badge comes last. WHY on a
+  waiting badge says why ("The badge advice equips it only from level 4 (Normal I). (step 39 of 39)"). The run setup
+  screen's TRAINING YARD row (LoadoutHint = Full) stays for its leader alone and can differ from the plan. Off = every
+  badge to level 1 as its rank opens (0.15). Checked offline: the 0.15 plan of a made-up tree and of the 9 survivor trees
+  is unchanged with the switch off, the 10-06 Medic replay, the approximation within 0.933 points per point of a full
+  re-advice and the same best level in 108 of 108 rows.
+- **SELECT LOADOUT at 1280 x 800**: the SWAP OUT / FILL THE FREE SLOTS / ALL EQUIPPED part stays on the EQUIP row in a
+  shorter form (first without the EQUIP row's ranks - the grid's markers show them -, then with a short label: OUT, KEEP,
+  FILL THE FREE SLOTS, ALL EQUIPPED) instead of being dropped (`[loadout] drawn ... swap row joined to row 1 (form 2: the
+  ranks left to the markers; ...)`); the marker digits are 15 px (14 px before on the Deck's cells; the PC keeps its
+  20 px).
+
+### For the maintainer
+
+- Debug screenshots: the second step of the results flow (the stats screen) is captured now - game 1.0.2 never calls the
+  hook it waited for.
+- Debug: `[Debug] PreviewPauseRecruit` (for scripted test runs with `PreviewPause`): one hero joins the pause walk's run
+  3 s in, so its level-ups offer four cards and the hover tour reaches cards 3 and 4.
+- The pause walk grants its first level-up with the game's own `ExperienceProgress.Debug_LevelUp()` when none has come
+  by 20 s of play with the recruit (36 s without): the walk's squad stands still, and with a second hero shooting the
+  zombies fall outside the pickup ring - both walks of the first 0.16.0 series gathered 0 of 100 XP in 42 s and ended
+  without an offer. Once a session; the line says where the XP gems lay. The walk's wait for an offer is bounded at
+  41 s of play now (was 48 s): with the ~3 s to its done line and a test script's kill a few seconds later, a killed
+  walk stays under the ~50 s after which the game writes a save.
+- `[Debug] Perf` splits the run setup screen's first draw (89 - 103 ms in one frame in the 10-07 series) into its parts
+  (`loadout.draw.first`, `loadout.draw.measure` / `.layout` / `.marks` / `.summary` / `.why` / `.equip`), so the next
+  round can fix the biggest one. A debug walk also logs the sums so far just before its done line: the Training Yard and
+  run setup walks end before the first once-a-minute line.
+- **Proof report**: `--check-log` gains a seventh check, `items` (every chest offer with its `[items] held:` line, no
+  item without a rule), and lists the proofs a log holds after its checks, as INFO sections (first input, Training Yard
+  purchase, EQUIP press with its source, the ribbon, the quest story step, the walk proofs). `--expect kind,kind` makes
+  them checks. The EQUIP ADVICE / UNDO line now says how it was pressed (`pressed by touch`, `mouse` or `key`).
+- **advice_audit.py** reports the Training Yard per session (purchases against the advice shown, which place was bought,
+  badge levels bought while held), also for a session without a run, and the exact ties for the first place by rule;
+  `--json` carries them under `numbers.yard` / `numbers.ties`.
+- `release.ps1` also puts the released DLL on the maintainer's PC (only with the game closed, no updater download
+  waiting and no newer build there; `-NoLocalDeploy` skips it): a pre-release build of the same version stayed on the PC,
+  and the updater, which compares versions only, could not replace it.
+- The bench: the part without game data (the GitHub workflow) runs the pure cases of every 0.16.0 section;
+  `ItemBench --write-itembook` rewrites the item book's parity table after an intended rule change.
+
+### A request for the release notes: take one of these items once
+
+The held-item rules stand on the game's machine code and on `[Debug] HeldPretend`, which proves the advice but not what
+the game does. No logged session has ever held Mana Potion, Reserve Bench, Wooden Stick, Hijacked Signal, Life Savings,
+Empty Chest, A Cookie or Gold Medal. If a chest offers Reserve Bench (first choice), Mana Potion, Hijacked Signal, Life
+Savings or Wooden Stick in a normal run, please take it once even when it is not the #1 card, skip one weak chest
+afterwards, play on and send the log. It is read for:
+
+- Reserve Bench: a skipped weak chest or training gives `[pick] Chest mm:ss: skip / nothing`, then an `[offer] LevelUp` at
+  the same clock; after a rescue pick (`[pick] CharacterRescue mm:ss: <class>`), as many `[offer] LevelUp` lines as the
+  card's "recruiting gives n" (n = whole 2-minute steps since the last join, from `[held] reads`).
+- Mana Potion: the next `[held] reads` / `[held]` lines show the leader's ability cooldown reduction at 0 %; a Chem-Light
+  Battery card says AVOID.
+- Hijacked Signal: two `[offer] LevelUp` lines after a Liberate pick.
+- Life Savings: after a skip, the next `[ctx]` line's health is higher by about the cash shown, and the cash counter on
+  screen does not move (press the mark key there).
+- Wooden Stick / Empty Chest: `[held] reads: item slots N of M filled, K empty (team statistic: K)` matches the slots on
+  the game's screen.
+- A Cookie: health after a skip rises by at least 500 more than the plain skip heal.
+- A status conversion item (Battery Leakage, which you already take): a marked frame of an enemy showing the converted
+  status.
+
+### Defaults this release ships with
+
+Four choices were left at their defaults while no answer had come; each can change in a later release:
+
+- Items no guide rates are capped at a guide B pick (above).
+- The two second-life items, Jewel of Life and Plot Armor, are the one exception to that cap: at least like an A-tier
+  item (above).
+- The chest REROLL floor stays 2.5 (2.45 was proposed). The item book scores most items a little lower, so on the 150
+  logged chests the REROLL hint shows on 49 where 0.15.0 showed it on 40.
+- The Training Yard follows the badge advice by default: every survivor you can lead counts equally, for the mode and
+  difficulty of your last run setup visit (else Normal I), with a badge floor of 0.15 (ADVICE tab: Training Yard badges -
+  As their ranks open keeps 0.15.0's plan).
+
+### How it was checked, and what was not seen
+
+Checked offline: the bench with `--strict` (all as wanted), its part without game data as the GitHub workflow runs it,
+`advice_audit.py --self-test`, and the name scan of the tree.
+
+Checked in a scripted PC series of the 0.16.0 source (10-08 04:38 - 10-09 23:57, about 340 game sessions; the builds
+were still numbered 0.15.0, and the released DLL differs from the last of them only in its number): 42 hooks patched
+with 0 failed classes, and `--check-log` over the series' sessions all as wanted (the sessions with the test switch
+`[Debug] HeldPretend` left out: their one Warning says the switch is on). What ran in the game:
+
+- the mod menu walk at 3440 x 1440 (20 shots, every one at 3440 x 1440): the ADVICE tab's Training Yard badges row;
+- the pause walk with a recruit, so its level-ups offer four cards, in a true 1280 x 800 window and at 1024 x 768: the
+  first level-up granted by the walk, the hover tour over cards 2 to 4, and at 1280 x 800 a WHY band that left no
+  reason out on any of the four cards (0.15.0 on the Deck: 41 of 97 bands lost one);
+- the gold RECOMMENDED frame cut round the card's plate on level-up and rescue cards, measured as the bench predicts;
+- the results flow's stats step (both results steps captured), the rescue screen's reroll hint, the Training Yard walks
+  at both sizes and the run setup screen's joined swap row at 1280 x 800;
+- the held-item rules with `[Debug] HeldPretend` (Mana Potion, Reserve Bench, Wooden Stick, Hijacked Signal, Life Savings,
+  Skip Rope with A Cookie, Battery Leakage, Pocket Watch with The Word) - three card lines did not come up in the draws:
+  a Chem-Light Battery card under Mana Potion, Wooden Stick's slot cost and Life Savings' Liberate line -, and the
+  `[held] reads` line in real runs, also after a Try Again.
+
+Not yet seen in a live run - released anyway:
+
+- **The WHY side panel on a 21:9 screen** (headed with its card's name). Every pause walk of the series ran at 1024 x 768
+  or 1280 x 800, where the side wing does not open. Its layout is checked on the bench at 3440 x 1440, 2560 x 1080 and
+  5120 x 1440, and the side wing itself has drawn since 0.15.0; where it goes on four-card screens is still open.
+- **The chest item advice in the game.** No chest was offered in the series' runs, so the `[items]` lines and the item
+  book's card texts have not been seen live; they are replayed on the 150 logged chests on the bench. A failure there is
+  caught and logged: the chest's cards would show without the mod's ranking, the game goes on.
+- **The Steam Deck itself**: the WHY band and the REROLL / SKIP line's short words at 16 px, EQUIP ADVICE by touch and
+  SELECT LOADOUT's joined row on the Deck's own screen (the PC's 1280 x 800 window showed the band and the joined row).
+  The Deck's Companion takes this release through its updater, and its next session checks them there.
+
 ## 0.15.0 (2026-10-07) - accurate on 1.0.2
 
 Accurate on the game's 1.0.2, readable on every screen, and a release that checks itself.

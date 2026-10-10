@@ -131,6 +131,9 @@ namespace YazsCompanion
     /// <summary>Ranking of a Research Pod reward card: n tag points of one type.</summary>
     internal static class Tags
     {
+        /// <summary>0.16.0 (C16-08): a card that reaches the type's 10-tag effect, at a full fit (1.5 x fit; see <see cref="Score"/>).</summary>
+        public const double SpecialBonus = 1.5;
+
         public static double Score(string type, int n, TagProfile p, List<string> why)
         {
             double fit = p == null ? 0 : p.Fit(type);
@@ -153,7 +156,11 @@ namespace YazsCompanion
             }
             if (p != null && p.SpecialAt > 0 && cur < p.SpecialAt)
             {
-                if (cur + n >= p.SpecialAt) { score += 1.5; why.Insert(0, "reaches the " + type + " special effect (" + p.SpecialAt + ")"); }
+                // 0.16.0 (C16-08): a 10-tag effect acts on its own type's status or explosions only (the game checks it in the Burn / Bleed /
+                // Frozen / Electrocuted / Injured statuses, the Toxify settings and ExplosionSource.Explode - the callers of
+                // HashtagSystem.HasSpecialUnlocked / GetNumType in 1.0.2) - worth as much as the squad deals that type: 1.5 x fit, nothing
+                // for a type nobody deals (the card says "but nobody deals X"); up to 0.15.0 the full +1.5 whatever the fit
+                if (cur + n >= p.SpecialAt) { score += SpecialBonus * fit; why.Insert(0, "reaches the " + type + " special effect (" + p.SpecialAt + ")"); }
                 else if (fit > 0) why.Add((p.SpecialAt - cur - n) + " more to the special after this");
             }
             // the other line a card can cross: Ultra Instinct needs one tag at 30 (said, not scored: whether that item is

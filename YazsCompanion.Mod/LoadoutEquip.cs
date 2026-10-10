@@ -4,7 +4,8 @@
 // touch) or the key presses the game's OWN badge button along the
 // pure plan of LoadoutView (removes first, then adds; never a forced badge, never a locked one, never past the slots) - one
 // press every 0.12 s, each exactly what a click by hand does: the game plays its sound, writes RunSetup_Badge1..4 into the
-// profile and refreshes the slots. Every press is logged. Afterwards the plate offers UNDO (the inverse plan, under the same
+// profile and refreshes the slots. Every press is logged, the start line with how it was pressed (0.16.0, C16-11e: 'pressed by
+// touch', 'mouse' or 'key'). Afterwards the plate offers UNDO (the inverse plan, under the same
 // guards) until the screen closes or the player clicks a badge by hand.
 //
 // The guards are checked again, against live state, before EVERY press (GuardedClick): the screen is up and takes input, the
@@ -184,22 +185,24 @@ namespace YazsCompanion
         {
             if (_running) { if (Time.realtimeSinceStartup >= _nextPress) PressNext(view); return; }
             if (!Shown || !On) return;
-            bool go = false;
-            try { if (UnityEngine.Input.GetMouseButtonDown(0) && Hit(UnityEngine.Input.mousePosition)) go = true; } catch { }
-            if (!go && KeyLabel().Length > 0) { try { go = UnityEngine.Input.GetKeyDown(_key); } catch { } }
+            bool go = false; string source = null;
+            // 0.16.0 (C16-11e, DK-C11): how it was pressed goes into the pressed line - a click on the plate is 'touch' or 'mouse' as the
+            // menu tells them apart (Menu.Pointer: Input.touchCount), the key is 'key'; --check-log's 'equip' kind reads it
+            try { if (UnityEngine.Input.GetMouseButtonDown(0) && Hit(UnityEngine.Input.mousePosition)) { go = true; source = Menu.Pointer(); } } catch { }
+            if (!go && KeyLabel().Length > 0) { try { go = UnityEngine.Input.GetKeyDown(_key); if (go) source = "key"; } catch { } }
             if (!go || visit == null || v == null || Menu.IsOpen) return;
-            if (_undo != null && (v.Plan.Count == 0 || _after != null)) Start(view, _undo, true, "undo");
+            if (_undo != null && (v.Plan.Count == 0 || _after != null)) Start(view, _undo, true, source);
             else if (v.Plan.Count > 0)
             {
                 Func<int, bool> unlocked = id => { int l; return visit.Levels.TryGetValue(id, out l) && l >= 1; };
-                Start(view, LoadoutView.RunOf(v, unlocked), false, "equip");
+                Start(view, LoadoutView.RunOf(v, unlocked), false, source);
             }
         }
 
-        static void Start(UIViewRunSetup view, EquipRun run, bool undo, string why)
+        static void Start(UIViewRunSetup view, EquipRun run, bool undo, string source)
         {
             _run = run; _undoing = undo; _running = run.Steps.Count > 0; _nextPress = Time.realtimeSinceStartup;
-            Plugin.Logger.LogInfo("[loadout] equip: " + (undo ? "UNDO" : "EQUIP ADVICE (advice #" + _advice + ")") + " pressed - " + Plan(run.Steps) + " = " + run.Steps.Count
+            Plugin.Logger.LogInfo("[loadout] equip: " + (undo ? "UNDO" : "EQUIP ADVICE (advice #" + _advice + ")") + " pressed by " + (string.IsNullOrEmpty(source) ? "mouse" : source) + " - " + Plan(run.Steps) + " = " + run.Steps.Count
                 + " click" + (run.Steps.Count == 1 ? "" : "s") + " through the game's own badge button, " + Gap.ToString("0.00", IC) + " s apart; selection before " + string.Join(",", run.Start));
             if (undo) _undo = null;
             Caption(null);

@@ -68,6 +68,7 @@ namespace YazsCompanion
         public int BasePriority = -1;        // 0.15.0 (C15-03 c): the base ability's place in the build's order (Priority's scale; -1: none, or skipped)
         public string Adds, AddsWith; public bool AddsNew;   // the damage type it adds over its base, who on the squad deals it (new: nobody)
         public bool Pair; public string OtherAdds;           // the other evolution of the same base is on the offer too, and what that one adds
+        public string Closes;                // 0.16.0 (C16-17): the other evolution of the base, which the PLAN prefers and this pick closes (null: none)
         // ---- items, Research Pods, stat cards, rescues
         public ItemSay Item;
         public string Type; public int Points; public TagProfile Tags;      // a Research Pod card: the type, its points, the squad's profile
@@ -75,6 +76,8 @@ namespace YazsCompanion
                                              // the note in display words, the build that wants it
         public RecruitSay Recruit;
         public string Quest;                 // 0.14.0 (C3): the active quest's rule line when it decides the card ("quest: ..."; QuestRules) - said first
+        public string[] Held;                // 0.16.0 (C16-01): what an item the squad holds does to this card, longest form first ("does nothing while you
+                                             // hold Mana Potion") - said right after the quest (HeldRules)
         // ---- 0.15.0 (C15-03 a): once the ranks are final (Wording.Ranks) - the card's game name and place on the offer (0: not known,
         // a line as before), and for a weapon level the best ability card on the offer, for an ability the best weapon level card
         // (null: none) - the WHY band says what decided between them instead of a style the order contradicts
@@ -100,6 +103,10 @@ namespace YazsCompanion
         public string Clock = "";
         public string Keyword; public string KeywordAxis; public double KeywordValue = 1;     // the first keyword scored that names nobody
         public string Survival;              // "onehit", "hurting", "now", "plain"
+        // 0.16.0 (C16-01): a held-item rule's words for the card, longest form first, said before every other reason but the quest's and
+        // 'already held' (null: none), and what filling an empty item slot costs this card (C16-01c, the action hints judge the merit)
+        public string[] LeadForms;
+        public double HeldCost;
     }
 
     /// <summary>One thing an item boosts or weakens: a damage type (<see cref="Typed"/>), a powerup tag the squad owns
@@ -119,6 +126,11 @@ namespace YazsCompanion
         public string TeamBonus;             // the stat of the recruit's own team passive, in the game's words ("armor")
         public string Boosts; public int Covered;  // a team passive of the recruit's that would boost <Covered> of the squad's powerups
         public int RankLevels, Rank;         // class levels to the recruit's next rank (Farm), that rank
+        // 0.16.0 (C16-01): the held items' counts - two counts, two meanings: the level-ups a RECRUIT brings (C16-01b, Reserve Bench) and the
+        // level-ups a LIBERATE gives (C16-01d, Hijacked Signal: 2); cash that heals instead (C16-01e, Life Savings)
+        public int JoinLevelUps;
+        public int LiberateLevelUps = 1;
+        public bool CashHeals;
     }
 
     internal static class Wording
@@ -332,6 +344,7 @@ namespace YazsCompanion
         static string Line(CardWords w, int rank, string first, string second)
         {
             if (w.Quest != null) return Quest(w.Quest);
+            if (w.Held != null) return Say(null, w.Held);           // 0.16.0 (C16-01): what a held item does to this card
             switch (w.Kind)
             {
                 case SayKind.Ability: return w.Level <= 0 ? NewAbility(w) : Ability(w);
@@ -541,7 +554,10 @@ namespace YazsCompanion
             if (s.QuestLine != null) return Quest(s.QuestLine);
             if (s.Quest) return Say(null, "quest: the quest asks for this item", "quest: the quest asks for it");
             if (s.Held) return Say(null, "already held by the squad");
-            if (s.Lead != null) return Say(null, s.Lead, s.Lead.StartsWith("pairs with your ", StringComparison.Ordinal) ? "pairs with an item you hold" : null, Cut(s.Lead));
+            // 0.16.0 (C16-01): a held-item rule's words (C16-01a Mana Potion held, C16-01k the Mana Potion card, C16-01c a slot's cost), the
+            // last form cut to the line as drawn
+            if (s.LeadForms != null && s.LeadForms.Length > 0) return Say(null, s.LeadForms.Concat(new[] { Cut(s.LeadForms[s.LeadForms.Length - 1]) }).ToArray());
+            if (s.Lead != null) return Say(null, s.Lead, s.Lead.StartsWith("pairs with ", StringComparison.Ordinal) ? "pairs with an item you hold" : s.Lead.StartsWith("clashes with ", StringComparison.Ordinal) ? "clashes with an item you hold" : null, Cut(s.Lead));
             if (s.Hurts.Count > 0)
             {
                 var hurt = s.Hurts.OrderByDescending(h => h.Weight).Select(Noun).Distinct().Take(2).ToList();
@@ -612,6 +628,9 @@ namespace YazsCompanion
                 case "marked": return "marked enemies";
                 case "taunt": return "taunts";
                 case "status effects": return "status effects";
+                case "survival": return "health";                         // 0.16.0 (C16-02): the item book's own tags
+                case "control": return "crowd control";
+                case "move": return "speed";
                 default: foreach (var t in TagProfile.Names) if (string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)) return t; return tag ?? "";
             }
         }
@@ -639,6 +658,9 @@ namespace YazsCompanion
                 case "marked": return "marks enemies";
                 case "status effects": return "stronger status effects";
                 case "taunt": return "taunts enemies";
+                case "control": return "holds the horde back";            // 0.16.0 (C16-02): the item book's own tags
+                case "move": return "faster movement";
+                case "survival": return "keeps the squad alive";
                 default: return "boosts " + KeywordNoun(tag);
             }
         }
@@ -663,6 +685,8 @@ namespace YazsCompanion
             if (axis == "economy" && value >= 1.25) return F(brief + " - pays off all run (" + clock + ")", what);
             if (axis == "economy" && value <= 0.5) return F(brief + " - too late to pay off (" + clock + ")", "too late to pay off (" + clock + ")");
             if (axis == "cash" && value <= 0.3) return F("cash only helps the Training Yard", "only helps the Training Yard");
+            // 0.16.0 (C16-01e): Life Savings held - the cash rule is weighed as healing
+            if (tag == "cash" && axis == "heal") return F("its cash heals you instead (Life Savings)", "cash heals you (Life Savings)", "cash heals you");
             if (axis == "boss" && value >= 1.5) return F("boss damage - this mode is about the boss", what);
             return F(what);
         }
@@ -731,9 +755,27 @@ namespace YazsCompanion
             if (r.Quest != null) return Quest(r.Quest);
             if (r.Liberate)
             {
-                if (r.Full) return Say(null, "squad is full - take the level-up and cash");
-                if (r.Late != null) return Say(null, "too late for a recruit to grow (" + r.Late + ")");
-                return Say(null, "a level-up and cash instead of a recruit");
+                // 0.16.0 (C16-01d / e): Hijacked Signal held - two level-ups; Life Savings held - the cash heals ('a heal')
+                int k = r.LiberateLevelUps; bool heal = r.CashHeals;
+                if (k <= 1 && !heal)
+                {
+                    if (r.Full) return Say(null, "squad is full - take the level-up and cash");
+                    if (r.Late != null) return Say(null, "too late for a recruit to grow (" + r.Late + ")");
+                    return Say(null, "a level-up and cash instead of a recruit");
+                }
+                string gives = HeldRules.LiberateWhat(k, heal, "a level-up"), take = HeldRules.LiberateWhat(k, heal);
+                if (r.Full) return Say(null, "squad is full - take " + take, take);
+                if (r.Late != null) return Say(null, "too late for a recruit - " + gives, gives);
+                if (k <= 1) return Say(null, gives + " instead of a recruit", gives);
+                return heal ? Say(null, gives + " (Hijacked Signal)", gives)
+                            : Say(null, gives + " (Hijacked Signal)", gives + " instead of a recruit", gives);
+            }
+            // 0.16.0 (C16-01b): Reserve Bench held - late in the run the recruit's own level-ups are why it still beats Liberate (earlier
+            // every recruit would draw the same line: it stays a WHY reason there)
+            if (r.Late != null && r.JoinLevelUps >= 1)
+            {
+                string lu = r.JoinLevelUps + (r.JoinLevelUps == 1 ? " level-up" : " level-ups");
+                return Say(null, "recruiting gives " + lu + " (Reserve Bench)", lu + " for recruiting (Reserve Bench)", lu + " for recruiting");
             }
             if (r.Late != null) return Say(null, "little time left for a recruit to grow (" + r.Late + ")", "too late for a recruit to grow (" + r.Late + ")");
             string tier = string.IsNullOrEmpty(r.Tier) ? null : r.Tier.ToUpperInvariant() + "-tier";
@@ -793,6 +835,14 @@ namespace YazsCompanion
         {
             string who = names == null || names.Count == 0 ? "another survivor" : names.Count == 1 ? names[0] : names[0] + " or " + names[1];
             return who + " would fit this squad better" + (more > 0 ? " (+" + more + " more)" : "");
+        }
+
+        /// <summary>0.16.0 (C16-15): the short form of <see cref="Reroll"/> for the line drawn UNDER the Reroll button (1280 x 800, where it
+        /// stands in the WHY band's row): "Tank fits better" - the first survivor alone, no count of the others.</summary>
+        public static string RerollShort(IList<string> names)
+        {
+            string who = names == null || names.Count == 0 || string.IsNullOrEmpty(names[0]) ? "another survivor" : names[0];
+            return who + " fits better";
         }
 
         // ================================================================ facts the tags and the team passives give

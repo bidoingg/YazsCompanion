@@ -269,10 +269,17 @@ namespace YazsCompanion
             var v = _visit; var b = string.IsNullOrEmpty(v.Leader) ? null : Builds.For(v.Leader); var d = Doctrine.Current;
             var sb = new System.Text.StringBuilder();
             sb.Append(v.Leader).Append('|').Append(v.Mode).Append('|').Append(v.Difficulty).Append('|').Append(v.Slots).Append('|').Append(string.Join(",", v.Forced));
-            sb.Append('|').Append(b == null ? "auto" : b.Id + "/" + b.Branch + "/" + b.Style + "/" + string.Join(",", b.Abilities) + "/" + string.Join(",", b.Skip) + "/" + string.Join(",", b.Wants) + "/" + string.Join(",", b.Badges) + "/" + string.Join(",", b.SkipBadges) + "/" + string.Join(",", b.Evolution.Select(kv => kv.Key + "=" + kv.Value)));
+            sb.Append('|').Append(BuildSig(b));
             sb.Append('|').Append(d.Farming).Append(d.Caution).Append(d.Timing).Append(d.ModeAware).Append(d.TagPlan).Append(d.Style);
             sb.Append('|').Append(v.Number).Append('|').Append(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Knowledge.Current));
             return sb.ToString();
+        }
+
+        /// <summary>The build part of the advice key: everything of a build the badge advice reads ("auto" = none). 0.16.0 (C16-07): also
+        /// the Training Yard's badge steering key (TreeState.BadgeDemand), one per survivor.</summary>
+        internal static string BuildSig(Build b)
+        {
+            return b == null ? "auto" : b.Id + "/" + b.Branch + "/" + b.Style + "/" + string.Join(",", b.Abilities) + "/" + string.Join(",", b.Skip) + "/" + string.Join(",", b.Wants) + "/" + string.Join(",", b.Badges) + "/" + string.Join(",", b.SkipBadges) + "/" + string.Join(",", b.Evolution.Select(kv => kv.Key + "=" + kv.Value));
         }
 
         // ================================================================================================ the advice and its lines
@@ -400,6 +407,10 @@ namespace YazsCompanion
         static void Draw(UIViewRunSetup view, LoadoutDetail detail)
         {
             long perf = Perf.Begin();
+            // 0.16.0 (C16-11h): the first draw of a visit (89-103 ms in one frame, series 1007 / 1007b) split into its parts before any fix:
+            // 'loadout.draw.first' = the whole first draw ('loadout.draw' minus it = the redraws), measure / layout / marks / summary / why /
+            // equip inside it. Perf off: each section costs one bool test (Perf.Begin returns 0, Perf.End returns at once)
+            long perfFirst = _drawnThisVisit ? 0L : Perf.Begin();
             try
             {
                 var vrt = view.transform.TryCast<RectTransform>();
@@ -419,13 +430,22 @@ namespace YazsCompanion
                     _drawnThisVisit = true;
                     return;
                 }
-                if (!_measured && vrt != null) Measure(view, vrt, detail);
-                if (_measured) ChooseLayout(detail);
+                if (!_measured && vrt != null) { long pm = Perf.Begin(); Measure(view, vrt, detail); Perf.End("loadout.draw.measure", pm); }
+                if (_measured) { long pl = Perf.Begin(); ChooseLayout(detail); Perf.End("loadout.draw.layout", pl); }
                 bool first = !_drawnThisVisit;
+                long pp = first ? Perf.Begin() : 0L;
                 DrawMarks(first);
-                if (detail >= LoadoutDetail.NumbersAndReason && vrt != null && _lo != null) { DrawSummary(vrt, first); DrawWhy(vrt, first); }
+                if (pp != 0L) { Perf.End("loadout.draw.marks", pp); pp = Perf.Begin(); }
+                if (detail >= LoadoutDetail.NumbersAndReason && vrt != null && _lo != null)
+                {
+                    DrawSummary(vrt, first);
+                    if (pp != 0L) { Perf.End("loadout.draw.summary", pp); pp = Perf.Begin(); }
+                    DrawWhy(vrt, first);
+                    if (pp != 0L) { Perf.End("loadout.draw.why", pp); pp = Perf.Begin(); }
+                }
                 else { Hide(_why); Hide(_sum); }
                 LoadoutEquip.Place(view, vrt, _visit, _view, _advice, _li, _lo, _numTemplate ?? _template);
+                if (pp != 0L) Perf.End("loadout.draw.equip", pp);
                 bool matched = _view.Matches;
                 if (matched && !_matched && !first) Glint();
                 _matched = matched;
@@ -434,7 +454,7 @@ namespace YazsCompanion
                 _drawnThisVisit = true;
             }
             catch (Exception e) { Fail("draw", e); }
-            finally { Perf.End("loadout.draw", perf); }
+            finally { Perf.End("loadout.draw.first", perfFirst); Perf.End("loadout.draw", perf); }
         }
 
         static void DrawnLine(LoadoutDetail detail)
@@ -498,10 +518,12 @@ namespace YazsCompanion
                 var on = host ?? brt;           // a slot's marker hangs on its stand-in over the slot row (SlotHost), a grid badge's on its button
                 Placed pl;
                 if (!_placed.TryGetValue(key, out pl)) { pl = new Placed(); _placed[key] = pl; }
-                if (pl.Marker == null || !pl.Marker.Alive || Mathf.Abs(pl.Marker.Size - size) > 0.5f || pl.Badge != badge || Ptr(pl.Marker.Root.parent) != Ptr(on))
+                // 0.16.0 (C16-16): the digits' share of the diamond from the layout (NumberUnits / MarkerUnits: 0.52, or up to 0.60 for the 15 px floor)
+                float share = _lo != null && _lo.MarkerUnits > 0f ? _lo.NumberUnits / _lo.MarkerUnits : 0.52f;
+                if (pl.Marker == null || !pl.Marker.Alive || Mathf.Abs(pl.Marker.Size - size) > 0.5f || Mathf.Abs(pl.Marker.Share - share) > 0.001f || pl.Badge != badge || Ptr(pl.Marker.Root.parent) != Ptr(on))
                 {
                     try { if (pl.Marker != null && pl.Marker.Alive) UnityEngine.Object.Destroy(pl.Marker.Root.gameObject); } catch { }
-                    pl.Marker = Ui.Marker(on, MarkName, size, _numTemplate);
+                    pl.Marker = Ui.Marker(on, MarkName, size, _numTemplate, share);
                     pl.Badge = badge; pl.State = "";
                 }
                 pl.Marker.Set(kind, number, pin);
@@ -1094,12 +1116,25 @@ namespace YazsCompanion
             var texts = rows.Select(RowText).ToList();
             if (second != null && texts.Count == 1)
             {
-                // the second row on the first one's line, if both fit the width at the smallest the rows may shrink to (the floor)
+                // the second row on the first one's line, if both fit the width at the smallest the rows may shrink to (the floor).
+                // 0.16.0 (C16-16, DK-C05): a ladder of shorter forms before the row is dropped (LoadoutView.JoinForms): as 0.15.x, then the
+                // EQUIP row without its ranks (the grid's markers show them), then the second row under its short label
                 string bar = "|"; try { var font = _rows[0].font; if (font != null && !font.HasCharacter('|', true, true)) bar = "/"; } catch { }
-                string joined = texts[0] + "   <color=" + Theme.DimHex + ">" + bar + "</color>   " + RowText(second);
-                float jw = 0f; try { var t0 = _rows[0]; t0.fontSize = f; t0.text = joined; t0.ForceMeshUpdate(); jw = t0.preferredWidth; } catch { jw = 0f; }
-                if (jw > 0f && jw * minU / f <= width) { texts[0] = joined; _sumNote = " | swap row joined to row 1 (" + jw.ToString("0", IC) + " of " + width.ToString("0", IC) + " u)"; }
-                else _sumNote = " | " + second.Kind + " row dropped (one row fits; joined it needs " + (jw * minU / f).ToString("0", IC) + " of " + width.ToString("0", IC) + " u at the floor)";
+                var forms = LoadoutView.JoinForms(rows[0], second);
+                string joined = null; int form = 0; float jwAt = 0f, need = 0f;
+                for (int fi = 0; fi < forms.Count && joined == null; fi++)
+                {
+                    string cand = RowText(forms[fi].Key) + "   <color=" + Theme.DimHex + ">" + bar + "</color>   " + RowText(forms[fi].Value);
+                    float jw = 0f; try { var t0 = _rows[0]; t0.fontSize = f; t0.text = cand; t0.ForceMeshUpdate(); jw = t0.preferredWidth; } catch { jw = 0f; }
+                    need = jw * minU / f;
+                    if (jw > 0f && need <= width) { joined = cand; form = fi + 1; jwAt = jw; }
+                }
+                if (joined != null)
+                {
+                    texts[0] = joined;
+                    _sumNote = " | swap row joined to row 1 (" + (form == 2 ? "form 2: the ranks left to the markers; " : form == 3 ? "form 3: short label; " : "") + jwAt.ToString("0", IC) + " of " + width.ToString("0", IC) + " u)";
+                }
+                else _sumNote = " | " + second.Kind + " row dropped (one row fits; the shortest joined form needs " + need.ToString("0", IC) + " of " + width.ToString("0", IC) + " u at the floor)";
             }
             else if (second != null) _sumNote = " | " + second.Kind + " row dropped";
             // shrink to fit the widest row, never under the 15 px floor; past that the row ends in "..."

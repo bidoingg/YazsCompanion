@@ -59,6 +59,7 @@ namespace YazsCompanion
         public int LevelUps;                    // level-up screens seen this run
         public double LevelRate;                // level-ups per minute: the mode's measured pace blended with this run's, smoothed (LevelPace; 0 = not known)
         public double Health = 1;               // the squad's health, 0..1
+        public bool SurviveQuest;               // 0.16.0 (C16-12): the active quest asks to survive the run and is followed (Quest.SurviveFollowed)
         public Doctrine D = Doctrine.Current;
 
         /// <summary>Seconds of play the open-ended modes are judged over: far enough that everything still pays back.</summary>
@@ -230,7 +231,15 @@ namespace YazsCompanion
         public override string ToString()
         {
             return Mode + " d" + Difficulty + ", " + ClockText + ", " + Phase + " (economy x" + Economy.ToString("0.00") + ", survival x" + Survival.ToString("0.00")
-                + ", boss x" + Boss.ToString("0.00") + ", ~" + ExpectedLevelUps.ToString("0") + " level-ups to come)";
+                + ", boss x" + Boss.ToString("0.00") + ", ~" + ExpectedLevelUps.ToString("0") + " level-ups to come" + HealthTail() + ")";
+        }
+
+        /// <summary>0.16.0 (C16-12): the [ctx] line's tail inside the parenthesis - ', health N%' under full health (N floored: a squad under
+        /// 60 % never reads '60%') and ', survive quest' while the quest asks to survive the run; "" at full health with no such quest (the
+        /// line as 0.15.0 wrote it; ChestReplay and C16-09 read its start).</summary>
+        string HealthTail()
+        {
+            return (Health < 0.995 ? ", health " + (int)Math.Floor(Health * 100 + 1e-6) + "%" : "") + (SurviveQuest ? ", survive quest" : "");
         }
 
         static double Clamp01(double v) { return v < 0 ? 0 : v > 1 ? 1 : v; }

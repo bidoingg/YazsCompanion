@@ -16,13 +16,20 @@
 // hidden, the canvas past the view on both sides: 660 units a side at 3440 x 1440), the WHY goes in a PANEL in the wing beside
 // the selected card instead (Side): the left wing for the left-most card, the right one - past the team panel - for the
 // right-most, the nearer one for a card between; at most 600 units wide (19.5 ems at a larger "Card text size"), up to four
-// reasons at the cards' own reason size (20.5 px on the PC, never under 15) under the lead's own line (WHY / CLOSE CALL), one reason
+// reasons at the cards' own reason size (20.5 px on the PC, never under 15) under the header (the lead - WHY / CLOSE CALL - and,
+// 0.16.0 (C16-10), the name of the card it explains, on one line or the name on a line or two of its own: Header), one reason
 // a line - a long one wraps at its spaces, its next line hanging a little further in (Wrap), the panel growing upward for it up to
 // the cards' top (0.15.x, C-M1 of the 10-07 review: "up to 4 lines" counts reasons) -, its bottom on the selected card's
 // reason line; clear of every card, button, the divider, the team panel and the skip reward. A wing whose text room is under nine
 // ems leaves the WHY to the band, and 16:9, 16:10 (the Steam Deck) and WideMenus off keep the band exactly as 0.14.0 laid it
-// (the third of four cards keeps its wing - beside the selected card, as Q4 chose - until the user has seen the hover captures:
-// the 10-07 review's C-m8 waits for them). The action hint keeps its line (no more sharing it).
+// (the third of four cards keeps its wing - beside the selected card, as Q4 chose; the 10-07 review's C-m8: the header names the
+// card since 0.16.0, and where the panel goes on four-card screens is the user's answer, C16-10b). The action hint keeps its line.
+// 0.16.0 (C16-14, DK-C03 of the 10-07 Deck round): a preferred size within NearPx of the 15 px floor (the Deck's 16 - 16.8 px) tries
+// the wanted lines at 15 px - the full pad, then the tight one - before one line at the preferred size; the lines wanted per band.
+// 0.16.0 (C16-15, DK-C04): a stretch must hold the block's first item at 15 px (WhyBandIn.NeedW) - the selected card's own piece when it
+// does, else the band's widest (at 1280 x 800 the hint's line under its button cut the band, and a rescue card's piece held no item at all).
+// 0.16.0 (C16-11g): EdgeCut - the recommend frame's bottom edge either side of the card's TIER / NEW / RECRUIT plate (Badge.Cut); r1 fix
+// (10-08): PlateCut / PlateLine - Badge.Cut's decision and proof line (in the card ROOT's units: y grows UP there, unlike below).
 // Also Q4: the band's lines are measured as drawn (FitLines) - the end diamond stood over the last glyph at 3440 x 1440.
 // Coordinates: view units with the origin at the view's TOP-LEFT and y growing DOWN (LoadoutLayout's R4).
 // Pure (no game types): the bench lays the PC (3440 x 1440) and the Steam Deck (1280 x 800) screens out (the PC's level-up
@@ -56,6 +63,9 @@ namespace YazsCompanion
         public float AnchorX;                   // the selected card's centre
         public float FontUnits, MinFontUnits;   // the preferred text size and the 15 px floor, in view units
         public int Want = 1;                    // the lines the words would take over the widest stretch (1 .. 3)
+        public float TextUnits, ChromeUnits;    // 0.16.0 (C16-14): the words' width at the preferred size (the lead, the items, the separators) and the block's chrome; 0: Want as given
+        public float NeedW;                     // 0.16.0 (C16-15): the width the block needs for its first item at the 15 px floor - the chrome, the slack, the lead and
+                                                // the first item (NeedWidth); a stretch narrower than max(MinWidth, NeedW) is passed over while a wider one exists. 0: MinWidth
     }
 
     /// <summary>Where the WHY band goes: a stretch of one band, the text size and the lines it holds there.</summary>
@@ -66,6 +76,7 @@ namespace YazsCompanion
         public float Font; public int Lines;
         public float Pad = ScreenBand.Pad;      // the block's pad above and below its lines, in fonts (ScreenBand.TightPad: the last resort)
         public string Bands = "";               // every band measured, for the log
+        public bool Widest;                     // 0.16.0 (C16-15): the stretch is the band's widest - the selected card's own could not hold the first item
     }
 
     /// <summary>What the WHY panel in a side wing is laid out from (0.15.0, C15-12; view units, y down).</summary>
@@ -92,6 +103,7 @@ namespace YazsCompanion
         public int Lines;                       // the reasons' lines the room holds under the lead's own line
         public float Width;                     // the widest the block may be
         public string Wings = "";               // both wings as measured, for the log
+        public int Pos, Of;                     // 0.16.0 (C16-10): the selected card is card Pos of Of in the row, left to right (0 / 0: not measured) - the [why] line's ", card 2 of 3"
     }
 
     /// <summary>One line of the side panel: the item it shows (all of it or a part), its words and their width, whether it carries on
@@ -102,6 +114,7 @@ namespace YazsCompanion
     {
         public const float Gap = 8f;            // canvas units between two things
         public const float LinePitch = 1.25f, Pad = 0.35f, MinWidth = 600f, MinPx = 15f;
+        public const float NearPx = 2f;         // 0.16.0 (C16-14): a preferred size within this of the 15 px floor tries the wanted lines at the floor first
         public const int MaxLines = 3;
         public const float HintNeed = 0.72f;    // the share of the hint's line a band must hold (0.12.2)
 
@@ -170,61 +183,138 @@ namespace YazsCompanion
         public const float TightPad = 0.25f;
 
         /// <summary>The WHY band's place: the band under the cards, else the band under the buttons, whichever holds the lines
-        /// wanted at the preferred size (the one under the cards first), then one line at the preferred size, then one at 15 px.</summary>
+        /// wanted at the preferred size (the one under the cards first), then one line at the preferred size, then one at 15 px.
+        /// 0.16.0 (C16-14, DK-C03 of the 10-07 Deck round: at 1280 x 800 the one-line band dropped reasons in 41 of 97 views although two
+        /// lines at 15 px fit): when the preferred size is within <see cref="NearPx"/> of the 15 px floor (the Deck's 16 - 16.8 px; the
+        /// PC's 20.5 px is 5.5 px over it and keeps every pass as it was), the passes are the wanted lines at the preferred size, the wanted
+        /// lines at 15 px with the full pad, the same with <see cref="TightPad"/>, then one line at the preferred size and one at 15 px; the
+        /// lines wanted are counted per band from <see cref="WhyBandIn.TextUnits"/> (a band the hint's line cut asks for more than the
+        /// cards' whole span), and a band that wants one line skips the two 15 px passes.
+        /// 0.16.0 (C16-15, DK-C04 of the 10-07 Deck round: at 1280 x 800 the hint's line under its button cut the band, and a rescue card's
+        /// piece of it - 640 units left of the line - held no item at all): a stretch must be at least <see cref="Need"/> wide - the block's
+        /// first item at 15 px (<see cref="WhyBandIn.NeedW"/>) - so the selected card's own piece is taken only when it holds that, else the
+        /// band's widest piece (the block then sits at its end nearest the card: <see cref="Left"/>), and the passes skip narrower pieces.
+        /// Where no piece of any band is that wide, the band is laid out as before (from <see cref="MinWidth"/>).</summary>
         public static WhySpot Why(WhyBandIn x)
         {
+            if (x == null) return new WhySpot();
+            float need = Need(x);
+            if (need <= MinWidth) return Lay(x, MinWidth);
+            var spot = Lay(x, need);
+            if (spot.At != "none") return spot;
+            // no stretch holds the first item at 15 px: as C16-14 laid it out - a later item may still fit
+            var old = Lay(x, MinWidth);
+            old.Bands += "; no stretch holds the first item (" + need.ToString("0", CultureInfo.InvariantCulture) + " units at 15 px)";
+            return old;
+        }
+
+        /// <summary>0.16.0 (C16-15): the width a stretch must have - <see cref="MinWidth"/>, or <see cref="WhyBandIn.NeedW"/> when that is more.</summary>
+        public static float Need(WhyBandIn x) { return x != null && x.NeedW > MinWidth ? x.NeedW : MinWidth; }
+
+        /// <summary>0.16.0 (C16-15): the width a block needs to show its first item - its chrome (the end diamonds' inner halves and the pads),
+        /// the slack, the lead (with its gap) and the item, all at <paramref name="font"/> (WhyUi measures them at the 15 px floor).</summary>
+        public static float NeedWidth(float leadW, float itemW, float chrome, float font) { return Math.Max(0f, chrome) + Slack(font) + Math.Max(0f, leadW) + Math.Max(0f, itemW); }
+
+        // Why's layout with stretches at least <need> wide (MinWidth up to 0.15.0)
+        static WhySpot Lay(WhyBandIn x, float need)
+        {
             var spot = new WhySpot();
-            if (x == null) return spot;
             bool buttons = x.Buttons != null && x.Buttons.Any(b => !b.Empty);
             float buttonsTop = buttons ? x.Buttons.Where(b => !b.Empty).Min(b => b.Y0) : x.Bottom;
             float buttonsBottom = buttons ? x.Buttons.Where(b => !b.Empty).Max(b => b.Y1) : x.Bottom;
             var bands = new List<KeyValuePair<string, R4>>();
-            if (!float.IsNaN(x.CardsBottom)) Split(x, bands, "under the cards", "over the buttons", x.CardsBottom + Gap, buttonsTop - Gap);
-            if (buttons) Split(x, bands, "under the buttons", "under the buttons", buttonsBottom + Gap, x.Bottom - Gap);
+            if (!float.IsNaN(x.CardsBottom)) Split(x, bands, "under the cards", "over the buttons", x.CardsBottom + Gap, buttonsTop - Gap, need);
+            if (buttons) Split(x, bands, "under the buttons", "under the buttons", buttonsBottom + Gap, x.Bottom - Gap, need);
             int want = Math.Max(1, Math.Min(MaxLines, x.Want));
             var notes = new List<string>();
             foreach (var b in bands) notes.Add(b.Key + " " + b.Value.Size + " (" + LinesIn(b.Value.H, x.FontUnits) + " line(s) at the preferred size, " + LinesIn(b.Value.H, x.MinFontUnits) + " at 15 px)");
             spot.Bands = string.Join("; ", notes);
-            // the lines wanted at the preferred size; one line at it; one line at 15 px
-            foreach (var pass in new[] { 0, 1, 2 })
+            // the lines wanted at the preferred size; 0.16.0 (C16-14) near the floor: the lines wanted at 15 px (the full pad, then the tight
+            // one); one line at the preferred size; one line at 15 px
+            bool near = Near(x);
+            foreach (var pass in near ? NearPasses : Passes)
                 foreach (var b in bands)
                 {
-                    if (b.Value.W < MinWidth) continue;
-                    float font = pass == 2 ? x.MinFontUnits : x.FontUnits;
-                    int n = LinesIn(b.Value.H, font);
-                    if (n < (pass == 0 ? want : 1)) continue;
-                    spot.At = b.Key; spot.Seg = b.Value; spot.Font = font; spot.Lines = Math.Min(n, want);
+                    if (b.Value.W < need) continue;                                      // 0.16.0 (C16-15): need = MinWidth, or the first item's NeedW
+                    bool many = pass == 0 || pass == 3 || pass == 4;                     // the passes of the lines wanted
+                    float font = pass == 2 || pass == 3 || pass == 4 ? x.MinFontUnits : x.FontUnits;
+                    float pad = pass == 4 ? TightPad : Pad;
+                    int wantB = many && near && x.TextUnits > 0 ? WantIn(x, b.Value, font) : want;
+                    if ((pass == 3 || pass == 4) && wantB < 2) continue;                 // one line wanted here: the 15 px passes add nothing
+                    int n = LinesIn(b.Value.H, font, pad);
+                    if (n < (many ? wantB : 1)) continue;
+                    spot.At = b.Key; spot.Seg = b.Value; spot.Font = font; spot.Lines = Math.Min(n, many ? wantB : want); spot.Pad = pad;
+                    if (pass == 3 || pass == 4)
+                        spot.Bands += "; " + spot.Lines + " lines at 15 px" + (pass == 4 ? " with the tight pad (" + TightPad.ToString("0.##", CultureInfo.InvariantCulture) + " of the font)" : "")
+                            + " - the preferred size is within " + NearPx.ToString("0.#", CultureInfo.InvariantCulture) + " px of it";
+                    MarkWidest(x, spot, need);
                     return spot;
                 }
             // the last resort (0.15.0): one line at 15 px with the tight pad - only where no band held one at the full pad, so every
             // band 0.14.0 chose stays as it was
             foreach (var b in bands)
             {
-                if (b.Value.W < MinWidth || LinesIn(b.Value.H, x.MinFontUnits, TightPad) < 1) continue;
+                if (b.Value.W < need || LinesIn(b.Value.H, x.MinFontUnits, TightPad) < 1) continue;
                 spot.At = b.Key; spot.Seg = b.Value; spot.Font = x.MinFontUnits; spot.Lines = 1; spot.Pad = TightPad;
                 spot.Bands += "; one 15 px line with the tight pad (" + TightPad.ToString("0.##", CultureInfo.InvariantCulture) + " of the font)";
+                MarkWidest(x, spot, need);
                 return spot;
             }
             return spot;
         }
 
+        // 0.16.0 (C16-15): the stretch chosen is not the selected card's own piece because that one could not hold the first item (it is at
+        // least MinWidth but under need): said in the log (WhySpot.Widest, and the offer's first [why] line)
+        static void MarkWidest(WhyBandIn x, WhySpot spot, float need)
+        {
+            if (need <= MinWidth || (x.AnchorX >= spot.Seg.X0 && x.AnchorX <= spot.Seg.X1)) return;
+            var own = Seg(x, spot.Seg.Y0, spot.Seg.Y1, MinWidth);
+            if (!(x.AnchorX >= own.X0 && x.AnchorX <= own.X1) || own.W < MinWidth || own.W >= need) return;
+            spot.Widest = true;
+            spot.Bands += "; the widest stretch " + spot.Seg.Size + " - the selected card's own " + own.Size + " holds no first item ("
+                + need.ToString("0", CultureInfo.InvariantCulture) + " units at 15 px)";
+        }
+
+        // the passes of Why: 0 = the lines wanted at the preferred size, 1 = one line at it, 2 = one line at 15 px; near the floor (0.16.0,
+        // C16-14) 3 = the lines wanted at 15 px, 4 = the same with the tight pad, between 0 and 1
+        static readonly int[] Passes = { 0, 1, 2 }, NearPasses = { 0, 3, 4, 1, 2 };
+
+        /// <summary>0.16.0 (C16-14): the preferred size within <see cref="NearPx"/> of the 15 px floor (in the band's units), and lines wanted
+        /// (Want over one, or the words' width given): the wanted lines are tried at 15 px before one line at the preferred size.</summary>
+        public static bool Near(WhyBandIn x)
+        {
+            if (x == null || !(x.MinFontUnits > 0) || !(x.FontUnits > 0)) return false;
+            if (!(x.Want > 1 || x.TextUnits > 0)) return false;
+            return x.FontUnits - x.MinFontUnits <= NearPx * x.MinFontUnits / MinPx + 1e-3f;
+        }
+
+        /// <summary>0.16.0 (C16-14): the lines the words want in the band <paramref name="seg"/> at <paramref name="font"/> - their width at the
+        /// preferred size scaled to the font, over the band's width less the chrome - 1 .. <see cref="MaxLines"/>.</summary>
+        public static int WantIn(WhyBandIn x, R4 seg, float font)
+        {
+            if (x == null || !(x.TextUnits > 0) || !(x.FontUnits > 0)) return Math.Max(1, Math.Min(MaxLines, x == null ? 1 : x.Want));
+            double lines = Math.Ceiling(x.TextUnits * (font / x.FontUnits) / Math.Max(1f, seg.W - Math.Max(0f, x.ChromeUnits)) - 1e-6);
+            return (int)Math.Max(1, Math.Min(MaxLines, lines));
+        }
+
         // a band from y0 to y1, cut at every divider rule that crosses it (0.14.0 review: on the PC's level-up screen the rule lies
         // between the cards' lowest line and the buttons - a block centred in that band sat across it and its diamond): the part
         // above the first rule is <first>, the parts below it <rest>
-        static void Split(WhyBandIn x, List<KeyValuePair<string, R4>> bands, string first, string rest, float y0, float y1)
+        static void Split(WhyBandIn x, List<KeyValuePair<string, R4>> bands, string first, string rest, float y0, float y1, float need)
         {
             float cur = y0; bool cut = false;
             foreach (var r in (x.Rules ?? new R4[0]).Where(r => !r.Empty && r.Y1 > y0 && r.Y0 < y1).OrderBy(r => r.Y0))
             {
-                bands.Add(new KeyValuePair<string, R4>(cut ? rest : first, Seg(x, cur, r.Y0 - Gap)));
+                bands.Add(new KeyValuePair<string, R4>(cut ? rest : first, Seg(x, cur, r.Y0 - Gap, need)));
                 cur = Math.Max(cur, r.Y1 + Gap); cut = true;
             }
-            bands.Add(new KeyValuePair<string, R4>(cut ? rest : first, Seg(x, cur, y1)));
+            bands.Add(new KeyValuePair<string, R4>(cut ? rest : first, Seg(x, cur, y1, need)));
         }
 
         // one band's stretch: the span between y0 and y1, cut clear of every obstacle that reaches into it, the piece nearest the
-        // selected card (the one holding it, else the widest)
-        static R4 Seg(WhyBandIn x, float y0, float y1)
+        // selected card (the one holding it when it is at least <need> wide - MinWidth, or 0.16.0's C16-15 NeedW: the first item at 15 px -,
+        // else the widest)
+        static R4 Seg(WhyBandIn x, float y0, float y1, float need)
         {
             if (y1 <= y0) return new R4(x.SpanX0, y0, x.SpanX0, y0);
             var pieces = new List<KeyValuePair<float, float>> { new KeyValuePair<float, float>(Math.Max(x.SpanX0, x.View.X0), Math.Min(x.SpanX1, x.View.X1)) };
@@ -243,7 +333,7 @@ namespace YazsCompanion
             }
             pieces = pieces.Where(p => p.Value > p.Key).ToList();
             if (pieces.Count == 0) return new R4(x.SpanX0, y0, x.SpanX0, y1);
-            var holding = pieces.Where(p => x.AnchorX >= p.Key && x.AnchorX <= p.Value && p.Value - p.Key >= MinWidth).ToList();
+            var holding = pieces.Where(p => x.AnchorX >= p.Key && x.AnchorX <= p.Value && p.Value - p.Key >= need).ToList();
             var pick = holding.Count > 0 ? holding[0] : pieces.OrderByDescending(p => p.Value - p.Key).First();
             return new R4(pick.Key, y0, pick.Value, y1);
         }
@@ -296,6 +386,52 @@ namespace YazsCompanion
             return widest;
         }
 
+        // ---------------------------------------------------------------- the recommend frame's bottom edge (0.16.0, C16-11g)
+        /// <summary>The gold frame's bottom edge cut round the plate the game hangs on the card's bottom edge (TIER I on a weapon card, NEW on
+        /// an ability, RECRUIT on a rescue card), as the game's own highlight passes behind it (C-m9 of the 10-07 review: the frame's bottom
+        /// line ran through the plate since 0.13.0). The edge runs <paramref name="x0"/> .. <paramref name="x1"/>, the plate
+        /// <paramref name="c0"/> .. <paramref name="c1"/> (one unit, e.g. the card root's). True when the plate lies inside the edge with
+        /// <paramref name="gap"/> + 4 units or more left on each side: the edge is then drawn as <paramref name="x0"/> .. <paramref name="a1"/>
+        /// (= c0 - gap) and <paramref name="b0"/> (= c1 + gap) .. <paramref name="x1"/>. False (a plate wider than that, outside the edge, or
+        /// no plate): the edge whole (a1 = b0 = x1).</summary>
+        public static bool EdgeCut(float x0, float x1, float c0, float c1, float gap, out float a1, out float b0)
+        {
+            a1 = x1; b0 = x1;
+            if (float.IsNaN(x0) || float.IsNaN(x1) || float.IsNaN(c0) || float.IsNaN(c1) || !(c1 >= c0) || !(x1 > x0)) return false;
+            gap = Math.Max(0f, gap);
+            if (c0 - x0 < gap + 4f || x1 - c1 < gap + 4f) return false;
+            a1 = c0 - gap; b0 = c1 + gap;
+            return true;
+        }
+
+        /// <summary>r1 fix (10-08): Badge.Cut's decision, in the card root's units - the root's rect <paramref name="rx0"/> .. <paramref name="rx1"/>
+        /// across, its bottom at <paramref name="ry0"/>; the frame is that rect inset <paramref name="inset"/>, its bottom bar
+        /// <paramref name="thick"/> units high; the plate <paramref name="px0"/> .. <paramref name="px1"/> x <paramref name="py0"/> ..
+        /// <paramref name="py1"/>. "cut" when the plate's y range reaches into the bar and EdgeCut leaves room either side (a1 / b0 the
+        /// pieces' inner ends); "apart" when it misses the bar (r1's powerupLevelObject, the portrait's level diamond at y 212 .. 436);
+        /// "wide" when it is on the bar with no room either side. The edge is whole for the last two (a1 = b0 = the bar's right end).</summary>
+        public static string PlateCut(float rx0, float rx1, float ry0, float inset, float thick, float px0, float px1, float py0, float py1, float gap, out float a1, out float b0)
+        {
+            float x0 = rx0 + inset, x1 = rx1 - inset, e0 = ry0 + inset, e1 = e0 + thick;
+            a1 = x1; b0 = x1;
+            if (!(py0 < e1 && py1 > e0)) return "apart";
+            return EdgeCut(x0, x1, px0, px1, gap, out a1, out b0) ? "cut" : "wide";
+        }
+
+        /// <summary>r1 fix (10-08): Badge.Cut's proof line for a PlateCut outcome, naming the object measured (<paramref name="obj"/>):
+        /// '[badge] plate: &lt;class&gt; &lt;object&gt; &lt;w&gt;x&lt;h&gt; units, y &lt;y0&gt;..&lt;y1&gt; (the frame's bottom edge &lt;e0&gt;..&lt;e1&gt;) - edge cut &lt;a1&gt;..&lt;b0&gt;'
+        /// (or '- no overlap, edge whole', '- x .. leaves no room either side of it on the edge .., edge whole').</summary>
+        public static string PlateLine(string cls, string obj, string outcome, float rx0, float rx1, float ry0, float inset, float thick, float px0, float px1, float py0, float py1, float a1, float b0)
+        {
+            var inv = CultureInfo.InvariantCulture;
+            float x0 = rx0 + inset, x1 = rx1 - inset, e0 = ry0 + inset, e1 = e0 + thick;
+            string head = "[badge] plate: " + cls + " " + obj + " " + (px1 - px0).ToString("0", inv) + "x" + (py1 - py0).ToString("0", inv) + " units, y " + py0.ToString("0", inv) + ".." + py1.ToString("0", inv)
+                + " (the frame's bottom edge " + e0.ToString("0", inv) + ".." + e1.ToString("0", inv) + ")";
+            if (outcome == "cut") return head + " - edge cut " + a1.ToString("0", inv) + ".." + b0.ToString("0", inv);
+            if (outcome == "apart") return head + " - no overlap, edge whole";
+            return head + " - x " + px0.ToString("0", inv) + ".." + px1.ToString("0", inv) + " leaves no room either side of it on the edge " + x0.ToString("0", inv) + ".." + x1.ToString("0", inv) + ", edge whole";
+        }
+
         // ---------------------------------------------------------------- the WHY panel in a side wing (0.15.0, C15-12)
         public const int SideMaxItems = 4;      // the reasons the panel shows, each on its own line(s), under the lead's own line (WHY / CLOSE CALL - the review
                                                 // of 10-06: as a hanging indent the lead took five ems off every line). 0.15.x (C-M1 of the 10-07 review): the
@@ -316,9 +452,11 @@ namespace YazsCompanion
         /// card), else the right one (past the team panel); the other when the nearer leaves its text under <see cref="SideMinEms"/>;
         /// "none" - the band - when both do, and on a screen whose canvas is no wider than the view (16:9; 16:10 like the Steam Deck;
         /// WideMenus off). A card between keeps its wing however far it stands from it (the user's Q4: beside the selected card; the
-        /// 10-07 review's C-m8 - the third of four cards about 1000 px from the left wing's panel - waits for the hover captures). The room
-        /// then reaches up to the cards' top (0.15.x, C-M1), clear of anything in the wing above the measure: a wrapped reason grows
-        /// the panel upward (<see cref="WhySide.Lines"/>).</summary>
+        /// 10-07 review's C-m8 - the third of four cards about 1000 px from the left wing's panel: since 0.16.0 (C16-10) the panel's
+        /// header names its card, and where it goes on four-card screens is the user's answer, C16-10b). The room then reaches up to the
+        /// cards' top (0.15.x, C-M1), clear of anything in the wing above the measure: a wrapped reason, or a name on rows of its own
+        /// (<see cref="Header"/>), grows the panel upward (<see cref="WhySide.Lines"/>: the lines under the lead's own line).
+        /// <see cref="WhySide.Pos"/> / <see cref="WhySide.Of"/>: which card of the row, left to right, the panel speaks for.</summary>
         public static WhySide Side(WhySideIn x)
         {
             var s = new WhySide();
@@ -340,9 +478,17 @@ namespace YazsCompanion
             float textL = Math.Min(left.W, cap) - chrome, textR = Math.Min(right.W, cap) - chrome;
             float need = SideMinEms * x.FontUnits, twoLines = BlockHeight(2, x.FontUnits);
             bool okL = textL >= need && left.H >= twoLines, okR = textR >= need && right.H >= twoLines;
+            float anchor = float.IsNaN(x.AnchorX) ? (x.View.X0 + x.View.X1) / 2f : x.AnchorX;
+            // 0.16.0 (C16-10): which card of the row the panel speaks for (the card whose centre is nearest the anchor), for the [why] line
+            var centres = (x.Cards ?? new R4[0]).Where(c => !c.Empty).Select(c => (c.X0 + c.X1) / 2f).OrderBy(c => c).ToList();
+            if (centres.Count > 0)
+            {
+                int near = 0;
+                for (int i = 1; i < centres.Count; i++) if (Math.Abs(centres[i] - anchor) < Math.Abs(centres[near] - anchor)) near = i;
+                s.Pos = near + 1; s.Of = centres.Count;
+            }
             s.Wings = "left " + Wing(left, textL, okL, x.FontUnits) + "; right " + Wing(right, textR, okR, x.FontUnits);
             if (!okL && !okR) return s;
-            float anchor = float.IsNaN(x.AnchorX) ? (x.View.X0 + x.View.X1) / 2f : x.AnchorX;
             bool toLeft = okL && (!okR || anchor - left.X1 <= right.X0 - anchor);
             var room = toLeft ? left : right;
             s.Left = toLeft;
@@ -430,6 +576,48 @@ namespace YazsCompanion
             }
             if (cur != null) mine.Add(new SideLine { Item = item, Text = cur, Cont = mine.Count > 0, Width = curW });
             return mine;
+        }
+
+        public const string Ellipsis = "...";
+
+        /// <summary>The side panel's header (0.16.0, C16-10 - the build-now half of the 10-07 review's C-m8: a panel that cannot be told apart
+        /// from its neighbour's): the lead (WHY / CLOSE CALL) and the name of the card it explains, as the card shows it. Line 0 is the lead's
+        /// line (Item -1; its Text the name when the name shares it, else ""); the name's own rows follow (Item -2, Cont from the second).
+        /// One line when <c>width("&lt;b&gt;" + lead + "&lt;/b&gt;  " + name)</c> fits <paramref name="room"/> - the line measured whole, as drawn
+        /// (TMP leaves trailing spaces out of a width, so the pieces are never summed); else the lead alone and the name broken as
+        /// <see cref="Wrap(IList{string}, Func{string, float}, float, float, int, int)"/> breaks a reason (balanced, a next row
+        /// <paramref name="cont"/> further in), two rows at most: past two the greedy first row, then the next words while they fit with
+        /// "..." after them in the second. An empty name, or a word wider than its row: the lead alone (as up to 0.15.x). The game's names
+        /// are 29 characters at most and the names other mods lend 38, so neither of the last two happens to a real name.</summary>
+        public static List<SideLine> Header(string lead, string name, Func<string, float> width, float room, float cont)
+        {
+            var head = new List<SideLine>();
+            string bold = "<b>" + (lead ?? "") + "</b>";
+            if (width == null) { head.Add(new SideLine { Item = -1 }); return head; }
+            cont = Math.Max(0f, cont);
+            string n = (name ?? "").Trim();
+            if (n.Length > 0)
+            {
+                float one = width(bold + "  " + n);
+                if (one <= room) { head.Add(new SideLine { Item = -1, Text = n, Width = one }); return head; }
+            }
+            head.Add(new SideLine { Item = -1, Text = "", Width = width(bold) });
+            if (n.Length == 0) return head;
+            var rows = Wrap(new[] { n }, width, room, cont, int.MaxValue, 1);
+            if (rows.Count == 0) return head;                                   // a word wider than its row: the lead alone
+            if (rows.Count > 2)
+            {
+                // two rows: the greedy first, then the words that fit before the ellipsis
+                var words = n.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                int k = 0; string r1 = null;
+                while (k < words.Length) { string cand = r1 == null ? words[k] : r1 + " " + words[k]; if (r1 != null && width(cand) > room) break; r1 = cand; k++; }
+                string r2 = null;
+                while (k < words.Length) { string cand = r2 == null ? words[k] : r2 + " " + words[k]; if (width(cand + Ellipsis) > room - cont) break; r2 = cand; k++; }
+                string t2 = k >= words.Length && r2 != null ? r2 : (r2 ?? "") + Ellipsis;
+                rows = new List<SideLine> { new SideLine { Text = r1, Width = width(r1) }, new SideLine { Text = t2, Cont = true, Width = width(t2) } };
+            }
+            foreach (var r in rows) head.Add(new SideLine { Item = -2, Text = r.Text, Cont = r.Cont, Width = r.Width });
+            return head;
         }
 
         /// <summary>The side panel's widest line end: the lead's indent, a carried-on line's further indent, its words.</summary>

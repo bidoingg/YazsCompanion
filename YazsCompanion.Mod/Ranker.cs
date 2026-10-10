@@ -22,8 +22,14 @@
 //  The quest:  every other objective of the active quest after all of the above (0.14.0, C3: QuestRules.cs) - the weapon line it
 //              wants maxed over the abilities, a health item +2.0, AVOID on a pick that would fail it, a modest lift for kills
 //              with a class that never passes the build's core; the build plan stays ([Advice] QuestSteer).
-//  Military:   rarity x stat weight, the weight moved by the squad's weapon / ability split and by the clock; an Endless
-//              card by its own value against the Common card of its stat (0.14.0, B1: it was a flat near-Legendary 2.6).
+//  Military:   rarity x stat weight, the weight moved by the squad's weapon / ability split and by the clock; the rarity factor is
+//              the card's own value against the Common card of its stat at every rarity (0.16.0, C16-05: GetMyRarityBonusList; Rare
+//              and Legendary were a flat 2 and 3, Endless a flat 2.6 up to 0.13.0).
+//  Ties:       an exact tie on any screen but the rescue one goes to the build's order, then the stat card's own value, then the
+//              squad's tag points in the card's damage types, then the card further left (0.16.0, C16-08: CardTies in Synergy.cs).
+//  Held items: what the items the squad holds change, asked of one pure table (0.16.0, C16-01: HeldRules.cs, read by HeldRead.cs) -
+//              Mana Potion held makes a Chem-Light Battery do nothing and cuts the cooldown part of Chick Magnet, Hyperactivity, Devil's
+//              Deal and Grenade Trail: Shrapnel; the Mana Potion card weighs the cooldown reduction it would switch off.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -58,6 +64,7 @@ namespace YazsCompanion
         internal bool LiftedWeapon;      // 0.13.0 (C2): a held weapon's level on the lifted floor - kept under the owner's own open build ability
         internal bool OwnBuildOpen;      // an ability card the owner's build ranks (no build: any), short of its last level
         internal string Rarity, StatKey; // a stat card's rarity and its stat (the asset's: AbilitySize, TeamArmor), for the quest's rules
+        internal TieKey Tie; internal string TieSay;   // 0.16.0 (C16-08): what settles an exact tie (CardTies), and the words of it for the WHY band (CardTies.Say against the first card; null: no tie, or the position)
     }
 
     internal static class Ranker
@@ -75,13 +82,33 @@ namespace YazsCompanion
             }
             try { UnderOwnAbility(cards); } catch (Exception e) { Plugin.Logger.LogWarning("rank: weapon cap - " + e.Message); }
             try { QuestPass(cards, s); } catch (Exception e) { if (!_questWarned) { _questWarned = true; Plugin.Logger.LogWarning("[rank] the quest's rules not applied (" + e.GetType().Name + " " + e.Message + ") - said once a session"); } }
-            // an exact tie goes to the card further left - except between two recruits, which the PLAN readout's SOS row
-            // ranks too: there both follow Recruit.Ties (0.12.2, F12), so the card framed is the survivor the row names first
+            // an exact tie: on the rescue screen Recruit.Ties (0.12.2, F12: the readout's SOS row ranks the same way), on every other
+            // screen CardTies (0.16.0, C16-08: the build's order, the stat card's own value, the squad's tag points), then the card further left
             var order = screen == Screen.SOS
                 ? cards.OrderByDescending(c => c.Score).ThenBy(c => c, RecruitTies).ThenBy(c => c.Index).ToList()
-                : cards.OrderByDescending(c => c.Score).ThenBy(c => c.Index).ToList();
+                : cards.OrderByDescending(c => c.Score).ThenBy(c => c.Tie ?? TieKey.None, CardTies.Comparer).ThenBy(c => c.Index).ToList();
             for (int i = 0; i < order.Count; i++) order[i].Rank = i + 1;
+            if (screen != Screen.SOS)
+            {
+                try { SayTie(screen, order); }
+                catch (Exception e) { if (!_tieWarned) { _tieWarned = true; Plugin.Logger.LogWarning("[rank] the tie's words not set (" + e.GetType().Name + " " + e.Message + ") - said once a session"); } }
+            }
             SayAll(order);
+        }
+
+        // 0.16.0 (C16-08): an exact tie for the first place - every tied card gets the words of what put the FIRST card before it (the
+        // first card: against the second), for the WHY band; the log says the rule once per offer
+        static string _lastTie; static bool _tieWarned;
+        static void SayTie(Screen screen, List<Card> order)
+        {
+            foreach (var c in order) c.TieSay = null;
+            if (order.Count < 2 || order[0].Score != order[1].Score) return;
+            order[0].TieSay = CardTies.Say(order[0].Tie, order[1].Tie);
+            for (int i = 1; i < order.Count && order[i].Score == order[0].Score; i++) order[i].TieSay = CardTies.Say(order[0].Tie, order[i].Tie);
+            string key = screen + "|" + string.Join(",", order.Select(c => c.Name)) + "|" + order[0].Score.ToString("0.00", CultureInfo.InvariantCulture);
+            if (key == _lastTie) return;
+            _lastTie = key;
+            Plugin.Logger.LogInfo("[rank] tie for #1 at " + order[0].Score.ToString("0.00", CultureInfo.InvariantCulture) + ": " + order[0].Name + " before " + order[1].Name + " - " + (CardTies.Rule(order[0].Tie, order[1].Tie) ?? "the card further left"));
         }
 
         /// <summary>The names another mod lends, as the cards and the WHY band draw them (one delegate for all of them).</summary>
@@ -323,6 +350,7 @@ namespace YazsCompanion
 
         static void ScoreWeapon(Card c, WeaponUpgradePowerup w, Survivor owner, Snapshot s)
         {
+            c.Tie = new TieKey { TagPoints = TagPointsOf(w, s) };         // 0.16.0 (C16-08): a tie between weapons - the squad's tag points
             var path = WeaponPath(owner);
             var me = path.FirstOrDefault(x => G.Same(x.W, w));
             var current = CurrentStep(owner, path);
@@ -499,13 +527,14 @@ namespace YazsCompanion
             var pool = owner.Abilities().Where(kv => kv.Value < G.MaxLevel(kv.Key)).Select(kv => kv.Key).ToList();
             if (missing != null) pool.Add(missing);
             PowerupBase best = null; bestScore = double.MinValue;
+            TieKey bestTie = null;
             foreach (var p in pool)
             {
                 var c = new Card(); ScoreAbility(c, p, owner, s, focus, true);
                 c.Kind = "ability"; c.Owner = owner; c.Powerup = p; c.Name = G.Name(p);
                 var qv = QuestOf(c, s); if (qv != null && qv.Head) c.Score = qv.Score;        // 0.14.0 (C3): as the card will be scored under the quest
                 double sc = Math.Round(c.Score, 2);
-                if (sc > bestScore) { bestScore = sc; best = p; }      // a tie: the owned ability, listed first
+                if (sc > bestScore || (sc == bestScore && best != null && CardTies.Compare(c.Tie, bestTie) < 0)) { bestScore = sc; best = p; bestTie = c.Tie; }   // a tie: CardTies, as on the cards (0.16.0, C16-08; up to 0.15.0 the owned ability, listed first)
             }
             return best;
         }
@@ -528,6 +557,8 @@ namespace YazsCompanion
         static void ScoreAbility(Card c, PowerupBase p, Survivor owner, Snapshot s, PowerupBase focusKnown = null, bool haveFocus = false)
         {
             var a = AbilityScore(p, owner, s);
+            // 0.16.0 (C16-08): a tie goes to the build's order, then the squad's tag points in its damage types
+            c.Tie = new TieKey { BuildRank = owner.Build != null && a.Priority >= 0 && !a.Skipped ? a.Priority : int.MaxValue, TagPoints = TagPointsOf(p, s) };
             int lvl = owner.LevelOf(p);
             int max = G.MaxLevel(p);
             var owned = owner.Abilities();
@@ -597,8 +628,15 @@ namespace YazsCompanion
             var fitWhy = new List<string>();
             double fit = Synergy.EvolutionFit(G.Facts(evo), G.Facts(baseAbility), s.Tags, s.Boosts, s.Ctx, fitWhy);
             c.Score = 7.6 + parent.Score * 0.1 + fit * 0.4;
+            // 0.16.0 (C16-01a): Mana Potion held - Grenade Trail: Shrapnel's drops scale with the ability cooldown reduction, which is 0 now
+            // (its reason goes to the WHY band only, at the end: a build's pick is +1.0 / -0.5, a gap the 0.3 never flips - it decides
+            // only between the two evolutions of Grenade Trail when no build names one)
+            bool shrapnelOff = HeldRules.ShrapnelOff(s.Held, evoName, G.Asset(evo));
+            if (shrapnelOff) c.Score -= HeldRules.ShrapnelCut;
             var say = c.Say = new CardWords { Kind = SayKind.Evolution, Base = baseName, Build = build != null ? build.Name : null, Pick = pick,
                 BasePriority = build != null && !parent.Skipped ? parent.Priority : -1 };        // 0.15.0 (C15-03 c): "evolves the build's main ability"
+            // 0.16.0 (C16-08): a tie (two evolutions of one offer) goes to its base's place in the build, then the squad's tag points
+            c.Tie = new TieKey { BuildRank = say.BasePriority >= 0 ? say.BasePriority : int.MaxValue, TagPoints = TagPointsOf(evo, s) };
             Wording.Tags(say, G.Facts(evo), s.Tags, s.Boosts, s.Ctx, G.Facts(baseAbility));
             if (pick != null)
             {
@@ -609,8 +647,25 @@ namespace YazsCompanion
                 // a tier-up) and says so, instead of "your build takes <the other one>" under a card marked PICK
                 c.Why.Add(Synergy.EvolutionHead(baseName, evoName, pick, build.Name, mine, mine || offer == null || EvolutionOffered(offer, c, baseAbility, pick), Builds.OnAuto(owner.Name)));
             }
-            else c.Why.Add("evolution of " + baseName + (fitWhy.Count > 0 ? ": " + fitWhy[0] : ""));
+            else
+            {
+                c.Why.Add("evolution of " + baseName + (fitWhy.Count > 0 ? ": " + fitWhy[0] : ""));
+                // 0.16.0 (C16-17): taking this one closes the base's other evolution (one evolution per ability) - said when the PLAN
+                // names that other one as preferred (Plan.PickEvolution: the same fits, the same rule, Synergy.Preferred). The score
+                // stays: an evolution still outranks the rest of its offer (F12)
+                var other = parent.EvoA != null && G.Same(parent.EvoA, evo) ? parent.EvoB : parent.EvoB != null && G.Same(parent.EvoB, evo) ? parent.EvoA : null;
+                if (other != null)
+                {
+                    double fo = Synergy.EvolutionFit(G.Facts(other), G.Facts(baseAbility), s.Tags, s.Boosts, s.Ctx, null);
+                    if (Synergy.Preferred(fo, fit) > 0)
+                    {
+                        say.Closes = G.Name(other);
+                        c.Why.Add("closes " + G.Name(other) + " (the PLAN's preferred evolution, fit " + fo.ToString("0.00", CultureInfo.InvariantCulture) + " vs " + fit.ToString("0.00", CultureInfo.InvariantCulture) + ")");
+                    }
+                }
+            }
             c.Why.AddRange(pick != null ? fitWhy : fitWhy.Skip(1));
+            if (shrapnelOff) c.Why.Add(HeldRules.ShrapnelWhy);         // 0.16.0 (C16-01a), the cut above
         }
 
         // the named evolution of this base ability is on another card of the same offer
@@ -642,6 +697,12 @@ namespace YazsCompanion
             c.CritSquad = c.Squad.Any(x => K.CritSquad.Contains(x, StringComparer.OrdinalIgnoreCase));
             c.OwnedTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             c.Held = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // 0.16.0 (C16-01): the held-item facts (HeldRead.Fill); the [Debug] HeldPretend names join the names held, so the pairs and the
+            // held-item rules see them (the [squad] line and the 'already held' check stay with the real items)
+            c.HeldFacts = s.Held;
+            if (s.Held != null) foreach (var n in s.Held.Pretend) c.Held.Add(n);
+            // 0.16.0 (C16-02b): the item book's live needs, read once per snapshot (ItemStats.Fill; NaN / false = unknown)
+            c.FreeSlots = s.FreeSlots; c.Luck = s.Luck; c.Pickup = s.Pickup; c.MoveSpeed = s.MoveSpeed; c.LockdownAdvised = s.LockdownAdvised;
             double weaponLevels = 0, abilityLevels = 0; int weapons = 0, close = 0, far = 0, clips = 0;
             foreach (var sv in s.Squad)
             {
@@ -683,6 +744,7 @@ namespace YazsCompanion
             var facts = G.FactsOf(it);      // name, text, statistics: asset data, read once per item
             var ic = shared ?? ItemContextOf(s);
             ic.Stats = facts.Stats; ic.Healing = facts.Healing; ic.Say = say;
+            ic.Animal = facts.Animal; ic.Asset = HeldRules.CutClone(G.Asset(it));       // 0.16.0 (C16-01i: Last Unicorn's count; C16-01: a renamed item)
             double score = ItemRules.Evaluate(facts.Name, facts.Desc, ic, why);
             ic.Say = null;
             var steer = Quest.Steer();          // 0.14.0 (C3): [Advice] QuestSteer - Off ignores the quest's item, InfoOnly only says it
@@ -724,13 +786,24 @@ namespace YazsCompanion
                 double left = s.Ctx.RecruitValue;
                 int farming = Doctrine.Current.Farming;
                 var lib = new RecruitSay { Liberate = true, Full = s.SquadFull };
-                if (s.SquadFull) { c.Score = 5; c.Why.Add("squad is full: take the level-up and cash"); }
+                // 0.16.0 (C16-01): the held items' terms (HeldRules) - the level-ups a Liberate gives (C16-01d), a recruit's own level-ups
+                // that make 'late' no reason for Liberate (C16-01b), cash that heals instead (C16-01e)
+                int libUps = HeldRules.LiberateLevelUps(s.Held), joinUps = HeldRules.RecruitLevelUps(s.Held);
+                bool heals = HeldRules.CashHeals(s.Held);
+                lib.LiberateLevelUps = libUps; lib.CashHeals = heals;
+                c.Score = HeldRules.LiberateScore(left, farming, s.SquadFull, libUps);
+                // the reasons name what a Liberate gives (unchanged without the items: 'the level-up and cash')
+                string gives = HeldRules.LiberateWhat(libUps, heals);
+                if (s.SquadFull) c.Why.Add("squad is full: take " + gives);
                 else
                 {
-                    c.Score = 1.0 + 3.2 * (1 - left) + 0.4 * farming;
-                    c.Why.Add(left < 0.45 ? "a recruit no longer has time to grow (" + s.Ctx.ClockText + "): take the level-up and cash" : "level-up and cash instead of a recruit");
-                    if (left < 0.45) lib.Late = s.Ctx.ClockText;
+                    bool late = left < 0.45 && joinUps < 1;
+                    c.Why.Add(late ? "a recruit no longer has time to grow (" + s.Ctx.ClockText + "): take " + gives : HeldRules.LiberateWhat(libUps, heals, "level-up") + " instead of a recruit");
+                    if (late) lib.Late = s.Ctx.ClockText;
+                    if (joinUps >= 1) c.Why.Add(HeldRules.RecruitNowWhy(joinUps));       // C16-01b: a recruit's own level-ups (Reserve Bench)
                 }
+                string libWhy = HeldRules.LiberateWhy(libUps, heals);                       // C16-01d: 'held: two level-ups and cash (Hijacked Signal)'
+                if (libWhy != null) c.Why.Insert(0, libWhy);
                 var lq = s.Quest; if (lq != null) c.Score = lq.Card(null, c.Score, c.Why);       // 0.13.0 (C1): the active quest's team rule
                 lib.Quest = QuestHead(c.Why);
                 c.Say = new CardWords { Kind = SayKind.Recruit, Recruit = lib };
@@ -843,7 +916,17 @@ namespace YazsCompanion
             // the headline the card shows; it takes the tier and bought lines it summarises along (0.13.0, F12: each said once)
             Recruit.Headline(why, tier, owned, partners, left < 0.45 ? "little time left for a recruit to grow (" + s.Ctx.ClockText + ")" : null);
             if (why.Count == 0) why.Add("L" + lvl + ", no synergy with this squad");
-            return fixedPart * left + fit * (0.35 + 0.65 * left);
+            // 0.16.0 (C16-01b): the level-ups a recruit brings with the items held (Reserve Bench) - the same for every recruit, so only
+            // recruit against Liberate moves (HeldRules.RecruitHeld; unchanged while none)
+            int joinUps;
+            double score = HeldRules.RecruitHeld(fixedPart * left + fit * (0.35 + 0.65 * left), s.Held, out joinUps);
+            if (joinUps > 0)
+            {   // late in the run it is the reason the recruit still beats Liberate: the headline; earlier a reason among the others
+                string r = HeldRules.RecruitWhy(joinUps);
+                if (left < 0.45) why.Insert(0, r); else why.Add(r);
+            }
+            if (say != null) say.JoinLevelUps = joinUps;
+            return score;
         }
 
         /// <summary>Every survivor the squad could still be joined by - unlocked in the profile, not on the squad, not
@@ -871,14 +954,27 @@ namespace YazsCompanion
             var p = c.Powerup; c.Kind = "stat";
             var b = p.TryCast<BasicLevelPowerup>();
             string rarity = "Common"; try { if (b != null) rarity = b.GetRarity().ToString(); } catch { }
-            // the cards' own numbers go about 1 : 2 : 3-4 by rarity (Luck 5 / 10 / 20, Ability Area 10 / 20 / 30): a Rare is
-            // twice the Common of its stat, a Legendary three times - at 1.6 / 2.3 a Legendary of a modest stat lost to a
-            // Common of a good one, and both times the player overrode the mod that was why. An Endless card is the game's
-            // filler, a quarter to a half of the Common of its stat (Ability Area +2.5 % against +10 %): 0.14.0 (B1) weighs it
-            // by its own value against that Common's (Synergy.EndlessWeight) - up to 0.13.0 a flat 2.6, "just under
-            // Legendary", put it over the build's own abilities and the player overrode it on 8 of 13 mixed offers.
+            // rarity x the stat's weight: the card's own value against the Common card of its stat (0.16.0, C16-05) - the list the game
+            // applies and shows for the card's rarity (BasicLevelPowerup.GetMyRarityBonusList, machine code at RVA 0x7e7130: _rarity 1
+            // bonusesRare, 2 bonusesLegendary, 3 bonusesEndless, else bonuses; OnApply and GetDescription read the same list) against
+            // bonuses. In 1.0.2 a Rare is 1.875 - 2.5 times its Common card (Luck 5 / 10 / 20, Ability Cooldown 10 / 25 / 50 %), a
+            // Legendary 3 - 5 times, an Endless card - the level-up's filler - a quarter to a half. Up to 0.15.0 Rare and Legendary
+            // were a flat 2 and 3, up to 0.13.0 Endless a flat 2.6 (the player overrode it on 8 of 13 mixed offers).
             string asset = G.Asset(p); string stat = asset.StartsWith("MilitaryTraining_") ? asset.Substring("MilitaryTraining_".Length) : asset;
-            double r = Synergy.RarityWeight(rarity, rarity == "Endless" ? EndlessRatio(b, stat) : double.NaN);
+            // 0.16.0 (C16-01a): Mana Potion held - every ability cooldown reduction stat bonus is 0 (GamePlayer.GetStatisticFinalValue
+            // returns 0 for PlayerAbilityCDRed while ItemManaPotion is active): a Chem-Light Battery does nothing, at every rarity. 0.80 is
+            // under every live stat card (StatCard's floor is 1.0) and under 1: the card shows AVOID. The quest's rules still run after it
+            string[] dead;
+            if (HeldRules.StatDead(s.Held, stat, out dead))
+            {
+                c.Score = HeldRules.DeadCard;
+                c.Why.Add(HeldRules.DeadWhy);
+                c.Say = new CardWords { Kind = SayKind.Stat, Stat = Knowledge.StatLabel(stat) ?? Humanize(stat).ToLowerInvariant(), Held = dead };
+                c.Rarity = rarity; c.StatKey = stat;
+                return;
+            }
+            double ratio = (rarity == "Rare" || rarity == "Legendary" || rarity == "Endless") && b != null ? OwnRatio(b, rarity, stat) : double.NaN;
+            double r = Synergy.RarityWeight(rarity, ratio);
             double w = 0.5; bool known = false;
             foreach (var kv in K.MilitaryStat) if (string.Equals(stat, kv.Key, StringComparison.OrdinalIgnoreCase)) { w = kv.Value; known = true; }
             if (!known) foreach (var kv in K.MilitaryStat) if (stat.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0) w = Math.Max(w, kv.Value);
@@ -914,31 +1010,47 @@ namespace YazsCompanion
                 if (wants) { w *= 1.2; note = Builds.Your(sv.Name, build) + " wants it"; wantBuild = build.Name; break; }
             }
             c.Score = Synergy.StatCard(r, w, team);
+            c.Tie = new TieKey { Stat = true, Value = Math.Round(r, 2) };   // 0.16.0 (C16-08): a tie goes to the card's own value
             c.Why.Add(rarity + (team ? ", team-wide" : "") + ": " + Humanize(stat) + (note != null ? " - " + note : ""));
             // the card already shows its rarity and its stat: the line says why (the game's own label for the stat, not the asset's)
             c.Say = new CardWords { Kind = SayKind.Stat, Stat = Knowledge.StatLabel(stat) ?? Humanize(stat).ToLowerInvariant(), Team = team, StatWhy = sayNote, WantBuild = wantBuild };
             c.Rarity = rarity; c.StatKey = stat;
         }
 
-        // 0.14.0 (B1): an Endless card's own value against the Common card of its stat, |bonusesEndless[0]| / |bonuses[0]| (NaN:
-        // not readable - Synergy.EndlessWeight falls back). The lists are read in accessors of their own: a field a game patch
-        // took away fails its accessor alone (caught here), not the whole stat card. Said once a session per stat.
-        static readonly HashSet<string> _endlessSaid = new HashSet<string>();
+        // 0.16.0 (C16-05): a stat card's own value against the Common card of its stat, |own[0]| / |bonuses[0]| (NaN: not readable -
+        // Synergy.RarityWeight falls back to 2 / 3 / 0.4). own = the list the game applies for the card's rarity (GetMyRarityBonusList),
+        // else the rarity's field. Each list is read in an accessor of its own, so a member a game patch took away fails that accessor
+        // alone (caught here), not the whole stat card. Said once a session per rarity and stat.
+        // The game's side, verified in 1.0.2: BasicLevelPowerup.GetMyRarityBonusList() survives in the interop with the very type of the
+        // bonus fields (List<PowerupBase.StatisticBonus>, this file's BonusList); its machine code (RVA 0x7e7130) reads _rarity (field
+        // 0x1B0; Rarity Common 0, Rare 1, Legendary 2, Endless 3, the field GetRarity reads too): 3 -> bonusesEndless, 1 -> bonusesRare,
+        // 2 -> bonusesLegendary, else bonuses. OnApply calls it and applies the entries with PlayerStatistic.ApplyBonus, GetDescription
+        // selects the same list and prints StatisticBonus.GetValueString: the list is what the card shows and gives. Rare and Legendary
+        // cards come only from the military training (GetRandomStatPowerups -> AssignRandomRarity), Endless ones from level-ups
+        // (GetRandomEndlessStats).
+        static readonly HashSet<string> _ratioSaid = new HashSet<string>();
         [MethodImpl(MethodImplOptions.NoInlining)] static BonusList CommonBonuses(BasicLevelPowerup b) { return b.bonuses; }
-        [MethodImpl(MethodImplOptions.NoInlining)] static BonusList EndlessBonuses(BasicLevelPowerup b) { return b.bonusesEndless; }
+        [MethodImpl(MethodImplOptions.NoInlining)] static BonusList RarityBonuses(BasicLevelPowerup b) { return b.GetMyRarityBonusList(); }
+        [MethodImpl(MethodImplOptions.NoInlining)] static BonusList FieldBonuses(BasicLevelPowerup b, string rarity) { return rarity == "Endless" ? b.bonusesEndless : rarity == "Legendary" ? b.bonusesLegendary : rarity == "Rare" ? b.bonusesRare : b.bonuses; }
         [MethodImpl(MethodImplOptions.NoInlining)] static float BonusValue(PowerupBase.StatisticBonus bo) { return bo.value; }
         static float FirstValue(BonusList list) { foreach (var bo in G.Each(list)) return bo != null ? BonusValue(bo) : float.NaN; return float.NaN; }
 
-        static double EndlessRatio(BasicLevelPowerup b, string stat)
+        static double OwnRatio(BasicLevelPowerup b, string rarity, string stat)
         {
-            float own = float.NaN, common = float.NaN; string fail = null;
-            try { if (b != null) { own = FirstValue(EndlessBonuses(b)); common = FirstValue(CommonBonuses(b)); } }
-            catch (Exception e) { fail = e.GetType().Name; }
+            float own = float.NaN, common = float.NaN; string fail = null; bool viaField = false;
+            try { own = FirstValue(RarityBonuses(b)); } catch (Exception e) { fail = e.GetType().Name; }
+            if (float.IsNaN(own))
+            {
+                try { own = FirstValue(FieldBonuses(b, rarity)); viaField = !float.IsNaN(own); }
+                catch (Exception e) { fail = fail ?? e.GetType().Name; }
+            }
+            try { common = FirstValue(CommonBonuses(b)); } catch (Exception e) { fail = fail ?? e.GetType().Name; }
             double ratio = !float.IsNaN(own) && !float.IsNaN(common) && common != 0 ? Math.Abs(own) / Math.Abs(common) : double.NaN;
-            if (_endlessSaid.Add(stat ?? ""))
-                Plugin.Logger.LogInfo("[rank] Endless stat cards: weight x" + Synergy.EndlessWeight(ratio).ToString("0.00", CultureInfo.InvariantCulture) + " for " + Humanize(stat ?? "?")
+            if (_ratioSaid.Add(rarity + "/" + (stat ?? "")))
+                Plugin.Logger.LogInfo("[rank] " + rarity + " stat cards: weight x" + Synergy.RarityWeight(rarity, ratio).ToString("0.00", CultureInfo.InvariantCulture) + " for " + Humanize(stat ?? "?")
                     + (double.IsNaN(ratio) ? " (the card's values not read" + (fail != null ? ": " + fail : "") + " - the fallback)"
-                        : " (the card's own +" + Math.Abs(own).ToString("0.###", CultureInfo.InvariantCulture) + " vs Common +" + Math.Abs(common).ToString("0.###", CultureInfo.InvariantCulture) + ")"));
+                        : " (the card's own +" + Math.Abs(own).ToString("0.###", CultureInfo.InvariantCulture) + " vs Common +" + Math.Abs(common).ToString("0.###", CultureInfo.InvariantCulture)
+                          + (viaField ? "; GetMyRarityBonusList " + (fail ?? "gave nothing") + " - read from the rarity's field" : "") + ")"));
             return ratio;
         }
 
@@ -952,7 +1064,18 @@ namespace YazsCompanion
             if (type == null) { c.Name = "#?"; c.Score = 1; c.Why.Add("unknown tag type"); c.Say = new CardWords { Text = "an unknown damage type" }; return; }
             c.Name = "#" + type + " +" + n;
             c.Score = Tags.Score(type, n, s.Tags, c.Why);
+            // 0.16.0 (C16-08): a tie goes to the type with more tags - fewer under the "Spread" tag plan (no stacking)
+            bool spread = s.Tags != null && string.Equals(s.Tags.Plan, "Spread", StringComparison.OrdinalIgnoreCase);
+            c.Tie = new TieKey { Pod = true, Spread = spread, TagPoints = (spread ? -1 : 1) * (s.Tags != null ? s.Tags.PointsOf(type) : 0) };
             c.Say = new CardWords { Kind = SayKind.Tags, Type = type, Points = n, Tags = s.Tags };
+        }
+
+        /// <summary>0.16.0 (C16-08): the squad's tag points summed over the distinct damage types <paramref name="p"/> deals - what settles a
+        /// tie after the build's order and the stat card's value (CardTies); the PLAN readout's next ability asks it too.</summary>
+        internal static int TagPointsOf(PowerupBase p, Snapshot s)
+        {
+            if (p == null || s == null || s.Tags == null) return 0;
+            return CardTies.TagPoints(G.Facts(p).Damage, s.Tags);
         }
 
         // ---------------------------------------------------------------- the active quest's other objectives (0.14.0, C3)

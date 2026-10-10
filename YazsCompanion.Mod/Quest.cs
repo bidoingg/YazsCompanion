@@ -336,7 +336,10 @@ namespace YazsCompanion
                 return fh.targetMinutes.ToString("0.#", IC) + " min at " + (fh.fullHealthThreshold * 100f).ToString("0", IC) + "% health -> " + QuestRules.Does(r);
             }
             if (o.TryCast<GameHubQuestObjectiveSurvive>() != null || o.TryCast<GameHubQuestObjectiveSurviveTime>() != null || o.TryCast<GameHubQuestObjectiveCompleteRun>() != null)
+            {
+                rules.Survive = true;       // 0.16.0 (C16-12): the quest asks to survive the run - the item book's revive rule (SurviveFollowed)
                 return "the run's own goal - advice unchanged";
+            }
             return null;
         }
 
@@ -585,6 +588,11 @@ namespace YazsCompanion
             }
             return rules;
         }
+
+        /// <summary>0.16.0 (C16-12, C16-09 step 3): the active quest asks to survive the run (a Survive / SurviveTime / CompleteRun objective)
+        /// and is followed - its objectives not 'any one of', not failed, the run fits it, [Advice] QuestSteer On. Cached state only
+        /// (the quest read once a run), not through Rules(s): that returns null for a quest whose only objective is to survive.</summary>
+        internal static bool SurviveFollowed() { try { var r = _rules; var t = _team; return r != null && t != null && r.Survive && !t.AnyOf && !t.Failed && t.NotThisRun == null && Steer() == QuestSteer.On; } catch { return false; } }
 
         // ================================================================ 0.15.0 (C15-09): what the game counts, progress only
         /// <summary>The active quest's counted objectives (story events, the Boss Rush boss, event counts, kills of a rank) with the

@@ -5,7 +5,8 @@
 // release.ps1 stops on any non-zero exit; the GitHub workflow (.github/workflows/bench.yml) on the last line as well.
 //   ItemBench --no-data    the part that needs no game data (data\gamedata.json and data\probe.json stay out of the public
 //                          repository): the 10-05 run fixes, the integration review, --check-log, the API contract,
-//                          the README / CHANGELOG checks and the release notes cache (DocCases.cs).
+//                          the README / CHANGELOG checks and the release notes cache (DocCases.cs); 0.16.0: the card text
+//                          size and the WHY panel (GeometryCases.cs) and the pure parts of the 0.16.0 sections (DataFree).
 //   ItemBench --strict     the release gate: the game data and the built DLL must be there (a skip is a failure).
 using System;
 using System.IO;
@@ -124,6 +125,14 @@ namespace YazsCompanion.Bench
             Console.WriteLine("(--no-data: the item scenarios and every check over the game's data skipped; the cases below need none)");
             int bad = RunFixes.Run();
             bad += ReviewCases.Run();
+            // 0.16.0 (C16-00): every new pure case reachable here, so the public CI runs it (the full run reaches them from Checks.Run)
+            bad += ItemBookCases.RunPure();             // C16-02 / C16-12: the item book's rows, the fallback, the revive need (ItemBookCases.cs)
+            bad += RankSmall.Run();                     // C16-05 / C16-08 / C16-17: all data-free (RankSmallCases.cs)
+            bad += HeldCases.RunPure();                 // C16-01: the held-item rules' pure part (HeldCases.cs)
+            bad += YardBadgeCases.RunDataFree();        // C16-07: the Training Yard's badge steering without gamedata (YardBadgeCases.cs)
+            bad += HintCases.RunPure();                 // C16-13 / C16-15: the revive guard, the short hint words (HintCases.cs)
+            bad += Loadouts.RunPure();                  // C16-16: the summary row's join forms, the marker digits (LoadoutCases.cs)
+            bad += GeometryCases.Run();                 // 0.15.0 C15-05 / C15-06 / C15-12 and 0.16.0 C16-10 / C16-14 / C16-15: all data-free (GeometryCases.cs)
             bad += Tail(strict);
             return bad == 0 ? 0 : 3;
         }

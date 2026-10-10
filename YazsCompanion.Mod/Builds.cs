@@ -805,8 +805,13 @@ namespace YazsCompanion
         /// <summary>Whether the last Save reached the file (the mod menu says so after every change).</summary>
         public static bool LastSaveOk = true;
 
+        /// <summary>0.16.0 (C16-07): counts the build changes of the session (every change saves): the Training Yard re-plans its badges on
+        /// a change (TreeState.DemandSig).</summary>
+        public static int Changes;
+
         public static void Save()
         {
+            Changes++;
             if (_path == null) return;
             try { File.WriteAllText(_path, ToJson()); LastSaveOk = true; }
             catch (Exception e) { LastSaveOk = false; Log("builds.json not saved: " + e.Message); }

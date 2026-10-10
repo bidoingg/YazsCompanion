@@ -4,6 +4,9 @@
 // prints next to the diamond, so it is right for the General tab and for every survivor).
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using CT = GamePlayer.CharacterType;
 
@@ -85,7 +88,10 @@ namespace YazsCompanion
                     return;
                 }
                 if (up.TryCast<SkillTreeUpgradeUnlockSynergy>() != null) { n.Kind = TKind.Synergy; return; }
-                if (up.TryCast<SkillTreeUpgradeBadgeBoost>() != null) { n.Kind = TKind.Badge; return; }
+                // 0.16.0 (C16-07): the badge node's badge (badgeBaseId), in its own try: a field a game patch took away leaves the id at -1
+                // (BadgeDemand then matches the node through the badges' own tree nodes)
+                var bb = up.TryCast<SkillTreeUpgradeBadgeBoost>();
+                if (bb != null) { n.Kind = TKind.Badge; try { n.BadgeId = LoadoutState.BadgeIdOf(bb); } catch { n.BadgeId = -1; } return; }
                 if (up.TryCast<SkillTreeUpgradeTeamStatisticBoost>() != null) { n.Kind = TKind.Stat; return; }
                 if (up.TryCast<SkillTreeUpgradeUnlockMechanic>() != null || up.TryCast<SkillTreeUpgradeItemSlot>() != null || up.TryCast<SkillTreeUpgradeBadgeSlot>() != null) { n.Kind = TKind.Mechanic; return; }
                 if (up.TryCast<SkillTreeUpgradeValueBase>() != null) { n.Kind = TKind.Passive; return; }
@@ -124,6 +130,89 @@ namespace YazsCompanion
 
         /// <summary>The record is void (the view went, the advice was switched off): the next read starts a new one.</summary>
         public static void ForgetLevels() { _levels = null; _levelsTab = IntPtr.Zero; _levelsTree = null; }
+
+        // ---- 0.16.0 (C16-07): the Training Yard's badge steering. The badge advice of the run setup screen, worked out for every survivor
+        // the player can lead (the mode and difficulty of the last run setup visit, else Normal I), values each badge node of a survivor's tab
+        // (YardBadges, TreePlan.cs - pure, in the bench). The nine advices are worked out once per key (levels, run, builds, doctrine,
+        // knowledge), never per tab or per tick: about 5 ms on the PC (0.5 ms each), unmeasured on the Deck (~1.8x slower, DK-C10).
+        static readonly YardAdviceCache _yardCache = new YardAdviceCache();
+        static bool _steerOffSaid, _steerWarnSaid;
+        static readonly HashSet<string> _levelSaid = new HashSet<string>();
+
+        static string DoctrineSig(Doctrine d) { return "" + d.Farming + d.Caution + d.Timing + d.ModeAware + d.TagPlan + d.Style + d.LentStyleMine; }
+
+        /// <summary>The badge demand of a survivor's tab, or null = the 0.15 badge order ([Advice] YardBadges off, no badge node, no badge
+        /// readable, or a failure - said once a session).</summary>
+        internal static YardBadges BadgeDemand(string tree, List<TNode> nodes)
+        {
+            long perf = Perf.Begin();
+            try
+            {
+                if (!Plugin.AdviceYardBadges.Value) return null;
+                if (nodes == null || !nodes.Any(n => n.Kind == TKind.Badge)) return null;
+                if (!LoadoutState.EnsureFacts())
+                {
+                    if (!_steerOffSaid) { _steerOffSaid = true; Plugin.Logger.LogInfo("[yard] badge steering off: no badge readable here - the plan keeps the 0.15 badge order"); }
+                    return null;
+                }
+                foreach (var n in nodes) if (n.Kind == TKind.Badge && n.BadgeId < 0) n.BadgeId = LoadoutState.BadgeIdByNodeKey(n.Key);
+                if (!nodes.Any(n => n.Kind == TKind.Badge && n.BadgeId >= 0)) return null;
+                var last = LoadoutUi.Last;
+                string mode = last != null ? last.Mode : "Normal"; int diff = last != null ? last.Difficulty : 1;
+                string ctx = Loadout.RunName(mode, diff);
+                var survivors = new List<string>();
+                foreach (CT cls in Enum.GetValues(typeof(CT)))
+                {
+                    if (cls == CT.None || cls == CT.NumCharacters) continue;
+                    var props = G.PropsOf(cls);
+                    if (props != null && G.Unlocked(props)) survivors.Add(G.ClassName(cls));
+                }
+                if (survivors.Count == 0) survivors.AddRange(Builds.Survivors);
+                // the levels the run setup screen and the BADGES page use; no override per tab, so every tab reads the same advices
+                var levels = new Dictionary<int, int>(); var open = new Dictionary<int, bool>(); int raised;
+                LoadoutState.ReadLevels(levels, open, out raised);
+                foreach (var n in nodes)
+                {
+                    int lv;
+                    if (n.Kind == TKind.Badge && n.BadgeId >= 0 && levels.TryGetValue(n.BadgeId, out lv) && lv != n.Level && _levelSaid.Add(n.BadgeId.ToString(CultureInfo.InvariantCulture)))
+                        Plugin.Logger.LogInfo("[yard] " + n.Name + ": the tab reads level " + n.Level + ", the badge advice " + lv);
+                }
+                var k = Knowledge.Current;
+                int slots = LoadoutState.SlotsNow();
+                string key = YardBadges.Key(mode, diff, slots, levels, survivors.Select(s => s + "=" + LoadoutUi.BuildSig(Builds.For(s))), DoctrineSig(Doctrine.Current), RuntimeHelpers.GetHashCode(k));
+                var advices = _yardCache.Get(key, () =>
+                {
+                    long pc = Perf.Begin();
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var list = new List<KeyValuePair<string, LoadoutAdvice>>();
+                    foreach (var s in survivors)
+                    {
+                        var inp = LoadoutState.Input(s, Builds.For(s), mode, diff, slots, levels, open, null, null, null);
+                        list.Add(new KeyValuePair<string, LoadoutAdvice>(s, Loadout.Recommend(inp, LoadoutState.All, k, 0)));
+                    }
+                    Perf.End("yard.badges.compute", pc);
+                    Plugin.Logger.LogInfo("[yard] badge advice for " + list.Count + (list.Count == 1 ? " survivor" : " survivors") + " (" + ctx + "): " + sw.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture) + " ms");
+                    return list;
+                });
+                return YardBadges.Build(nodes, advices, LoadoutState.All, k, k.YardBadgeFloor, k.YardBadgeReach, ctx);
+            }
+            catch (Exception e)
+            {
+                if (!_steerWarnSaid) { _steerWarnSaid = true; Plugin.Logger.LogWarning("[yard] badge steering off for this read: " + e.GetBaseException().Message + " - the plan keeps the 0.15 badge order"); }
+                return null;
+            }
+            finally { Perf.End("yard.badges", perf); }
+        }
+
+        /// <summary>The part of TreeUi's signature the badge steering depends on beyond the tab's levels: the switch, a build change, the last
+        /// run setup's mode and difficulty, the doctrine and the knowledge - a change re-plans on the next tick. "" on the General tab.</summary>
+        internal static string DemandSig(bool isTeam)
+        {
+            if (isTeam) return "";
+            bool on = true; try { on = Plugin.AdviceYardBadges.Value; } catch { }
+            var last = LoadoutUi.Last;
+            return "|" + (on ? "B" : "b") + Builds.Changes + "|" + (last == null ? "-" : last.Mode + last.Difficulty) + "|" + DoctrineSig(Doctrine.Current) + "|" + RuntimeHelpers.GetHashCode(Knowledge.Current);
+        }
 
         /// <summary>The number next to the points diamond; falls back to the survivor's own counter.</summary>
         public static int Points(UIViewSkillTree view, UISkillTreeSkillsContainer container)

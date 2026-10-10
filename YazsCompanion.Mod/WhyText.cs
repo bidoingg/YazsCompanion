@@ -13,9 +13,13 @@
 //    the second it is, in words - never a score;
 //  - CLOSE CALL on the first and the second card when their scores, as the cards show them, are less than 0.20 apart (the
 //    user's 10-05 offer at 00:18: Experiment 21 4.75, Medical Drone 4.72): "Either works - Medical Drone is a hair ahead" -
-//    the band does not argue an order the scores barely make;
+//    the band does not argue an order the scores barely make; on the very same score (0.16.0, C16-08) "Either works - even with
+//    Minefield; this one is higher in the build's order" / "Either works - even with Bombing Strike, which is higher in the build's
+//    order" - what settled the tie, said of the first card - and a third card with the same score says it too;
 //  - a card a quest rule decided: the quest line first; on a lifted weapon the quest stands in for the build's order ("levels
 //    abilities first" would contradict the pick), and on a card the quest makes AVOID the card's merits are left out.
+//  - 0.16.0 (C16-01): what an item the squad holds does to the card ("held: ...") and what the card would do to what is held
+//    ("item: ...") come right after the quest line, before the verdict facts (HeldRules.Prefix / ItemPrefix).
 //  - the side panel of a wide screen (0.15.x, C-M1 of the 10-07 review) gets the same items with a shorter "vs #1" sentence: the
 //    first card's own line stands under that card, so the panel names the decider alone ("Experiment 21 goes first", or with the
 //    style in two words: "... goes first: weapons first") - WhyBlock.SideItems.
@@ -37,6 +41,7 @@ namespace YazsCompanion
         public string SecondName; public double SecondScore = double.NaN;                           // the card ranked second
         public CardWords FirstSay; public IList<string> FirstWhy;                                    // the first card's verdict data, for what it has that this one lacks
         public Func<string, string> Lend;                                                            // the names another mod lends (Names.Text; null: the game's)
+        public string TieSay;   // 0.16.0 (C16-08): on an exact tie with the first card, what settled it, said of the first card (CardTies.Say: "higher in the build's order", "in the build's order", "the bigger bonus", "the type with more tags", "the type with fewer tags", "backed by more of your tags"); null: no tie, the position decided, or the rescue screen
     }
 
     /// <summary>What the band says for one card, in the order it packs it.</summary>
@@ -108,6 +113,14 @@ namespace YazsCompanion
                 close = Close(x.Score, x.SecondScore);
                 double gap = Math.Round(Math.Round(x.Score, 2) - Math.Round(x.SecondScore, 2), 2);
                 string two = Named(x.SecondName, x.Lend, x.Name);
+                // 0.16.0 (C16-08): the very same score - not "a hair ahead": say the tie, and what settled it (close is true at gap 0). The
+                // middle form keeps the rule when the second card's shown name is 15 - 26 characters (a lent name of 16: the full form 82)
+                if (gap == 0)
+                {
+                    side = Pick(Budget, x.TieSay != null ? "either works - this one is " + x.TieSay : null, "either works - even with " + two, "either works");
+                    return Pick(VersusBudget, x.TieSay != null ? "either works - even with " + two + "; this one is " + x.TieSay : null,
+                        x.TieSay != null ? "either works - even with " + two + "; " + x.TieSay : null, "either works - even with " + two, "either works");
+                }
                 if (close)
                 {
                     side = Pick(Budget, "either works - a hair ahead of " + two, "either works");
@@ -118,8 +131,17 @@ namespace YazsCompanion
                 return Pick(VersusBudget, head + two);
             }
             if (string.IsNullOrEmpty(x.FirstName) || double.IsNaN(x.FirstScore)) return null;
-            close = x.Rank == 2 && Close(x.FirstScore, x.Score);
+            bool tie = Math.Round(x.FirstScore, 2) == Math.Round(x.Score, 2);
+            close = tie || (x.Rank == 2 && Close(x.FirstScore, x.Score));
             string one = Named(x.FirstName, x.Lend, x.Name);
+            // 0.16.0 (C16-08): the very same score as the first card (the second, or a third of a three-way tie): the tie, and what put
+            // the first card first - the middle form names that card as the subject, so the rule is never read as this card's
+            if (tie)
+            {
+                side = Pick(Budget, x.TieSay != null ? "either works - " + one + " is " + x.TieSay : null, "either works - even with " + one, "either works");
+                return Pick(VersusBudget, x.TieSay != null ? "either works - even with " + one + ", which is " + x.TieSay : null,
+                    x.TieSay != null ? "either works - " + one + " is " + x.TieSay : null, "either works - even with " + one, "either works");
+            }
             if (close)
             {
                 side = Pick(Budget, "either works - " + one + " is a hair ahead", "either works");
@@ -218,6 +240,15 @@ namespace YazsCompanion
                     // under its AVOID the card's merits would read as praise for a pick the quest rules out
                     if (avoid) { raw.Add("whatever else it has, the quest rules it out"); questAvoid = true; }
                 }
+            }
+            // 0.16.0 (C16-01): what a held item does to this card ('held: ') and what this card would do to what is held ('item: ') come
+            // first - among the log reasons further down they would follow the verdict facts and fall past the fourth reason
+            if (why != null && !questAvoid)
+                foreach (var line in why)
+                    if (line != null && (line.StartsWith(HeldRules.Prefix, StringComparison.Ordinal) || line.StartsWith(HeldRules.ItemPrefix, StringComparison.Ordinal)))
+                        raw.Add(line.Substring(6));
+            if (w != null)
+            {
                 if (!questAvoid)
                 {
                     switch (w.Kind)
@@ -425,6 +456,10 @@ namespace YazsCompanion
         // ---- an evolution: the build's pick (or, picking none, the base's place in the build), what it adds, the tags
         static void EvolutionFacts(CardWords w, List<string> raw, Func<string, string> lend)
         {
+            // 0.16.0 (C16-17): taking this one closes the base's other evolution, the one the PLAN names as preferred (Ranker.ScoreEvolution
+            // sets Closes only when the build picks none) - first, so a cut band keeps it; the log's own "closes ..." reason is not translated
+            if (w.Closes != null && w.Pick == null)
+                raw.Add(Pick(Budget, "closes " + Named(w.Closes, lend, w.Base) + " - the PLAN's preferred one", "closes the PLAN's preferred evolution"));
             if (w.Pick != null)
             {
                 string pick = Named(w.Pick, lend, w.Base);          // the card is the base's evolution: its title names the base
@@ -462,7 +497,8 @@ namespace YazsCompanion
         static ItemSay Copy(ItemSay s)
         {
             var c = new ItemSay { Quest = s.Quest, Held = s.Held, QuestLine = s.QuestLine, Lead = s.Lead, Tier = s.Tier, Note = s.Note, RuleNote = s.RuleNote, NoteSay = s.NoteSay,
-                Lacks = s.Lacks, Want = s.Want, WantBuild = s.WantBuild, Scaling = s.Scaling, Clock = s.Clock, Keyword = s.Keyword, KeywordAxis = s.KeywordAxis, KeywordValue = s.KeywordValue, Survival = s.Survival };
+                Lacks = s.Lacks, Want = s.Want, WantBuild = s.WantBuild, Scaling = s.Scaling, Clock = s.Clock, Keyword = s.Keyword, KeywordAxis = s.KeywordAxis, KeywordValue = s.KeywordValue, Survival = s.Survival,
+                LeadForms = s.LeadForms, HeldCost = s.HeldCost };     // 0.16.0 (C16-01)
             c.Boosts.AddRange(s.Boosts); c.Hurts.AddRange(s.Hurts); c.Nobody.AddRange(s.Nobody);
             return c;
         }
@@ -473,6 +509,7 @@ namespace YazsCompanion
             if (s.QuestLine != null) { s.QuestLine = null; return true; }
             if (s.Quest) { s.Quest = false; return true; }
             if (s.Held) { s.Held = false; return true; }
+            if (s.LeadForms != null) { s.LeadForms = null; return true; }      // 0.16.0 (C16-01): Wording.Item says it before the Lead
             if (s.Lead != null) { s.Lead = null; return true; }
             if (s.Hurts.Count > 0) { s.Hurts.Clear(); return true; }
             var typed = s.Boosts.Where(b => b.Typed).OrderByDescending(b => b.Weight).FirstOrDefault();
@@ -519,7 +556,7 @@ namespace YazsCompanion
             if (r == null) return;
             if (r.Liberate)
             {
-                raw.Add(r.Full ? "the squad is full" : r.Late != null ? "too late for a recruit to grow (" + r.Late + ")" : "a level-up and cash instead of a recruit");
+                raw.Add(r.Full ? "the squad is full" : r.Late != null ? "too late for a recruit to grow (" + r.Late + ")" : HeldRules.LiberateWhat(r.LiberateLevelUps, r.CashHeals, "a level-up") + " instead of a recruit");
                 return;
             }
             if (r.Late != null) raw.Add("little time left for a recruit to grow (" + r.Late + ")");

@@ -21,6 +21,11 @@
 //       divider, the hint's line or the team panel, text 15 px or more, and nowhere when there is no room.
 //   S   the sources: the hooks (each card class's OnSelected, ONE OnDeselected, not the shared empty bodies), the config, the
 //       menu row, the offer path, the csproj links.
+// 0.16.0 (pure, also in --no-data): H3 the revive guard (C16-13); H4 the short words of a line drawn under its button at 1280 x 800
+//   (C16-15, DK-C04): every ScreenCall.Short set where Words is, shorter than it (BANISH keeps its words), within the rails; the spec's
+//   forms ('a weak offer (2 left)', 'Quest: no items', 'every card hurts', 'the heal and cash are worth more', 'the cash is worth more');
+//   Wording.RerollShort and FromRescue's short words; the line's width on the hint's model (956 -> 484 units on a chest); the sources
+//   (RerollHint.Place draws the short words only under the button - the PC's line over it keeps the long ones).
 // Generic names only (the repository is public): the game's card and class names, the bench's own build names.
 using System;
 using System.Collections.Generic;
@@ -47,8 +52,24 @@ namespace YazsCompanion.Bench
         }
         static string Proj() { return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "ItemBench.csproj")); }
 
+        /// <summary>0.16.0: the pure hint cases (C16-13 H3 the revive guard; C16-15 H4 the short words under the button) - in the full bench
+        /// (from Run) and in --no-data (Verdict.DataFree).</summary>
+        public static int RunPure()
+        {
+            int was = _bad; _bad = 0;
+            Console.WriteLine("\n=== 0.16.0: the action hints' pure cases (C16-13 the revive guard, C16-15 the short words under the button)");
+            ReviveGuard();
+            ReviveSources();
+            ShortWords();
+            ShortSources();
+            Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
+            int bad = _bad; _bad = was;
+            return bad;
+        }
+
         public static int Run(List<ProbeItem> items)
         {
+            int pure = RunPure();
             _bad = 0;
             Console.WriteLine("\n=== 0.14.0: the action hints (ScreenCall), WHY on highlight and CLOSE CALL (WhyText), the band manager (ScreenBand)");
             Chests();
@@ -64,7 +85,194 @@ namespace YazsCompanion.Bench
             WhyPlace();
             Sources();
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
-            return _bad;
+            return _bad + pure;
+        }
+
+        // ---------------------------------------------------------------- H3: the revive guard (C16-13, DK-C01)
+        // The 10-07 Deck chest (companion.log 20261007_195304 :796-801) on its LOGGED 0.15.0 scores: REROLL under the 2.5 floor, the user
+        // rerolled and Jewel of Life went away about 2 minutes before the defeat on a Survive quest. The guard holds the REROLL and every
+        // SKIP back while a second life is on the cards and the quest asks to survive the run or the squad is under 60 % health; a BANISH
+        // never names one; the no-item quest's SKIP keeps its place. The inputs are research's prototype's (proto_rv\Gap.cs R5).
+        static HintCard Kr(string name, double score, int rank, bool revive = false, string kind = "item") { return new HintCard { Name = name, Score = score, Rank = rank, Kind = kind, Revive = revive }; }
+        static ScreenCallIn DeckChest(double progress, double health, bool quest, int rerolls, params HintCard[] cards)
+        {
+            var x = new ScreenCallIn { Screen = "Chest", Progress = progress, CanReroll = rerolls > 0, Rerolls = rerolls, RerollsText = rerolls + " (bench)", CanSkip = true, SkipCash = 705, SkipHeal = 320,
+                Health = health, Survival = 0.96, Cash = 0.4, SurviveQuest = quest };
+            x.Cards.AddRange(cards);
+            return x;
+        }
+        static string Said(ScreenCall c) { return (c.Show ? ScreenCall.Name(c.Action) + " '" + c.Words + "'" : "silent") + " | " + c.Why; }
+
+        static void ReviveGuard()
+        {
+            Func<bool, HintCard[]> live = revive => new[] { Kr("Frozen Heart", 2.45, 1), Kr("Last Unicorn", 2.30, 2), Kr("Pickup Pick", 2.27, 3), Kr("Jewel of Life", 1.27, 4, revive) };
+            var a = ScreenCall.Decide(DeckChest(0.326, 0.55, true, 7, live(true)));
+            Check("H3", "the 10-07 Deck chest as live (squad health 55 %, a survive quest): silent - 'held back: Jewel of Life is a second life (a survive quest, squad health 55%)'",
+                !a.Show && a.Why == "best Frozen Heart 2.45 under the chest floor 2.50 - held back: Jewel of Life is a second life (a survive quest, squad health 55%)", Said(a));
+            var b = ScreenCall.Decide(DeckChest(0.326, 0.55, false, 7, live(true)));
+            var q = ScreenCall.Decide(DeckChest(0.326, 1.0, true, 7, live(true)));
+            Check("H3", "health 55 % without the quest, the quest at full health: silent, held back for the one reason",
+                !b.Show && b.Why.EndsWith("held back: Jewel of Life is a second life (squad health 55%)") && !q.Show && q.Why.EndsWith("held back: Jewel of Life is a second life (a survive quest)"), Said(b) + " || " + Said(q));
+            var full = ScreenCall.Decide(DeckChest(0.326, 1.0, false, 7, live(true)));
+            var hp62 = ScreenCall.Decide(DeckChest(0.326, 0.62, false, 7, live(true)));
+            var old = ScreenCall.Decide(DeckChest(0.326, 0.55, true, 7, live(false)));
+            Check("H3", "full health and no quest, 62 % and no quest, and the 0.15.0 inputs (no Revive flag): REROLL as live :801",
+                full.Show && full.Action == HintAction.Reroll && hp62.Show && hp62.Action == HintAction.Reroll && old.Show && old.Action == HintAction.Reroll
+                && full.Why == "best Frozen Heart 2.45 under the chest floor 2.50 | rerolls 7 (bench)", Said(full));
+            var replaced = ScreenCall.Decide(DeckChest(0.326, 0.55, true, 6, Kr("Biofuel Energy", 1.85, 1), Kr("Skip Rope", 1.59, 2), Kr("Teddy Bear", 1.50, 3), Kr("Hit Tracks", 1.18, 4)));
+            Check("H3", "the replaced chest (:809-812, no revive on it) at 55 % with the quest: REROLL as live :814 - the guard is narrow", replaced.Show && replaced.Action == HintAction.Reroll && !replaced.Why.Contains("revive"), Said(replaced));
+            var wk = DeckChest(0.6, 0.5, false, 0, Kr("A Cookie", 1.30, 1), Kr("Jewel of Life", 1.20, 2, true)); wk.Survival = 1.3;
+            var w = ScreenCall.Decide(wk);
+            var wk2 = DeckChest(0.6, 0.5, false, 0, Kr("A Cookie", 1.30, 1), Kr("Glass of Milk", 1.20, 2)); wk2.Survival = 1.3;
+            var w2 = ScreenCall.Decide(wk2);
+            Check("H3", "weak cards with Jewel of Life, no reroll, 50 %: no SKIP ('| revive guard: ...'); the same without the revive: SKIP for the heal and the cash (worth 2.15)",
+                !w.Show && w.Why.EndsWith(" | revive guard: Jewel of Life is a second life (squad health 50%)") && w2.Show && w2.Action == HintAction.Skip && w2.Words == "the heal and the cash are worth more than these cards" && Math.Abs(w2.SkipValue - 2.15) < 1e-9,
+                Said(w) + " || " + Said(w2));
+            var avoid = DeckChest(0.6, 0.5, false, 0, Kr("Potato", 0.80, 1), Kr("Jewel of Life", 0.70, 2, true));
+            var av = ScreenCall.Decide(avoid);
+            Check("H3", "every card AVOID with a revive among them at 50 %: no SKIP either", !av.Show && av.Why.Contains("revive guard"), Said(av));
+            var ni = DeckChest(0.3, 0.5, true, 8, Kr("Jewel of Life", 0.4, 1, true), Kr("Pills", 0.4, 2)); ni.NoItems = "take no items";
+            var n = ScreenCall.Decide(ni);
+            Check("H3", "a no-item quest at 50 % with Jewel of Life: SKIP 'Quest: taking any item fails it' (kept: any item fails that quest for good)", n.Show && n.Action == HintAction.Skip && n.Words == "Quest: taking any item fails it", Said(n));
+            var ban = DeckChest(0.5, 0.5, false, 0, Kr("Bloody Axe", 3.2, 1), Kr("Jewel of Life", 0.9, 2, true), Kr("Potato", 0.8, 3)); ban.Banish = true; ban.CanBanish = true; ban.Banishes = 2; ban.CanSkip = false;
+            var bn = ScreenCall.Decide(ban);
+            var ban2 = DeckChest(0.5, 1.0, false, 0, Kr("Bloody Axe", 3.2, 1), Kr("Jewel of Life", 0.7, 2, true), Kr("Potato", 0.8, 3)); ban2.Banish = true; ban2.CanBanish = true; ban2.Banishes = 2; ban2.CanSkip = false;
+            var bn2 = ScreenCall.Decide(ban2);
+            Check("H3", "BANISH on: Potato, never the revive (at 50 %, and at full health with the revive the lowest card)",
+                bn.Show && bn.Action == HintAction.Banish && bn.Target.Name == "Potato" && bn2.Show && bn2.Target.Name == "Potato", Said(bn) + " || " + Said(bn2));
+            Func<double, ScreenCallIn> lv = hp =>
+            {
+                var x = new ScreenCallIn { Screen = "LevelUp", Progress = 0.3, CanReroll = true, Rerolls = 6, RerollsText = "6 (bench)", CanSkip = true, SkipCash = 300, SkipHeal = 200, Health = hp, Survival = 0.95, Cash = 0.3 };
+                x.Cards.Add(Kr("Handgun", 3.30, 1, false, "weapon")); x.Cards.Add(Kr("Resuscitation", 3.20, 2, true, "ability")); x.Cards.Add(Kr("Stimpack", 3.00, 3, false, "ability"));
+                return x;
+            };
+            var l50 = ScreenCall.Decide(lv(0.5)); var l100 = ScreenCall.Decide(lv(1.0));
+            Check("H3", "a level-up early with a new Resuscitation (3.20 under the 3.5 floor): silent at 50 % ('held back: Resuscitation is a second life (squad health 50%)'), REROLL at full health",
+                !l50.Show && l50.Why.EndsWith("held back: Resuscitation is a second life (squad health 50%)") && l100.Show && l100.Action == HintAction.Reroll, Said(l50) + " || " + Said(l100));
+            // H1's 10-04 21:19:22 chest: Jewel of Life 1.41 at full health stays silent (best 2.51 over the floor), and with the quest too
+            var h1 = new ScreenCallIn { Screen = "Chest", Progress = 0.90, CanReroll = true, Rerolls = 8, RerollsText = "8 (bench)", CanSkip = true, SkipCash = 120, SkipHeal = 40, Health = 1, Survival = 1, Cash = 0.3 };
+            h1.Cards.AddRange(new[] { Kr("Ruby Gem", 2.51, 1), Kr("Mouse Trap", 1.78, 2), Kr("Jewel of Life", 1.41, 3, true), Kr("Icon of Tempest", 1.30, 4) });
+            var h1a = ScreenCall.Decide(h1); h1.SurviveQuest = true; var h1b = ScreenCall.Decide(h1);
+            Check("H3", "H1's 21:19:22 chest with Jewel of Life flagged: silent as before, with or without the quest", !h1a.Show && !h1b.Show && !h1a.Why.Contains("revive") && h1b.Why.Contains("revive guard"), Said(h1b));
+            // Q03 (no answer yet: the chest floor stays 2.5): the guard holds whatever the floor - a best of 2.44 under a 2.45 floor would still speak
+            Check("H3", "the chest floor is 2.5 until Q03 is answered (2.45 proposed); the guard's threshold is the revive need's (ItemRules.ReviveHurt 0.6)",
+                ScreenCall.ChestFloor == 2.5 && ScreenCall.ReviveHealth == ItemRules.ReviveHurt && ScreenCall.ReviveHealth == 0.6);
+            // the held-item SKIPs (C16-01b / f) are held back the same way
+            var rb = DeckChest(0.3, 0.5, false, 0, Kr("Frozen Heart", 2.37, 1), Kr("Jewel of Life", 2.10, 2, true)); rb.SkipLevelUps = 1;
+            var rbc = ScreenCall.Decide(rb); rb.Cards[1].Revive = false; var rbn = ScreenCall.Decide(rb);
+            var sr = DeckChest(0.3, 1.0, true, 0, Kr("Teddy Bear", 1.40, 1), Kr("Jewel of Life", 1.20, 2, true)); sr.SkipBonus = 1.39; sr.RopePoints = 5;
+            var src = ScreenCall.Decide(sr); sr.SurviveQuest = false; var srn = ScreenCall.Decide(sr);
+            Check("H3", "Reserve Bench's level-up SKIP and Skip Rope's SKIP are held back the same way (and show without the revive / the state)",
+                !rbc.Show && rbc.Why.Contains("revive guard") && rbn.Show && rbn.Action == HintAction.Skip && !src.Show && src.Why.Contains("revive guard") && srn.Show && srn.Action == HintAction.Skip,
+                Said(rbc) + " || " + Said(src));
+            Check("H3", "the guard's words: game names only, the health floored like C16-12's ('squad health 55%')", ScreenCall.Guard(DeckChest(0, 0.5999, false, 0, Kr("Plot Armor", 1, 1, true))) == "Plot Armor is a second life (squad health 59%)"
+                && ScreenCall.Guard(DeckChest(0, 0.6, false, 0, Kr("Plot Armor", 1, 1, true))) == null && ScreenCall.Guard(DeckChest(0, 0.3, true, 0, Kr("Plot Armor", 1, 1))) == null);
+        }
+
+        static void ReviveSources()
+        {
+            string hint = Src("RerollHint.cs"), call = Src("ScreenCall.cs");
+            Check("H3", "RerollHint.Inputs0 sets Revive from ItemBook.Revive / ItemBook.ReviveAbilities (a new ability only) and SurviveQuest from the run context",
+                hint != null && hint.Contains("k.Revive = c.Item != null ? ItemBook.Revive(c.Name)") && hint.Contains("w.Level == 0 && ItemBook.ReviveAbilities.Contains(c.Name") && hint.Contains("x.SurviveQuest = s.Ctx.SurviveQuest;"));
+            Check("H3", "ScreenCall: the REROLL held back, both weak-card SKIPs and the held-item SKIPs gated by the guard, '|| k.Revive' in the banish skip list",
+                call != null && call.Contains("held != null) c.Why = under + \" - held back: \" + held;") && Regex.Matches(call, @"if \(held == null && x\.Skip && x\.CanSkip").Count == 3 && call.Contains("|| k.Revive ||"));
+        }
+
+        // ---------------------------------------------------------------- H4: the short words under the button (C16-15, DK-C04)
+        // At 1280 x 800 the band over the button is 63 units (the 10-07 Deck round, companion.log 20261007_195304 :431 / :471 / :803): the line
+        // goes under its button, into the WHY band's row - 961 x 74 units on the chests, 934 on the rescue screen - and the band beside it
+        // lost its room (a rescue card had no WHY at all). There the line says its short words (GeometryCases B3: the band's piece widens by
+        // as much); over the button (the PC since 0.12.2) the long words stay.
+        static void ShortWords()
+        {
+            var said = new List<Tuple<string, ScreenCall>>();
+            Func<string, ScreenCallIn, ScreenCall> run = (name, x) => { var c = ScreenCall.Decide(x); said.Add(Tuple.Create(name, c)); return c; };
+            Func<ScreenCall, string> say = c => (c.Show ? ScreenCall.Name(c.Action) + " '" + c.Words + "' / '" + c.Short + "'" : "silent");
+            // REROLL: 'a weak offer', the count as the long words give it
+            Func<int, ScreenCallIn> pipe = n => In("Chest", 0.32, n, K("Detective's Pipe", 1.98, 1), K("Frying Pan", 1.92, 2), K("Teddy Bear", 1.50, 3));
+            var r8 = run("REROLL, 8 rerolls", pipe(8)); var r2 = run("REROLL, 2 left", pipe(2)); var r1 = run("REROLL, 1 left", pipe(1));
+            var free = In("Chest", 0.5, 0, K("Frying Pan", 2.0, 1)); free.CanReroll = true; free.FreeReroll = true; var rf = run("REROLL, a FREE reroll", free);
+            Check("H4", "REROLL's short words: 'a weak offer', ' (2 left)' / ' (1 left)' where the long words count the rerolls left, nothing for a FREE reroll",
+                r8.Action == HintAction.Reroll && r8.Short == "a weak offer" && r2.Short == "a weak offer (2 left)" && r2.Words.EndsWith("(2 rerolls left)") && r1.Short == "a weak offer (1 left)" && rf.Short == "a weak offer",
+                say(r8) + " | " + say(r2) + " | " + say(r1) + " | free " + say(rf));
+            // SKIP: the no-item quest, every card AVOID (C16-01c: for an empty slot), the weak cards
+            var nq = In("Chest", 0.3, 8, K("Pills", 0.4, 1), K("Potato", 0.4, 2)); nq.NoItems = "take no items";
+            var q = run("SKIP, a quest that wants no item", nq);
+            var av = run("SKIP, every card AVOID", In("LevelUp", 0.5, 0, K("Medical Drone", 0.85, 1, "ability"), K("Stimpack", 0.6, 2, "ability")));
+            var slot = In("Chest", 0.3, 0, K("Emerald Gem", 0.35, 1), K("Ruby Gem", 0.30, 2)); slot.SlotBy = "Wooden Stick"; foreach (var k in slot.Cards) k.HeldCost = 2.17;
+            var sl = run("SKIP, every card AVOID for an empty slot (Wooden Stick)", slot);
+            var hurt = In("Chest", 0.6, 0, K("Teddy Bear", 1.3, 1), K("Golden Key", 1.1, 2)); hurt.Health = 0.6; hurt.Survival = 1.3;
+            var wh = run("SKIP, the heal and the cash", hurt);
+            var rich = In("Chest", 0.6, 0, K("Teddy Bear", 1.2, 1), K("Golden Key", 1.1, 2)); rich.Cash = 2.5;
+            var wc = run("SKIP, the cash", rich);
+            Check("H4", "SKIP's short words: 'Quest: no items', 'every card hurts' ('an empty slot is worth more' with Wooden Stick), 'the heal and cash are worth more', 'the cash is worth more'",
+                q.Action == HintAction.Skip && q.Short == "Quest: no items" && av.Action == HintAction.Skip && av.Short == "every card hurts" && sl.Action == HintAction.Skip && sl.Short == "an empty slot is worth more"
+                && wh.Action == HintAction.Skip && wh.Short == "the heal and cash are worth more" && wc.Action == HintAction.Skip && wc.Short == "the cash is worth more",
+                say(q) + " | " + say(av) + " | " + say(sl) + " | " + say(wh) + " | " + say(wc));
+            // the held items' SKIPs (C16-01b / e / f)
+            var rb = In("Chest", 0.3, 0, K("Frozen Heart", 2.37, 1), K("Pickup Pick", 2.27, 2)); rb.SkipLevelUps = 1;
+            var b = run("SKIP, Reserve Bench's level-up", rb);
+            var ls = In("Chest", 0.6, 0, K("Teddy Bear", 1.3, 1), K("Golden Key", 1.1, 2)); ls.Health = 0.6; ls.Survival = 1.3; ls.CashHeals = true;
+            var l = run("SKIP, Life Savings: the cash heals", ls);
+            var ck = In("Chest", 0.6, 0, K("Teddy Bear", 1.40, 1), K("Golden Key", 1.1, 2)); ck.Health = 0.7; ck.Survival = 0.8; ck.ExtraHeal = 500;
+            var co = run("SKIP, A Cookie's heal", ck);
+            var rp = In("Chest", 0.6, 0, K("Teddy Bear", 1.40, 1), K("Golden Key", 1.1, 2)); rp.SkipBonus = 1.39; rp.RopePoints = 5;
+            var ro = run("SKIP, Skip Rope's training point (a chest)", rp);
+            var rpl = In("LevelUp", 0.6, 0, K("Handgun", 1.40, 1, "weapon"), K("Stimpack", 1.1, 2, "ability")); rpl.SkipBonus = 1.39; rpl.RopePoints = 1;
+            var rol = run("SKIP, Skip Rope's point (a level-up)", rpl);
+            Check("H4", "the held items' SKIPs: 'the skip is a level-up' (Reserve Bench), 'the heal is worth more' (Life Savings; A Cookie), 'a training point is worth more' / 'a Skip Rope point is worth more' (Skip Rope)",
+                b.Action == HintAction.Skip && b.Short == "the skip is a level-up" && l.Short == "the heal is worth more" && co.Words.Contains("(A Cookie)") && co.Short == "the heal is worth more"
+                && ro.Words.Contains("training point") && ro.Short == "a training point is worth more" && rol.Words.Contains("Skip Rope point") && rol.Short == "a Skip Rope point is worth more",
+                say(b) + " | " + say(l) + " | " + say(co) + " | " + say(ro) + " | " + say(rol));
+            // BANISH (off by default) keeps its words; a silent screen has neither
+            var bn = In("LevelUp", 0.4, 8, K("Experiment 21", 4.7, 1, "ability"), new HintCard { Name = "Medical Drone", Score = 3.9, Rank = 2, Kind = "ability", Class = "Medic", Skipped = true, Build = "Bench Anchor" });
+            bn.Banish = true; bn.CanBanish = true; bn.Banishes = 4;
+            var ba = run("BANISH (switched on)", bn);
+            var silent = run("silent (best 3.82 over the chest floor)", In("Chest", 0.93, 8, K("Bloody Axe", 3.82, 1), K("Acoustic Guitar", 2.51, 2)));
+            Check("H4", "BANISH keeps its words as its short form; a silent screen has neither", ba.Action == HintAction.Banish && ba.Short == ba.Words && !silent.Show && silent.Words == null && silent.Short == null, say(ba));
+            // every screen above: the short words set where the words are, shorter (BANISH's are its words), within the rails
+            var bad = new List<string>();
+            foreach (var s in said)
+            {
+                var c = s.Item2;
+                if ((c.Words == null) != (c.Short == null)) { bad.Add(s.Item1 + ": the words and the short words not set together"); continue; }
+                if (c.Short == null) continue;
+                if (c.Action != HintAction.Banish && c.Short.Length >= c.Words.Length) bad.Add(s.Item1 + ": '" + c.Short + "' not shorter than '" + c.Words + "'");
+                var rails = Wording.Rails(c.Short); if (rails.Count > 0) bad.Add(s.Item1 + ": '" + c.Short + "' (" + string.Join(", ", rails) + ")");
+            }
+            Check("H4", "every Short set where Words is (" + said.Count + " screens, " + said.Count(s => s.Item2.Short != null) + " with a line), shorter than Words but BANISH's, within the rails (" + Wording.Budget + " characters, the card font's glyphs, no score)",
+                bad.Count == 0 && said.Count(s => s.Item2.Short != null) == said.Count - 1, string.Join(" | ", bad));
+            // the rescue screen (RerollHint.LineText: the long and the short form; the quest's form keeps its words)
+            Func<string, double, Recruit> r = (n, sc) => new Recruit { Name = n, Score = sc, Class = n.Length };
+            var call = RerollCall.Decide(new[] { r("Ranger", 3.66) }, 1.0, new[] { r("Huntress", 6.08), r("SWAT", 5.9) }, true, "4", 1.0);
+            var both = ScreenCall.FromRescue(call, "REROLL  -  " + Wording.Reroll(new[] { "Huntress", "SWAT" }, 0), "REROLL  -  " + Wording.RerollShort(new[] { "Huntress", "SWAT" }));
+            var quest = ScreenCall.FromRescue(call, "REROLL  -  the quest needs Huntress");
+            var quiet = ScreenCall.FromRescue(new RerollCall { Show = false, Why = "the best survivor is on the cards" }, "REROLL  -  x", "REROLL  -  y");
+            Check("H4", "the rescue screen: Wording.RerollShort 'Huntress fits better' (the first survivor alone, 'another survivor' for none); FromRescue carries the short words, the quest's form (no short words given) its own; nothing when silent",
+                Wording.RerollShort(new[] { "Huntress", "SWAT" }) == "Huntress fits better" && Wording.RerollShort(new[] { "Tank" }) == "Tank fits better" && Wording.RerollShort(new string[0]) == "another survivor fits better" && Wording.RerollShort(null) == "another survivor fits better"
+                && call.Show && both.Short == "REROLL  -  Huntress fits better" && both.Words == "REROLL  -  Huntress or SWAT would fit this squad better" && quest.Short == quest.Words
+                && !quiet.Show && quiet.Words == null && quiet.Short == null && Wording.Rails("Huntress fits better").Count == 0 && Wording.Rails("another survivor fits better").Count == 0,
+                "'" + both.Words + "' / '" + both.Short + "' | quest '" + quest.Short + "'");
+            // the line's width on the hint's model (research's why_sim: its characters x 0.339 em x 48 units - the line's font at x1.20 - plus
+            // the tips and pads 1.2 x (36 + 2 x 26) + 4; the 10-07 Deck logs: 961 x 74 on the chests, 934 on the rescue screen)
+            Func<string, double> width = t => t.Length * 0.339 * 48 + 1.2 * (36 + 2 * 26) + 4;
+            string chestL = "REROLL  -  " + r8.Words, chestS = "REROLL  -  " + r8.Short, sosL = "REROLL  -  " + Wording.Reroll(new[] { "Huntress" }, 0), sosS = "REROLL  -  " + Wording.RerollShort(new[] { "Huntress" });
+            Check("H4", "the line's width on the hint's model: a chest " + F0(width(chestL)) + " -> " + F0(width(chestS)) + " units, the rescue screen " + F0(width(sosL)) + " -> " + F0(width(sosS)) + " (the spec's 956 -> 484 and 874 -> 614; the WHY band's piece widens by as much: GeometryCases B3)",
+                F0(width(chestL)) == "956" && F0(width(chestS)) == "484" && F0(width(sosL)) == "874" && F0(width(sosS)) == "614", "'" + chestL + "' / '" + chestS + "' | '" + sosL + "' / '" + sosS + "'");
+        }
+        static string F0(double v) { return Math.Round(v).ToString("0", System.Globalization.CultureInfo.InvariantCulture); }
+
+        static void ShortSources()
+        {
+            string hint = Src("RerollHint.cs"), call = Src("ScreenCall.cs");
+            int words = call == null ? -1 : Regex.Matches(call, @"\bc\.Words = ").Count, shorts = call == null ? -2 : Regex.Matches(call, @"\bc\.Short = ").Count;
+            Check("H4", "ScreenCall sets a Short beside every Words (" + words + " / " + shorts + ")", call != null && words >= 10 && words == shorts && call.Contains("public string Short;"));
+            Check("H4", "RerollHint keeps both texts (_text, _short) and Place draws the short words only when the line goes under its button (the PC's over it keeps the long), the first draw's log line adding ', short form'; the frame on the button untouched",
+                hint != null && hint.Contains("_text = text; _short = brief;") && hint.Contains("string drawn = spot.Where == \"under\" && _short != null ? _short : _text;") && hint.Contains("text.text = drawn;") && !hint.Contains("text.text = _text;")
+                && hint.Contains("(brief ? \", short form\" : \"\")") && hint.Contains("var frame = Frame(brt);"));
+            Check("H4", "the rescue line in both forms: LineText(r, false) / LineText(r, true) into FromRescue, Wording.RerollShort for the short one, the quest's form unchanged",
+                hint != null && hint.Contains("ScreenCall.FromRescue(r, r.Show ? LineText(r, false) : null, r.Show ? LineText(r, true) : null)") && hint.Contains("(brief ? Wording.RerollShort(who) : Wording.Reroll(who, ")
+                && hint.Contains("if (c.ForQuest) return head + \"the quest needs \""));
         }
 
         // ---------------------------------------------------------------- H1: the logged chests

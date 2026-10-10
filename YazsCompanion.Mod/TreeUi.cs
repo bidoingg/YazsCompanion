@@ -50,6 +50,7 @@ namespace YazsCompanion
         static List<TNode> _nodes; static TAdvice _advice; static List<TStep> _steps;
         static TNode _highlighted; static string _tree = "";
         static bool _logged;
+        static readonly Dictionary<string, string> _badgeLines = new Dictionary<string, string>();     // 0.16.0 (C16-07): the last '[yard] badges of' line per tree
 
         public static bool Enabled { get { try { return Plugin.ShowYard.Value; } catch { return true; } } }
 
@@ -75,18 +76,25 @@ namespace YazsCompanion
                 Perf.End("yard.read", perf);
                 var sig = new StringBuilder().Append(container.Pointer).Append('|').Append(points);
                 foreach (var n in nodes) sig.Append('|').Append(n.Level).Append(n.RankOpen ? "" : "L");
+                sig.Append(TreeState.DemandSig(isTeam));        // 0.16.0 (C16-07): the switch, a build, the run setup's mode, the doctrine, the knowledge
                 string s = sig.ToString();
                 if (s == _sig && Alive()) return;
                 _sig = s;
                 TreeState.LogChanges(container.Pointer, tree, nodes, _advice);       // 0.15.0 (C15-08): bought / refunded since the last read, against the advice shown then
 
                 _nodes = nodes; _tree = tree; _highlighted = null;
+                var badges = isTeam ? null : TreeState.BadgeDemand(tree, nodes);
                 perf = Perf.Begin();
-                _steps = isTeam ? TreePlan.TeamSteps(nodes) : TreePlan.ClassSteps(nodes);
+                _steps = isTeam ? TreePlan.TeamSteps(nodes) : TreePlan.ClassSteps(nodes, badges);
                 _advice = TreePlan.Advise(nodes, _steps, points);
                 Perf.End("yard.advise", perf);
                 Plugin.Logger.LogInfo("[yard] " + tree + ": " + points + " points; buy " + (_advice.Now.Count == 0 ? "nothing" : string.Join(", ", _advice.Now.Select(b => b.Order + " " + b.Label + " (" + b.Cost + ")")))
                     + (_advice.SaveFor != null ? "; save for " + _advice.SaveFor.Label + " (" + _advice.SaveFor.Cost + ")" : "") + (_advice.Later.Count > 0 ? "; later " + string.Join(", ", _advice.Later.Select(b => b.Label)) : ""));
+                if (badges != null)
+                {   // 0.16.0 (C16-07): what the badge advice made of this tab's badges, once per change per tree a session
+                    string line = "[yard] badges of " + tree + " " + badges.Line; string was;
+                    if (!_badgeLines.TryGetValue(tree, out was) || was != line) { _badgeLines[tree] = line; Plugin.Logger.LogInfo(line); }
+                }
                 if (Plugin.Verbose.Value || !_logged) { _logged = true; Plugin.Logger.LogInfo("[yard] nodes of " + tree + ":" + TreeState.Describe(nodes)); }
 
                 perf = Perf.Begin();
@@ -113,6 +121,21 @@ namespace YazsCompanion
                 if (Alive()) Fit();
             }
             catch { }
+        }
+
+        /// <summary>0.16.0 (C16-07), the PreviewYard walk: the node of the first held badge step of the tab on screen (<paramref name="held"/>
+        /// true), else its first badge node (false); null when the tab has none.</summary>
+        internal static UISkillTreeNode PreviewBadge(out bool held)
+        {
+            held = false;
+            try
+            {
+                var st = _steps == null ? null : _steps.FirstOrDefault(s => s.Hold && s.Node.Kind == TKind.Badge && s.Node.Ui is UISkillTreeNode);
+                if (st != null) { held = true; return (UISkillTreeNode)st.Node.Ui; }
+                var n = _nodes == null ? null : _nodes.FirstOrDefault(x => x.Kind == TKind.Badge && x.Ui is UISkillTreeNode);
+                return n != null ? (UISkillTreeNode)n.Ui : null;
+            }
+            catch { return null; }
         }
 
         static bool Alive() { try { return _strip != null && _text != null && _strip.gameObject != null; } catch { return false; } }
@@ -408,8 +431,15 @@ namespace YazsCompanion
             {
                 bool maxed = _highlighted.Level >= _highlighted.Max;
                 int pos = _steps == null ? -1 : _steps.FindIndex(s => s.Node == _highlighted && s.To > _highlighted.Level);
-                string note = maxed ? "maxed" : !_highlighted.RankOpen ? "its rank is still locked" : pos >= 0 ? "later in the plan (step " + (pos + 1) + " of " + _steps.Count + ")" : "not in the plan";
-                rows.Add(Row("WHY", _highlighted.Name + Dim(_dash + note)));
+                // 0.16.0 (C16-07): a badge later in the plan (held, or a chunk further down) says why it waits, with its place in the plan
+                var st = pos >= 0 ? _steps[pos] : null;
+                if (!maxed && _highlighted.RankOpen && st != null && st.Node.Kind == TKind.Badge && st.Why.Length > 0)
+                    rows.Add(Row("WHY", Gold(_highlighted.Name) + Dim(_dash) + st.Why + Dim(" (step " + (pos + 1) + " of " + _steps.Count + ")")));
+                else
+                {
+                    string note = maxed ? "maxed" : !_highlighted.RankOpen ? "its rank is still locked" : pos >= 0 ? "later in the plan (step " + (pos + 1) + " of " + _steps.Count + ")" : "not in the plan";
+                    rows.Add(Row("WHY", _highlighted.Name + Dim(_dash + note)));
+                }
             }
             Finish(rows);
         }

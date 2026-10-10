@@ -41,6 +41,23 @@ namespace YazsCompanion
             if (_nextReport < 0f) { _nextReport = now + Every; _since = now; _frames = 0; }
             _frames++;
             if (now < _nextReport) return;
+            Report(now);
+        }
+
+        /// <summary>fix_a review (H6 of series r1): the sums so far logged NOW, the minute's clock started again - called just before a
+        /// debug walk's done line, after which a test script stops the game within seconds (the yard / setup walks end ~46 s after load,
+        /// before the first once-a-minute line: their sections were never logged). Nothing when the probe is off or nothing ran yet.</summary>
+        public static void ReportNow()
+        {
+            if (!On || _nextReport < 0f) return;
+            bool any = false;
+            foreach (var s in _slots.Values) if (s.Calls > 0) { any = true; break; }
+            if (!any) return;
+            Report(UnityEngine.Time.realtimeSinceStartup);
+        }
+
+        static void Report(float now)
+        {
             try
             {
                 // sections nest (a tick contains the reads and builds it triggered), so the columns do not add up

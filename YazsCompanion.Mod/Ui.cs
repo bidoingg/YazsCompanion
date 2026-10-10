@@ -45,6 +45,7 @@ namespace YazsCompanion
         public Image Gold;
         public TextMeshProUGUI Text;
         public float Size;
+        public float Share = 0.52f;                     // 0.16.0 (C16-16): the number's font as a share of the diamond (Ui.Marker's numberShare)
         public MarkKind Kind = MarkKind.None;
         public int Number = -1;
         public bool Pinned;
@@ -262,14 +263,16 @@ namespace YazsCompanion
         /// <summary>The badge advice's diamond (0.13.0; TreeUi's Training Yard marker, copied - TreeUi keeps its own): a dark
         /// rim, a gold diamond, a hollow fill, the number cloned from <paramref name="template"/>, a ping ring and a small pin
         /// tick. Anchored on the top-right corner of <paramref name="parent"/> (inset 0.18 x its size), out of every layout,
-        /// takes no clicks. <see cref="UiMarker.Set"/> gives it its look; the menu's BADGES page draws the same thing.</summary>
-        public static UiMarker Marker(RectTransform parent, string name, float size, TextMeshProUGUI template)
+        /// takes no clicks. <see cref="UiMarker.Set"/> gives it its look; the menu's BADGES page draws the same thing.
+        /// 0.16.0 (C16-16): <paramref name="numberShare"/> = the number's font as a share of the diamond (0.52 as before; the run setup
+        /// screen passes LoadoutLayout's NumberUnits / MarkerUnits, which lifts the digits to the 15 px floor on the Deck).</summary>
+        public static UiMarker Marker(RectTransform parent, string name, float size, TextMeshProUGUI template, float numberShare = 0.52f)
         {
             var root = NewRect(name, parent);
             root.anchorMin = root.anchorMax = new Vector2(1f, 1f); root.pivot = new Vector2(0.5f, 0.5f);
             root.anchoredPosition = new Vector2(-size * 0.18f, -size * 0.18f); root.sizeDelta = new Vector2(size, size);
             try { var le = root.gameObject.AddComponent(Il2CppType.Of<LayoutElement>()).TryCast<LayoutElement>(); if (le != null) le.ignoreLayout = true; } catch { }
-            var m = new UiMarker { Root = root, Size = size };
+            var m = new UiMarker { Root = root, Size = size, Share = numberShare };
             try { m.Group = root.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); m.Group.blocksRaycasts = false; m.Group.interactable = false; } catch { }
             try { CanvasGroup rg; m.Ring = Fx.Ring(root, size, 4f, Theme.Gold, true, out rg); m.RingGroup = rg; } catch { }
             m.Turn = NewRect("Turn", root); Stretch(m.Turn, 0, 0, 0, 0);                                   // the diamonds turn, the number stays upright
@@ -287,7 +290,7 @@ namespace YazsCompanion
                     if (m.Text != null)
                     {
                         Stretch(m.Text.rectTransform, -10, -10, -10, -10);
-                        m.Text.alignment = TextAlignmentOptions.Center; m.Text.fontSize = size * 0.52f; m.Text.fontStyle = FontStyles.Bold;
+                        m.Text.alignment = TextAlignmentOptions.Center; m.Text.fontSize = size * numberShare; m.Text.fontStyle = FontStyles.Bold;
                         m.Text.color = new Color(0.07f, 0.055f, 0.03f, 1f);
                     }
                 }

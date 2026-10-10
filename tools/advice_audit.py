@@ -10,6 +10,10 @@ For every session of the given logs (oldest file first) it reports:
   - WHY views (the band under a highlighted card) per pick, and the bands that dropped reasons ('N of M shown');
   - the active quest's objectives and the run clock each one was met at;
   - the level-up pace per game mode (level-ups per run minute, by phase of the run: the priors of the pace blend);
+  - the exact ties for the first place by the rule that settled them, and the stat-card weights the Companion could not
+    read from the card (0.16.0; those lines count as warnings);
+  - the Training Yard: purchases against the advice shown (which place was bought), refunds, and badge levels bought
+    while the badge advice held them (0.16.0) - also for a session that only visited the Training Yard;
   - the warning and error lines.
 Then the same numbers over every selected session together.
 
@@ -54,6 +58,20 @@ RX_PLAN_CLOCK = re.compile(r"^\[plan\] (\d+:\d\d):")
 RX_QUEST_START = re.compile(r'^\[quest\] (\S+) "([^"]*)" - (\d+) objective')
 RX_QUEST_RULES = re.compile(r"^\[quest\] (.*?) -> (.*)$")
 RX_QUEST_NONE = re.compile(r"^\[quest\] no active quest")
+# 0.16.0: the Training Yard. The advice line (TreeUi) follows the purchases of the same read (TreeState.LogChanges logs them
+# first), so a purchase belongs to the tree of the last advice line; '[yard] strip at' / '[yard] nodes of' lines do not match.
+RX_YARD_ADVICE = re.compile(r"^\[yard\] (\w+): (\d+) points; buy (.*?)(?:; save for (.*?) \((\d+)\))?(?:; later (.*))?$")
+RX_YARD_CHANGE = re.compile(r"^\[yard\] (bought|refunded) (.+?) (\d+)>(\d+)(?: \((?:advice #(\d+)|not advised)\))?$")
+RX_YARD_BADGES = re.compile(r"^\[yard\] badges of (\w+) \(([^,]+), (\d+) survivors?, floor ([\d.]+), reach (\d+)\): (.*)$")
+RX_YARD_COMPUTE = re.compile(r"^\[yard\] badge advice for (\d+) survivors? \(([^)]*)\): ([\d.]+) ms$")
+RX_YARD_PART = re.compile(r"^(.+?) (?:\d+>\d+ (?:stage|levels) |0>1 pinned$|held \()")      # the badge name of one '; ' part
+# 0.16.0: an exact tie for the first place (Ranker.SayTie; the rule is the text after the last ' - ') and the stat-card weights
+# (Ranker.OwnRatio: 'the card's values not read' / 'read from the rarity's field' are counted as warnings).
+RX_TIE = re.compile(r"^\[rank\] tie for #1 at (-?\d+\.\d\d): (.*) - (.*)$")
+RX_STAT_WEIGHT = re.compile(r"^\[rank\] (\w+) stat cards: weight x(-?[\d.]+) for (.*)$")
+TIE_RULES = ["build_order", "own_value", "tag_points", "further_left", "other"]
+TIE_LABEL = {"build_order": "the build's order", "own_value": "own value", "tag_points": "tag points",
+             "further_left": "further left", "other": "other"}
 
 
 def clock_s(c):
@@ -68,6 +86,19 @@ def clock_s(c):
 def mmss(sec):
     sec = int(round(sec))
     return "%02d:%02d" % (sec // 60, sec % 60)
+
+
+def tie_rule(rule):
+    """The rule of a '[rank] tie for #1 at' line (the text after ' - ') as a key of TIE_RULES."""
+    if rule.startswith("the build's order"):
+        return "build_order"
+    if rule.startswith("its own value") or rule.startswith("the stat card's own value"):
+        return "own_value"
+    if rule.startswith("tag points"):
+        return "tag_points"
+    if rule.startswith("the card further left"):
+        return "further_left"
+    return "other"
 
 
 def head_kind(why):
@@ -148,6 +179,20 @@ class Session:
         self.why_screens = set()
         self.picks_with_why = 0
         self.runs = []
+        self.ties = Counter()                # 0.16.0: tie rule (TIE_RULES) -> '[rank] tie for #1' lines
+        self.ties_vs_common = 0              # of own_value: the stat card's own value against a non-stat card
+        self.stat_weights = 0                # '[rank] <Rarity> stat cards: weight x..' lines
+        self.stat_not_read = 0               # ... with the card's values not read (the fallback)
+        self.stat_via_field = 0              # ... read from the rarity's field (GetMyRarityBonusList gave nothing)
+        self.yard_advice = Counter()         # 0.16.0: Training Yard tree -> advice lines
+        self.yard_purchases = self.yard_advised = self.yard_not_advised = 0
+        self.yard_place = Counter()          # the advice place a purchase followed: '1', '2', '3', '4+'
+        self.yard_refunds = self.yard_levels = 0
+        self.yard_badge_levels = self.yard_badge_advised = self.yard_badge_held = self.yard_badge_other = 0
+        self.yard_badge_lines = Counter()    # tree -> '[yard] badges of' lines
+        self.yard_held = {}                  # tree -> the sorted held badge names of its last badges line
+        self.yard_computes = 0
+        self.yard_compute_ms = 0.0
         self.raw = []                    # the lines while reading (dropped once counted)
         self.first_t = None
         self.last_t = None
@@ -201,6 +246,10 @@ class Reader:
         self.close_call = False
         self.why_on_screen = 0
         self.hints_open = []         # hints of the open screen not yet answered
+        self.yard_tree = None        # the Training Yard tree of the last advice line
+        self.yard_badges = {}        # tree -> the badge names of its last '[yard] badges of' line
+        self.yard_held_now = {}      # tree -> the badges held there (by the badge advice)
+        self.cur_line = ""           # the whole log line being read (a counted warning keeps it)
 
     def wall(self, m):
         t = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) + (int((m.group(4) or "0").ljust(3, "0")) / 1000.0)
@@ -265,12 +314,19 @@ class Reader:
                 if lm:
                     s.version, s.commit = lm.group(1), lm.group(2)
                 continue
+            self.cur_line = line
             self.line(t, msg)
         for h in self.hints_open:
             h.closed = True
 
     def line(self, t, msg):
         s = self.s
+        if msg.startswith("[yard] "):
+            self.yard(msg)
+            return
+        if msg.startswith("[rank] "):
+            self.rank(msg)
+            return
         pm = RX_PLAN_CLOCK.match(msg)
         if pm:
             self.see_clock(pm.group(1))
@@ -358,6 +414,81 @@ class Reader:
         if cl:
             self.see_clock(cl.group(1))
 
+    def yard(self, msg):
+        """A '[yard] ' line (0.15.0 advice and purchases, 0.16.0 badge plans): the Training Yard counts."""
+        s = self.s
+        am = RX_YARD_ADVICE.match(msg)
+        if am:
+            s.yard_advice[am.group(1)] += 1
+            self.yard_tree = am.group(1)
+            return
+        ch = RX_YARD_CHANGE.match(msg)
+        if ch:
+            tree = self.yard_tree or "?"
+            if ch.group(1) == "refunded":
+                s.yard_refunds += 1
+                return
+            name = ch.group(2)
+            lv = int(ch.group(4)) - int(ch.group(3))
+            s.yard_purchases += 1
+            s.yard_levels += lv
+            advised = ch.group(5) is not None
+            if advised:
+                n = int(ch.group(5))
+                s.yard_advised += 1
+                s.yard_place[str(n) if n < 4 else "4+"] += 1
+            else:
+                s.yard_not_advised += 1
+            if name.endswith(" Badge") or name in self.yard_badges.get(tree, ()):
+                s.yard_badge_levels += lv
+                if advised:
+                    s.yard_badge_advised += lv
+                elif name in self.yard_held_now.get(tree, ()):
+                    s.yard_badge_held += lv
+                else:
+                    s.yard_badge_other += lv
+            return
+        bm = RX_YARD_BADGES.match(msg)
+        if bm:
+            tree = bm.group(1)
+            s.yard_badge_lines[tree] += 1
+            names, held = set(), set()
+            for part in bm.group(6).split("; "):
+                pm = RX_YARD_PART.match(part)
+                if not pm:
+                    continue                 # 'nothing to plan'
+                names.add(pm.group(1))
+                if " held (" in part:
+                    held.add(pm.group(1))
+            self.yard_badges[tree] = names
+            self.yard_held_now[tree] = held
+            s.yard_held[tree] = sorted(held)
+            return
+        cm = RX_YARD_COMPUTE.match(msg)
+        if cm:
+            s.yard_computes += 1
+            s.yard_compute_ms = max(s.yard_compute_ms, float(cm.group(3)))
+
+    def rank(self, msg):
+        """A '[rank] ' line (0.16.0): the exact ties for the first place, and the stat-card weights."""
+        s = self.s
+        tm = RX_TIE.match(msg)
+        if tm:
+            key = tie_rule(tm.group(3))
+            s.ties[key] += 1
+            if tm.group(3).startswith("the stat card's own value"):
+                s.ties_vs_common += 1
+            return
+        wm = RX_STAT_WEIGHT.match(msg)
+        if wm:
+            s.stat_weights += 1
+            if "the card's values not read" in msg:
+                s.stat_not_read += 1
+            if "read from the rarity's field" in msg:
+                s.stat_via_field += 1
+            if ("the card's values not read" in msg or "read from the rarity's field" in msg) and not (s.warnings and s.warnings[-1] is self.cur_line):
+                s.warnings.append(self.cur_line)         # an Info line, counted as a warning (once, were it ever logged as one)
+
     def pick(self, t, km):
         s = self.s
         screen = SCREEN_OF.get(km.group(1), km.group(1))
@@ -430,7 +561,32 @@ def merge(sessions):
         tot.why_screens |= {(s.stamp,) + k for k in s.why_screens}
         tot.picks_with_why += s.picks_with_why
         tot.runs += s.runs
+        tot.ties.update(s.ties)
+        tot.ties_vs_common += s.ties_vs_common
+        tot.stat_weights += s.stat_weights
+        tot.stat_not_read += s.stat_not_read
+        tot.stat_via_field += s.stat_via_field
+        tot.yard_advice.update(s.yard_advice)
+        tot.yard_purchases += s.yard_purchases
+        tot.yard_advised += s.yard_advised
+        tot.yard_not_advised += s.yard_not_advised
+        tot.yard_place.update(s.yard_place)
+        tot.yard_refunds += s.yard_refunds
+        tot.yard_levels += s.yard_levels
+        tot.yard_badge_levels += s.yard_badge_levels
+        tot.yard_badge_advised += s.yard_badge_advised
+        tot.yard_badge_held += s.yard_badge_held
+        tot.yard_badge_other += s.yard_badge_other
+        tot.yard_badge_lines.update(s.yard_badge_lines)
+        tot.yard_held.update(s.yard_held)                # the last seen per tree
+        tot.yard_computes += s.yard_computes
+        tot.yard_compute_ms = max(tot.yard_compute_ms, s.yard_compute_ms)
     return tot
+
+
+def has_yard(s):
+    """The session logged a Training Yard advice, purchase, refund or badge plan."""
+    return bool(s.yard_advice or s.yard_purchases or s.yard_refunds or s.yard_badge_lines)
 
 
 def pct(a, b):
@@ -471,9 +627,19 @@ def numbers(s):
             quests.append({"session": r.session, "run": r.idx, "quest": r.quest[1], "id": r.quest[0], "run_length": mmss(r.max_clock),
                            "met": [{"objective": k, "clock": mmss(v[0])} for k, v in r.met.items()],
                            "open": [k for k in r.quest_open if k not in r.met]})
+    ties = OrderedDict([("count", sum(s.ties.values()))] + [(k, s.ties.get(k, 0)) for k in TIE_RULES]
+                       + [("own_value_vs_common", s.ties_vs_common)])
+    stat_weights = OrderedDict([("lines", s.stat_weights), ("not_read", s.stat_not_read), ("via_field", s.stat_via_field)])
+    yard = OrderedDict([("advice_lines", dict(s.yard_advice)), ("purchases", s.yard_purchases), ("advised", s.yard_advised),
+                        ("not_advised", s.yard_not_advised), ("advice_place", dict(s.yard_place)), ("refunds", s.yard_refunds),
+                        ("levels_bought", s.yard_levels), ("badge_levels_bought", s.yard_badge_levels),
+                        ("badge_advised", s.yard_badge_advised), ("badge_while_held", s.yard_badge_held),
+                        ("badge_not_in_advice", s.yard_badge_other), ("badge_lines", dict(s.yard_badge_lines)),
+                        ("held", dict(s.yard_held)), ("computes", s.yard_computes), ("compute_ms_max", s.yard_compute_ms)])
     return OrderedDict([("picks", picks), ("heads", heads), ("close_calls", cc), ("hints", hints), ("why", why),
                         ("quests", quests), ("pace", pace), ("runs", len(s.runs)),
                         ("replaced", dict(s.replaced)), ("banish_armed", sum(s.banish_armed.values())),
+                        ("ties", ties), ("stat_weights", stat_weights), ("yard", yard),
                         ("warnings", len(s.warnings)), ("errors", len(s.errors))])
 
 
@@ -503,9 +669,44 @@ def pace_of(runs):
     return by
 
 
-def report(s, title, brief=False, out=sys.stdout, total=False):
+def yard_block(n, w):
+    """The Training Yard line of a session block (nothing when the session had no yard line)."""
+    y = n["yard"]
+    if not (y["advice_lines"] or y["purchases"] or y["refunds"] or y["badge_lines"]):
+        return
+    trees = sorted(y["advice_lines"].items(), key=lambda kv: (-kv[1], kv[0]))
+    parts = ["advice lines %d%s" % (sum(y["advice_lines"].values()), " (%s)" % ", ".join("%s %d" % kv for kv in trees) if trees else "")]
+    if y["purchases"]:
+        places = sorted(y["advice_place"].items(), key=lambda kv: (kv[0] == "4+", kv[0]))
+        parts.append("purchases %d (%d advised%s; %d not advised)" % (
+            y["purchases"], y["advised"], (": " + ", ".join("#%s x%d" % kv for kv in places)) if places else "", y["not_advised"]))
+    else:
+        parts.append("purchases 0")
+    parts.append("refunds %d" % y["refunds"])
+    parts.append("levels bought %d" % y["levels_bought"])
+    parts.append("badge levels bought %d%s" % (y["badge_levels_bought"], " (%d advised, %d not advised while held, %d other)" % (
+        y["badge_advised"], y["badge_while_held"], y["badge_not_in_advice"]) if y["badge_levels_bought"] else ""))
+    if y["badge_lines"]:
+        held = "; ".join("%s %s" % (t, ", ".join(names)) for t, names in sorted(y["held"].items()) if names)
+        parts.append("badge plans %d (held: %s)" % (sum(y["badge_lines"].values()), held or "none"))
+    if y["computes"]:
+        parts.append("badge advice computed %dx (max %.1f ms)" % (y["computes"], y["compute_ms_max"]))
+    w("  Training Yard: " + " | ".join(parts) + "\n")
+
+
+def ties_block(n, w):
+    """The tie and stat-card weight lines of a session block (0.16.0; nothing when the session logged neither)."""
+    t, sw = n["ties"], n["stat_weights"]
+    if t["count"]:
+        w("  ties for #1: %d (%s)\n" % (t["count"], ", ".join("%s %d" % (TIE_LABEL[k], t[k]) for k in TIE_RULES if k != "other" or t[k])))
+    if sw["lines"]:
+        w("  stat-card weights logged: %d (the card's values not read %d, read from the rarity's field %d)\n" % (
+            sw["lines"], sw["not_read"], sw["via_field"]))
+
+
+def report(s, title, brief=False, out=None, total=False):
     n = numbers(s)
-    w = out.write
+    w = (out or sys.stdout).write
     w(title + "\n")
     if s.lines == 0:
         w("  (no lines)\n")
@@ -515,6 +716,7 @@ def report(s, title, brief=False, out=sys.stdout, total=False):
         w("  no selection screen in this session; %d warning(s), %d error(s)\n" % (n["warnings"], n["errors"]))
         for l in (s.warnings + s.errors)[:5]:
             w("    " + l[:200] + "\n")
+        yard_block(n, w)
         return n
     w("  picks by screen       offers  #1 taken  other  skip  banish  followed\n")
     for scr, p in n["picks"].items():
@@ -537,6 +739,7 @@ def report(s, title, brief=False, out=sys.stdout, total=False):
           + ("; ..." if len(s.overrides) > 6 else "") + "\n")
     cc = n["close_calls"]
     w("  CLOSE CALL screens: %d - took the #1 %d, the close second %d, another or none %d\n" % (cc["screens"], cc["took_first"], cc["took_second"], cc["other"]))
+    ties_block(n, w)
     h = n["hints"]
     acts = ", ".join("%s %d" % (k, v) for k, v in sorted(h["by_action"].items())) or "none"
     w("  hints shown: %d (%s) - acted on within %ds: %d, later on the same screen: %d, not acted on: %d\n" % (h["shown"], acts, ACT_WINDOW, h["acted_10s"], h["acted_later"], h["not_acted"]))
@@ -546,6 +749,7 @@ def report(s, title, brief=False, out=sys.stdout, total=False):
             w("    %s %s %s%s: %s\n" % (SCREEN_LABEL.get(x.screen, x.screen), x.clock, x.action, " (%s)" % x.when if x.when else "", what))
         if len(s.hints) > 8:
             w("    ... %d more\n" % (len(s.hints) - 8))
+    yard_block(n, w)
     y = n["why"]
     w("  WHY: %d band(s) on %d screen(s), %d card(s) looked at (%d CLOSE CALL); %s per pick, %d of %d picks after a WHY view\n" % (
         y["bands"], y["screens"], y["cards"], y["close_call_bands"], "-" if y["per_pick"] is None else "%.2f" % y["per_pick"], y["picks_with_why"], y["picks"]))
@@ -592,23 +796,26 @@ def main(argv):
         print("advice_audit: no session in %s matches --since %s" % (", ".join(a.logs), a.since))
         return 2
     played = [s for s in sessions if sum(s.offers.values()) > 0 or any(s.picks.values())]
+    yard = [s for s in sessions if has_yard(s)]
+    shown = [s for s in sessions if s in played or s in yard]          # in log order; a Training Yard visit alone counts too
     out = {"sessions": []}
     if not a.brief:
-        for s in played:
+        for s in shown:
             v = s.version + (" (%s)" % s.commit if s.commit else "") if s.version else "version not logged"
             out["sessions"].append(dict(stamp=s.stamp, version=s.version, commit=s.commit,
                                         numbers=report(s, "==== session %s - %s - %d run(s), %d lines" % (s.stamp, v, len(s.runs), s.lines))))
             print()
-    quiet = len(sessions) - len(played)
+    quiet = len(sessions) - len(shown)
     tot = merge(sessions)
-    title = "==== TOTAL over %d session(s) with a selection screen (of %d selected%s)" % (
-        len(played), len(sessions), "; %d without one" % quiet if quiet else "")
-    if a.brief or len(played) != 1:
+    title = "==== TOTAL over %d session(s) with a selection screen or Training Yard lines (of %d selected%s)" % (
+        len(shown), len(sessions), "; %d without either" % quiet if quiet else "")
+    if a.brief or len(shown) != 1:
         out["total"] = report(tot, title, brief=a.brief, total=True)
     else:
         out["total"] = numbers(tot)          # one session: its block above is the total
     out["total"]["sessions"] = len(sessions)
     out["total"]["played"] = len(played)
+    out["total"]["yard_sessions"] = len(yard)
     if a.json:
         with open(a.json, "w", encoding="utf-8") as fh:
             json.dump(out, fh, indent=1)
@@ -653,10 +860,25 @@ SAMPLE = """==== 2030-01-02 10:00:00 session start ====
 10:03:02.000 [Info] [quest] Test Quest -> max Handgun met
 10:03:03.000 [Info] [pick] LevelUp 02:10: Handgun (#1, the pick)
 10:04:00.000 [Info] [plan] 03:00: TANK  Shotgun 4/4
+==== 2030-01-02 10:20:00 session start ====
+10:20:01.000 [Info] [yard] badge advice for 9 survivors (Normal I): 4.2 ms
+10:20:01.001 [Info] [yard] badges of Medic (Normal I, 9 survivors, floor 0.15, reach 2): Growth Badge 1>3 stage 9/9 0.41/pt; Soul Badge held (next levels 0.12/pt); Healing Badge held (from level 4)
+10:20:01.002 [Info] [yard] Medic: 9 points; buy 1 Experiment 21 3>5 (9); later Growth Badge 1>3
+10:20:05.000 [Info] [yard] bought Experiment 21 3>4 (advice #1)
+10:20:05.001 [Info] [yard] Medic: 5 points; buy 1 Experiment 21 4>5 (5); later Growth Badge 1>3
+10:20:07.000 [Info] [yard] bought Healing Badge 0>1 (not advised)
+10:20:07.001 [Info] [yard] Medic: 4 points; buy nothing; save for Experiment 21 4>5 (5)
+10:20:09.000 [Info] [yard] refunded Healing Badge 1>0
+10:20:09.001 [Info] [yard] Medic: 5 points; buy 1 Experiment 21 4>5 (5)
+10:20:11.000 [Info] [yard] bought Experiment 21 4>5 (advice #1)
+10:20:11.001 [Info] [yard] Medic: 0 points; buy nothing; save for Growth Badge 1>3 (5)
 ==== 2030-01-02 11:00:00 session start ====
 11:00:01.000 [Info] [hooks] 38 methods patched (class by class; 0 patch classes failed)
 11:00:05.000 [Info] [offer] LevelUp 00:20 (Endless horde 1)
+11:00:05.001 [Info] [rank] Endless stat cards: weight x0.40 for Pickup Range (the card's values not read: NullReferenceException - the fallback)
+11:00:05.001 [Info] [rank] tie for #1 at 5.00: Shotgun before Multishot - the card further left
 11:00:05.001 [Info] [card] #1 PICK Shotgun (weapon, Tank) 5.00 - next weapon tier
+11:00:05.002 [Info] [card] #2      Multishot (weapon, Tank) 5.00 - weapon level: 1 to 2 of 4
 11:00:06.000 [Info] [pick] LevelUp 00:20: Shotgun (#1, the pick)
 11:00:30.000 [Info] [offer] LevelUp 00:40 (Endless horde 1)
 11:00:30.001 [Info] [card] #1 PICK Shotgun (weapon, Tank) 5.00 - finish the weapon: 3 to 4 of 4, then Pump-Action Shotgun
@@ -668,6 +890,8 @@ SAMPLE = """==== 2030-01-02 10:00:00 session start ====
 
 
 def self_test():
+    import contextlib
+    import io
     import os
     import tempfile
     fd, path = tempfile.mkstemp(suffix=".log")
@@ -682,8 +906,8 @@ def self_test():
             if got != wanted:
                 bad.append("%s: got %r, wanted %r" % (what, got, wanted))
 
-        want("sessions", len(ss), 2)
-        a, b = ss
+        want("sessions", len(ss), 3)
+        a, ys, b = ss
         n = numbers(a)
         want("version", (a.version, a.commit), ("9.9.9", "abc1234"))
         want("level-up picks", (n["picks"]["LevelUp"]["first"], n["picks"]["LevelUp"]["other"]), (2, 1))
@@ -715,6 +939,107 @@ def self_test():
                      ("B-tier item, +8% against elites", "B-tier item"), ("Sawblade Drone, Fireaxe: slashing", "fits what the squad has"),
                      ("evolution of Pulsar", "evolution"), ("focus 2>3 of 4, evolution out of reach", "ability level (evolution out of reach)")]:
             want("head '%s'" % h, head_kind(h), k)
+
+        # 0.16.0 (C16-07b): the Training Yard - a session with yard lines only
+        ny = numbers(ys)
+        want("yard numbers", ny["yard"], {"advice_lines": {"Medic": 5}, "purchases": 3, "advised": 2, "not_advised": 1,
+                                          "advice_place": {"1": 2}, "refunds": 1, "levels_bought": 3, "badge_levels_bought": 1,
+                                          "badge_advised": 0, "badge_while_held": 1, "badge_not_in_advice": 0,
+                                          "badge_lines": {"Medic": 1}, "held": {"Medic": ["Healing Badge", "Soul Badge"]},
+                                          "computes": 1, "compute_ms_max": 4.2})
+        want("yard keys (the --json schema)", list(ny["yard"]), ["advice_lines", "purchases", "advised", "not_advised", "advice_place",
+                                                                 "refunds", "levels_bought", "badge_levels_bought", "badge_advised",
+                                                                 "badge_while_held", "badge_not_in_advice", "badge_lines", "held",
+                                                                 "computes", "compute_ms_max"])
+        want("yard in the total", numbers(merge(ss))["yard"]["purchases"], 3)
+        want("no yard in a session without yard lines", (numbers(a)["yard"]["purchases"], numbers(a)["yard"]["advice_lines"], has_yard(a)), (0, {}, False))
+        buf = io.StringIO()
+        report(ys, "==== yard", out=buf)
+        text = buf.getvalue()
+        want("yard-only session: no selection screen", "no selection screen in this session" in text, True)
+        want("yard-only session: the Training Yard line", [l for l in text.splitlines() if l.startswith("  Training Yard: ")],
+             ["  Training Yard: advice lines 5 (Medic 5) | purchases 3 (2 advised: #1 x2; 1 not advised) | refunds 1 | levels bought 3"
+              " | badge levels bought 1 (0 advised, 1 not advised while held, 0 other) | badge plans 1 (held: Medic Healing Badge, Soul Badge)"
+              " | badge advice computed 1x (max 4.2 ms)"])
+        buf = io.StringIO()
+        report(a, "==== a", out=buf)
+        want("no Training Yard line without yard lines", "Training Yard" in buf.getvalue(), False)
+        for part, name in [("Growth Badge 1>3 stage 9/9 0.41/pt", "Growth Badge"), ("Glacier Badge 0>2 levels 2/9 0.30/pt", "Glacier Badge"),
+                           ("Chance Badge 0>1 pinned", "Chance Badge"), ("Soul Badge held (next levels 0.12/pt)", "Soul Badge"),
+                           ("nothing to plan", None)]:
+            pm = RX_YARD_PART.match(part)
+            want("badge part '%s'" % part, pm.group(1) if pm else None, name)
+        for line, tree in [("[yard] General: 9 points; buy 1 Damage Against Elites 3>5 (9); later Weapon Damage 3>5", "General"),
+                           ("[yard] General: 0 points; buy nothing; save for Banish Amount 0>1 (1); later Damage Against Elites 3>5", "General"),
+                           ("[yard] strip at (12, 340) x0.80; nodes span x 12..900", None), ("[yard] nodes of General: x", None)]:
+            am = RX_YARD_ADVICE.match(line)
+            want("advice line '%s'" % line[:40], am.group(1) if am else None, tree)
+        # a badge bought outside the advice, not held: 'other'; a node lent a name without ' Badge' known from the badges line
+        yr = Reader(Session("y", ""), None)
+        for msg in ["[yard] badges of Pyro (Normal I, 1 survivor, floor 0.15, reach 2): Renamed Node 0>1 pinned; Soul Badge held (from level 2)",
+                    "[yard] Pyro: 3 points; buy 1 Renamed Node 0>1 (1)", "[yard] bought Renamed Node 0>1 (advice #1)",
+                    "[yard] bought Chance Badge 0>2 (not advised)", "[yard] bought Armor 4>5 (advice #5)"]:
+            yr.line(0.0, msg)
+        yn = numbers(yr.s)["yard"]
+        want("yard badge counts (lent name, other, place 4+)", (yn["badge_levels_bought"], yn["badge_advised"], yn["badge_not_in_advice"], yn["advice_place"]),
+             (3, 1, 2, {"1": 1, "4+": 1}))
+
+        # 0.16.0 (C16-08b part 6): the exact ties for the first place, and the stat-card weights (warnings when not read)
+        nb2 = numbers(b)
+        want("ties b", dict(nb2["ties"]), {"count": 1, "build_order": 0, "own_value": 0, "tag_points": 0, "further_left": 1, "other": 0,
+                                         "own_value_vs_common": 0})
+        want("stat weights b (a line not read counts as a warning)", (dict(nb2["stat_weights"]), nb2["warnings"]),
+             ({"lines": 1, "not_read": 1, "via_field": 0}, 1))
+        buf = io.StringIO()
+        report(b, "==== b", out=buf)
+        want("ties line", [l for l in buf.getvalue().splitlines() if l.startswith("  ties for #1")],
+             ["  ties for #1: 1 (the build's order 0, own value 0, tag points 0, further left 1)"])
+        for rule, key in [("the build's order (#1 before #2)", "build_order"), ("its own value (x2.00 before x1.00)", "own_value"),
+                          ("the stat card's own value (x0.25 against a Common card's x1.00)", "own_value"),
+                          ("tag points (5 before 1)", "tag_points"), ("tag points (1 before 5, Spread)", "tag_points"),
+                          ("the card further left", "further_left"), ("something new", "other")]:
+            want("tie rule '%s'" % rule, tie_rule(rule), key)
+        rr = Reader(Session("r", ""), None)
+        for msg in ["[rank] tie for #1 at 4.81: Bombing Strike before Minefield - the build's order (#1 before #2)",
+                    "[rank] tie for #1 at 3.00: Fast Mover before Dear John - its own value (x2.00 before x1.00)",
+                    "[rank] tie for #1 at 2.10: Shotgun before Pickup Range - the stat card's own value (x0.25 against a Common card's x1.00)",
+                    "[rank] tie for #1 at 4.87: #Slashing +4 before #Electric +4 - tag points (5 before 1)",
+                    "[rank] Rare stat cards: weight x2.50 for Ability Cooldown (the card's own +0.25 vs Common +0.1)",
+                    "[rank] Legendary stat cards: weight x4.00 for Max Health (the card's own +0.4 vs Common +0.1; GetMyRarityBonusList gave nothing - read from the rarity's field)",
+                    "[rank] Rare stat cards: weight x2.00 for Armor (the card's values not read: MissingFieldException - the fallback)"]:
+            rr.cur_line = "00:00:00.000 [Info] " + msg
+            rr.line(0.0, msg)
+        rn = numbers(rr.s)
+        want("ties by rule", dict(rn["ties"]), {"count": 4, "build_order": 1, "own_value": 2, "tag_points": 1, "further_left": 0, "other": 0,
+                                              "own_value_vs_common": 1})
+        want("stat weights", (dict(rn["stat_weights"]), rn["warnings"]), ({"lines": 3, "not_read": 1, "via_field": 1}, 2))
+        want("ties in the total", numbers(merge(ss + [rr.s]))["ties"]["count"], 5)
+
+        # main(): every session with a selection screen or yard lines is reported; --json carries the yard numbers
+        fd2, jpath = tempfile.mkstemp(suffix=".json")
+        os.close(fd2)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                rc = main([path, "--json", jpath])
+            with open(jpath, encoding="utf-8") as fh:
+                js = json.load(fh)
+            want("main rc", rc, 0)
+            want("main: the sessions reported", [x["stamp"] for x in js["sessions"]],
+                 ["2030-01-02 10:00:00", "2030-01-02 10:20:00", "2030-01-02 11:00:00"])
+            want("main: total.yard.purchases", js["total"]["yard"]["purchases"], 3)
+            want("main: played / yard_sessions / sessions", (js["total"]["played"], js["total"]["yard_sessions"], js["total"]["sessions"]), (2, 1, 3))
+            want("main: sessions[].numbers.yard", js["sessions"][1]["numbers"]["yard"]["badge_while_held"], 1)
+            want("main: total.ties", js["total"]["ties"]["further_left"], 1)
+            want("main: the TOTAL title", [l for l in printed.getvalue().splitlines() if l.startswith("==== TOTAL")],
+                 ["==== TOTAL over 3 session(s) with a selection screen or Training Yard lines (of 3 selected)"])
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                main([path, "--since", "2030-01-02 10:20", "--until", "10:30:00"])
+            want("main: a yard-only session alone is shown (no TOTAL block)",
+                 ([l for l in printed.getvalue().splitlines() if l.startswith("====")],
+                  sum(1 for l in printed.getvalue().splitlines() if l.startswith("  Training Yard: "))),
+                 (["==== session 2030-01-02 10:20:00 - version not logged - 0 run(s), 11 lines"], 1))
+        finally:
+            os.remove(jpath)
         for l in bad:
             print("FAIL " + l)
         print("advice_audit self-test: " + ("all as wanted" if not bad else "%d not as wanted" % len(bad)))

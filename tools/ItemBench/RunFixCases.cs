@@ -60,8 +60,9 @@ namespace YazsCompanion.Bench
                 "NaN " + F(Synergy.EndlessWeight(double.NaN)) + ", 0 " + F(Synergy.EndlessWeight(0)) + ", -0.3 " + F(Synergy.EndlessWeight(-0.3)) + ", inf " + F(Synergy.EndlessWeight(double.PositiveInfinity)));
             Check("B1", "EndlessWeight: held to 0.1 - 1.0", Synergy.EndlessWeight(0.02) == 0.1 && Synergy.EndlessWeight(3.0) == 1.0,
                 "0.02 -> " + F(Synergy.EndlessWeight(0.02)) + ", 3 -> " + F(Synergy.EndlessWeight(3.0)));
-            Check("B1", "Common 1, Rare 2, Legendary 3 unchanged (whatever ratio is passed)",
-                Synergy.RarityWeight("Common", 0.25) == 1.0 && Synergy.RarityWeight("Rare", 0.25) == 2.0 && Synergy.RarityWeight("Legendary", 0.25) == 3.0 && Synergy.RarityWeight("Unknown", 0.25) == 1.0
+            // 0.16.0 (C16-05): Rare and Legendary by their own value too (RankSmallCases.cs); unreadable, they keep the flat 2 / 3
+            Check("B1", "Common 1 whatever the ratio; Rare / Legendary unreadable -> 2 / 3",
+                Synergy.RarityWeight("Common", 0.25) == 1.0 && Synergy.RarityWeight("Rare", double.NaN) == 2.0 && Synergy.RarityWeight("Legendary", double.NaN) == 3.0 && Synergy.RarityWeight("Unknown", 0.25) == 1.0
                 && Synergy.RarityWeight("Endless", 0.25) == 0.25 && Synergy.RarityWeight("Endless", double.NaN) == 0.4);
         }
 
@@ -80,7 +81,7 @@ namespace YazsCompanion.Bench
             foreach (var c in cards)
             {
                 double w = (c.Old - 1.0 - (c.Team ? 0.2 : 0)) / (2.0 * 2.6);                        // the stat weight the logged score was made of
-                double ratio = Math.Abs(c.Own) / Math.Abs(c.Common);                                 // as Ranker.EndlessRatio reads it
+                double ratio = Math.Abs(c.Own) / Math.Abs(c.Common);                                 // as Ranker.OwnRatio reads it
                 double before = Math.Round(Synergy.StatCard(2.6, w, c.Team), 2);
                 double after = Math.Round(Synergy.StatCard(Synergy.RarityWeight("Endless", ratio), w, c.Team), 2);
                 now[c.Card] = after;

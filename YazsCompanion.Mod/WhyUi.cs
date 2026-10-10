@@ -19,7 +19,11 @@
 // the cards, the buttons, the divider, the team panel and the skip reward (ScreenBand.Side, pure); 16:9, the Steam Deck and
 // WideMenus off keep the band. Also Q4: the band's
 // lines are measured as drawn, so the end diamond no longer stands over the last glyph. One '[why] ...' line per card and
-// offer with what was drawn ('(side wing left, header + 3 lines, 20.5 px, 3 of 3 shown ...'); the [card] lines are not touched.
+// offer with what was drawn ('(side wing left, header + 3 lines, 20.5 px, 3 of 3 shown, card 2 of 3 ...'); the [card] lines are not touched.
+// 0.16.0: the side panel's header names the card it explains ('WHY  Medical Drone'; C16-10, ScreenBand.Header); at 1280 x 800 the band
+// tries two 15 px lines before it leaves a reason out, and falls back to the short "goes first" when an item still drops (C16-14); the
+// band's stretch must hold its first item at 15 px (FirstNeed -> WhyBandIn.NeedW), else it takes the band's widest - beside the hint's line
+// under its button, which says its short words there (C16-15).
 // [General] ShowWhy switches it (with ShowBadges).
 using System;
 using System.Collections.Generic;
@@ -387,6 +391,7 @@ namespace YazsCompanion
                 FirstName = first != null ? first.Name : null, FirstScore = first != null ? first.Score : double.NaN, FirstShown = first != null ? Wording.Safe(first.Display ?? first.Reason) : null,
                 SecondName = second != null ? second.Name : null, SecondScore = second != null ? second.Score : double.NaN,
                 FirstSay = first != null ? first.Say : null, FirstWhy = first != null ? first.Why : null, Lend = Ranker.LendNames,
+                TieSay = c.TieSay,      // 0.16.0 (C16-08): the selected card's own words of the tie (Ranker.SayTie: each tied card holds the first card's against it)
             };
         }
 
@@ -426,14 +431,20 @@ namespace YazsCompanion
                 // the text: the cards' own size (their reason line) within 15 - 22 px; a "Card text size" picked in the menu moves the
                 // 22 px ceiling as much as it moves the reason lines against their Auto (0.15.0, C15-06: CardTextSize.WhyPx)
                 float font = CardTextSize.WhyPx(reasonPx, SizeFactor()) / unitPx, minFont = ScreenBand.MinPx / unitPx;
+                // 0.16.0 (C16-15): what a stretch needs to show the first item at 15 px - measured before the preferred size's widths (Width
+                // reads the label's size as Widths last set it)
+                float needW = FirstNeed(block, items, minFont);
                 var widths = Widths(items, font, out float leadW, out float sepW, block.Lead);
                 float total = leadW + widths.Sum() + sepW * Math.Max(0, items.Count - 1);
                 float chrome = 2f * (TipOf(font) / 2f + PadUnits * font / 30f);
                 int want = Mathf.Clamp(Mathf.CeilToInt(total / Mathf.Max(1f, (x1 - x0) - chrome)), 1, ScreenBand.MaxLines);
+                // 0.16.0 (C16-14): the words' width and the chrome too - near the 15 px floor the band counts the lines wanted per band;
+                // (C16-15) NeedW: the selected card's own stretch only when it holds the first item, else the band's widest
                 var spot = ScreenBand.Why(new WhyBandIn
                 {
                     View = new R4(0, 0, view.rect.width, view.rect.height), Bottom = bottom, CardsBottom = cardsBottom, SpanX0 = x0, SpanX1 = x1,
                     Buttons = buttons.ToArray(), Obstacles = obstacles.ToArray(), Rules = SelectBands.Dividers(view, _corners).ToArray(), AnchorX = anchor, FontUnits = font, MinFontUnits = minFont, Want = want,
+                    TextUnits = total, ChromeUnits = chrome, NeedW = needW,
                 });
                 if (spot.At == "none")
                 {
@@ -450,6 +461,21 @@ namespace YazsCompanion
                 // each line measured as drawn, the separators' spaces included (Q4: the summed pieces came out short and the last glyph
                 // stood under the end diamond); a line still too long loses items from its end
                 float widest = ScreenBand.FitLines(lines, items, Separator, s => Width(s, font), indent, room);
+                // 0.16.0 (C16-14): when FitLines dropped an item, the side panel's short "vs #1" sentence ("X goes first" - the first card's own
+                // line stands under that card) in the same spot; whichever shows more items is drawn, a tie keeps the long form (the 10-07 Deck
+                // round: 52 of the drawn items were "X goes first: <the #1 card's line>", 58 characters on average, the short form 20)
+                bool shortForm = false;
+                int shownLong = lines.Sum(l => l.Count);
+                if (shownLong < items.Count && !block.SideItems.SequenceEqual(block.Items))
+                {
+                    var sideItems = new List<string>();
+                    foreach (var it in block.SideItems) { string s = Wording.Safe(Names.Text(it)); if (s.Length > 0) sideItems.Add(s); }
+                    float sideLeadW, sideSepW;
+                    var sideWidths = Widths(sideItems, font, out sideLeadW, out sideSepW, block.Lead);
+                    var sideLines = WhyText.Pack(sideWidths, 0f, sideSepW, room - indent, spot.Lines);
+                    float sideWidest = ScreenBand.FitLines(sideLines, sideItems, Separator, s => Width(s, font), indent, room);
+                    if (sideLines.Sum(l => l.Count) > shownLong) { items = sideItems; lines = sideLines; widest = sideWidest; shortForm = true; }
+                }
                 if (lines.Count == 0) { Hide(); Said(c, "no item fits the band (" + spot.Seg.Size + ")"); return; }
 
                 // the words: the lead, then the items; later lines hang under the first item
@@ -472,7 +498,7 @@ namespace YazsCompanion
                 float width = ScreenBand.BlockWidth(widest, chrome, font, spot.Seg.W), height = ScreenBand.BlockHeight(lines.Count, font, spot.Pad);
                 float left = ScreenBand.Left(spot.Seg, anchor, width), top = spot.Seg.Y0 + Mathf.Max(0f, (spot.Seg.H - height) / 2f);
                 Draw(view, left, top, width, height, font, 0.5f, sb.ToString());
-                Log(c, block, drawn, spot.At, lines.Count, font * unitPx, items.Count, width, height, left, top, spot.Bands);
+                Log(c, block, drawn, spot.At, lines.Count, font * unitPx, items.Count, width, height, left, top, spot.Bands, 0, 0, 0, shortForm, spot.Widest);
             }
             catch (Exception e) { Warn("the band", e); Hide(); }
         }
@@ -504,29 +530,41 @@ namespace YazsCompanion
             });
             if (side.At == "none") { SideSaid(wing, side.Wings); return false; }
 
-            // the words: the lead on its own line (the review of 10-06: as a hanging indent "CLOSE CALL" took five ems off every line),
+            // the words: the header - the lead (the review of 10-06: as a hanging indent "CLOSE CALL" took five ems off every line) and,
+            // 0.16.0 (C16-10), the name of the card it explains as the card shows it, on one line or the name on a row or two of its own -,
             // then one reason a line at the panel's whole width, a reason's own next line further in
             _text.fontSize = font;
             var memo = new Dictionary<string, float>();
             Func<string, float> measure = s => { float w; if (!memo.TryGetValue(s, out w)) { w = Width(s, font); memo[s] = w; } return w; };
-            float leadW = measure("<b>" + block.Lead + "</b>"), cont = ScreenBand.ContEms * font;
-            var lines = ScreenBand.Wrap(items, measure, side.Width - chrome - ScreenBand.Slack(font), cont, side.Lines, ScreenBand.SideMaxItems);
+            float cont = ScreenBand.ContEms * font;
+            string name = Wording.Safe(Names.Name(c.Name));
+            var head = ScreenBand.Header(block.Lead, name, measure, side.Width - chrome - ScreenBand.Slack(font), cont);
+            var lines = ScreenBand.Wrap(items, measure, side.Width - chrome - ScreenBand.Slack(font), cont, side.Lines - (head.Count - 1), ScreenBand.SideMaxItems);
             if (lines.Count == 0) { SideSaid(wing, side.Wings + "; its first reason does not fit " + side.Width.ToString("0") + " units"); return false; }
             var sb = new System.Text.StringBuilder();
+            string contAt = cont.ToString("0.#", CultureInfo.InvariantCulture);
             sb.Append("<b><color=").Append(Theme.GoldHex).Append('>').Append(block.Lead).Append("</color></b>");
+            foreach (var h in head)
+            {
+                if (h.Item == -1) { if (h.Text.Length > 0) sb.Append("  <color=").Append(Theme.GoldHex).Append('>').Append(h.Text).Append("</color>"); continue; }
+                sb.Append('\n');
+                if (h.Cont) sb.Append("<indent=").Append(contAt).Append('>');
+                sb.Append("<color=").Append(Theme.GoldHex).Append('>').Append(h.Text).Append("</color>");
+                if (h.Cont) sb.Append("</indent>");
+            }
             var drawn = new List<string>(); int last = -1;
             foreach (var l in lines)
             {
                 sb.Append('\n');
-                if (l.Cont) sb.Append("<indent=").Append(cont.ToString("0.#", CultureInfo.InvariantCulture)).Append('>').Append(l.Text).Append("</indent>");
+                if (l.Cont) sb.Append("<indent=").Append(contAt).Append('>').Append(l.Text).Append("</indent>");
                 else sb.Append(l.Text);
                 if (l.Item != last) { drawn.Add(items[l.Item]); last = l.Item; }
             }
-            float widest = Mathf.Max(leadW, ScreenBand.Widest(lines, 0f, cont));
-            float width = ScreenBand.BlockWidth(widest, chrome, font, side.Width), height = ScreenBand.BlockHeight(lines.Count + 1, font);
+            float widest = Mathf.Max(ScreenBand.Widest(head, 0f, cont), ScreenBand.Widest(lines, 0f, cont));
+            float width = ScreenBand.BlockWidth(widest, chrome, font, side.Width), height = ScreenBand.BlockHeight(lines.Count + head.Count, font);
             float left = side.Left ? side.Room.X1 - width : side.Room.X0, top = side.Room.Y1 - height;      // beside the card, its bottom on the reason line
             Draw(view, left, top, width, height, font, 1f - ScreenBand.TipFromTop(font) / height, sb.ToString());
-            Log(c, block, drawn, side.At, lines.Count + 1, font * unitPx, items.Count, width, height, left, top, "wings " + wing.ToString("0") + " units a side: " + side.Wings);
+            Log(c, block, drawn, side.At, lines.Count, font * unitPx, items.Count, width, height, left, top, "wings " + wing.ToString("0") + " units a side: " + side.Wings, side.Pos, side.Of, head.Count);
             return true;
         }
 
@@ -565,8 +603,11 @@ namespace YazsCompanion
             else if (_group != null) { Fx.Cancel("why:in"); _group.alpha = 1f; }
         }
 
-        // what was drawn, once per card and offer; where (every band or wing measured) with the offer's first
-        static void Log(Card c, WhyBlock block, List<string> drawn, string at, int lines, float px, int total, float width, float height, float left, float top, string where)
+        // what was drawn, once per card and offer; where (every band or wing measured) with the offer's first. 0.16.0: the side panel's card
+        // of the row (", card 2 of 3") and a header of more than one row (", header in 2 rows") - C16-10; the band's short "goes first" - C16-14;
+        // the band's widest stretch taken because the selected card's own could not hold the first item (", the widest stretch") - C16-15
+        static void Log(Card c, WhyBlock block, List<string> drawn, string at, int lines, float px, int total, float width, float height, float left, float top, string where,
+            int pos, int of, int headRows, bool shortForm = false, bool widest = false)
         {
             if (!_said.Add(Ptr(c.Button))) return;
             bool geo = !_geoSaid; _geoSaid = true;
@@ -574,14 +615,17 @@ namespace YazsCompanion
             if (geo) Shots.Later(0.4f, "why");      // 10-07 review (C-m7): the offer's first WHY as drawn ([Debug] Screenshots)
             Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": #" + c.Rank + " " + c.Name + " " + c.Score.ToString("0.00", CultureInfo.InvariantCulture) + " - " + block.Lead
                 + " '" + string.Join("' | '", drawn) + "' (" + at + ", " + LinesSaid(at, lines) + ", " + px.ToString("0.#", CultureInfo.InvariantCulture) + " px, "
-                + drawn.Count + " of " + total + " shown" + (geo ? "; " + width.ToString("0") + " x " + height.ToString("0") + " units at " + left.ToString("0") + "," + top.ToString("0") + "; " + where : "") + ")");
+                + drawn.Count + " of " + total + " shown" + (of > 0 ? ", card " + pos + " of " + of : "") + (headRows > 1 ? ", header in " + headRows + " rows" : "")
+                + (shortForm ? ", the short \"goes first\"" : "") + (widest ? ", the widest stretch" : "")
+                + (geo ? "; " + width.ToString("0") + " x " + height.ToString("0") + " units at " + left.ToString("0") + "," + top.ToString("0") + "; " + where : "") + ")");
         }
 
         /// <summary>The [why] line's count: the band's lines ("2 lines", its lead inline), the side panel's as "header + 3 lines" (0.15.x, the
-        /// 10-07 review: "4 lines" counted the WHY / CLOSE CALL header, so a full panel read "5 lines" against the user's "up to 4 lines").</summary>
+        /// 10-07 review: "4 lines" counted the WHY / CLOSE CALL header, so a full panel read "5 lines" against the user's "up to 4 lines").
+        /// 0.16.0 (C16-10): the side panel passes its reasons' lines alone (the header may take more than one row: ", header in 2 rows").</summary>
         static string LinesSaid(string at, int lines)
         {
-            if (at != null && at.StartsWith("side", StringComparison.Ordinal)) { int n = Math.Max(0, lines - 1); return "header + " + n + " line" + (n == 1 ? "" : "s"); }
+            if (at != null && at.StartsWith("side", StringComparison.Ordinal)) { int n = Math.Max(0, lines); return "header + " + n + " line" + (n == 1 ? "" : "s"); }
             return lines + " line" + (lines > 1 ? "s" : "");
         }
 
@@ -626,6 +670,20 @@ namespace YazsCompanion
             leadW = Width("<b>" + lead + "</b>", font) + font * 0.6f;
             sepW = Width("x" + Separator + "x", font) - Width("xx", font);      // between two glyphs: TMP leaves trailing spaces out of a width (Q4)
             return list;
+        }
+
+        // 0.16.0 (C16-15, DK-C04): the width a stretch of the band needs to show the block's first item at the 15 px floor (ScreenBand.NeedWidth:
+        // the chrome, the slack, the lead with its gap and the item) - the short "goes first" (WhyBlock.SideItems) when the block has one, the
+        // form the band falls back to (C16-14). 0: no item. Leaves the label at minFont: measure the preferred size's widths after it.
+        static float FirstNeed(WhyBlock block, List<string> items, float minFont)
+        {
+            string first = items.Count > 0 ? items[0] : null;
+            if (!block.SideItems.SequenceEqual(block.Items))
+                foreach (var it in block.SideItems) { string s = Wording.Safe(Names.Text(it)); if (s.Length > 0) { first = s; break; } }
+            if (string.IsNullOrEmpty(first)) return 0f;
+            var w = Widths(new List<string> { first }, minFont, out float leadW, out float sepW, block.Lead);
+            float chrome = 2f * (TipOf(minFont) / 2f + PadUnits * minFont / 30f);
+            return ScreenBand.NeedWidth(leadW, w[0], chrome, minFont);
         }
 
         static float Width(string s, float font)

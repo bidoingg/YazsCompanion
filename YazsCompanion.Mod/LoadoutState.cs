@@ -117,6 +117,9 @@ namespace YazsCompanion
         [MethodImpl(MethodImplOptions.NoInlining)] internal static string LevelText(GameplayBadgeBase b) { return b.GetCurrentLevelDescriptionText(); }
         [MethodImpl(MethodImplOptions.NoInlining)] internal static Sprite IconOf(GameplayBadgeBase b) { return b.icon; }
         [MethodImpl(MethodImplOptions.NoInlining)] static int IdOf(GameplayBadgeBase b) { return b.badgeBaseId; }
+        /// <summary>0.16.0 (C16-07): a Training Yard badge node's badge (badgeBaseId, the id of the advice's levels) - read directly, no facts
+        /// needed (TreeState.Classify runs before any EnsureFacts). A missing field fails here alone; BadgeIdByNodeKey takes over.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)] internal static int BadgeIdOf(SkillTreeUpgradeBadgeBoost n) { var b = n.targetBadge; return b == null ? -1 : IdOf(b); }
         [MethodImpl(MethodImplOptions.NoInlining)] static int SortOf(GameplayBadgeBase b) { return b.badgeSortOrder; }
         [MethodImpl(MethodImplOptions.NoInlining)] static BadgeList RunList() { return GameplayMaster.s_instance.selectedBadges; }
         [MethodImpl(MethodImplOptions.NoInlining)] static int SpecialAt() { return HashtagSystem.NumRequiredForSpecial; }
@@ -261,6 +264,36 @@ namespace YazsCompanion
             if (_build != null) return _build;
             try { _build = Application.version ?? ""; } catch { _build = ""; }
             return _build;
+        }
+
+        // 0.16.0 (C16-07): the fallback of BadgeIdOf - each badge's own tree node's save key -> its id, rebuilt whenever the facts list is a
+        // new one. Never by name or by the key's text: in 1.0.2 two save keys name another badge (Huntress_BadgeBoost_3_Physical has the
+        // key SkillTree_Huntress_BadgeBoost_3_Glacier, Pyro_BadgeBoost_4_Elemental SkillTree_Pyro_BadgeBoost_4_Powerup); the map compares
+        // the same node's key on both sides
+        static Dictionary<string, int> _idByNodeKey; static List<BadgeFacts> _idByNodeKeyOf;
+
+        /// <summary>The badgeBaseId of the badge whose Training Yard node has <paramref name="saveKey"/> (the node's GetSaveFileKey); -1 = none
+        /// (or no facts yet: call EnsureFacts first).</summary>
+        internal static int BadgeIdByNodeKey(string saveKey)
+        {
+            if (_all == null || string.IsNullOrEmpty(saveKey)) return -1;
+            if (_idByNodeKey == null || !ReferenceEquals(_idByNodeKeyOf, _all))
+            {
+                var map = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var f in _all)
+                {
+                    try
+                    {
+                        var b = f.Ref as GameplayBadgeBase; if (b == null) continue;
+                        var node = NodeOf(b); if (node == null) continue;
+                        string key = node.GetSaveFileKey();
+                        if (!string.IsNullOrEmpty(key) && !map.ContainsKey(key)) map[key] = f.Id;
+                    }
+                    catch { }
+                }
+                _idByNodeKey = map; _idByNodeKeyOf = _all;
+            }
+            int id; return _idByNodeKey.TryGetValue(saveKey, out id) ? id : -1;
         }
 
         /// <summary>The facts of a live badge (by its object, else by its id).</summary>
@@ -800,6 +833,7 @@ namespace YazsCompanion
             new[] { "PowerupBase+StatisticBonus", "targetStatistic", "bonusType", "value", "valueTemplate" },
             new[] { "PlayerStatistic", "statisticType" },
             new[] { "SkillTreeUpgradeBase", "GetRuntimeInstance", "IsUnlocked", "GetCurrentLevel", "targetClassProperties", "rankRequirement" },
+            new[] { "SkillTreeUpgradeBadgeBoost", "targetBadge" },                     // 0.16.0 (C16-07): the Training Yard's badge nodes
             new[] { "GameplayMaster", "selectedBadges", "GetPlayerTypeStatisticFinalValue", "currentMainCharacterType" },
             new[] { "GameQuestManager", "Get", "ActiveQuest" },
             new[] { "HashtagSystem", "NumRequiredForSpecial" },
@@ -817,6 +851,7 @@ namespace YazsCompanion
             { "UIViewRunSetup.RefreshSelectedBadgeButtons", "selection changes caught by the 0.25 s signature poll" },
             { "UIViewRunSetup.OnDisable", "the close seen by the tick" },
             { "UIViewRunSetup.Update", "the fallback tick from GameMaster.Update" },
+            { "SkillTreeUpgradeBadgeBoost.targetBadge", "badge nodes matched through the badges' own tree nodes" },
         };
 
         /// <summary>At load: every game member the badge advice reads, looked up in the interop ("[loadout] game members: n of n readable").</summary>

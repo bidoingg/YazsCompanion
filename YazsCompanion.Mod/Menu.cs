@@ -384,7 +384,7 @@ namespace YazsCompanion
         /// <summary>A Rewired action fired: the keyboard's when a key is down this frame, else the pad's. Returns <paramref name="fired"/>.</summary>
         static bool PadOrKey(bool fired) { if (fired && !_firstSaid) FirstInput(KeyboardHeld() ? "key" : "pad"); return fired; }
         static bool ByKey(bool fired) { if (fired && !_firstSaid) FirstInput("key"); return fired; }
-        static string Pointer() { try { if (UnityEngine.Input.touchCount > 0) return "touch"; } catch { } return "mouse"; }
+        internal static string Pointer() { try { if (UnityEngine.Input.touchCount > 0) return "touch"; } catch { } return "mouse"; }     // 0.16.0 (C16-11e): internal - LoadoutEquip's input source
 
         /// <summary>Any keyboard key held (the KeyCodes below the mouse buttons; joystick buttons come after them). Asked only until the
         /// first input is said.</summary>
@@ -1107,7 +1107,7 @@ namespace YazsCompanion
 
         static void BuildAdvice()
         {
-            float x = 320f, w = 3200f, y = 360f, rh = 116f, step = 124f;       // 0.14.0: eleven rows - the eleventh ends at 1804, above the footer rule (1846); 0.15.0: twelve while another mod lends builds
+            float x = 320f, w = 3200f, y = 360f, rh = 116f, step = 124f;       // 0.14.0: eleven rows - the eleventh ends at 1804, above the footer rule (1846); 0.15.0: twelve while another mod lends builds; 0.16.0: twelve / thirteen (Training Yard badges)
             // 0.15.x (the 10-07 review): with the lent builds' row the lead and the first row's label say that lent builds follow that row
             // (the lead stays one line: 193 characters, the old one's 194)
             bool lentRow = Builds.PackSource != null || Plugin.AdviceLentStyle.Value != LentBuildStyle.BuildsOwn;
@@ -1158,6 +1158,8 @@ namespace YazsCompanion
                     : "ON (default): what the quest asks for comes first, with a 'Quest: ...' line under the card - the weapon it wants maxed, the ability or evolution it wants, a health item, the Research Pods and trainings it counts; a pick that would fail it reads AVOID. Kills with a survivor and the like weigh a little. Your build and tag plan stay; the readout gets a QUEST row while a rule changes something."); y += step;
             Cycler(rows, "ad:loadout", 0f, y, w, rh, "Badge advice on the run setup screen", "diamond", () => LoadoutText(Plugin.AdviceLoadout.Value), d => Plugin.AdviceLoadout.Value = Next(Plugin.AdviceLoadout.Value, d),
                 () => LoadoutHelp(Plugin.AdviceLoadout.Value)); y += step;
+            // 0.16.0 (C16-07): the Training Yard's badge nodes follow the badge advice of the run setup screen ([Advice] YardBadges)
+            Cycler(rows, "ad:yardbadges", 0f, y, w, rh, "Training Yard badges", "up", () => Plugin.AdviceYardBadges.Value ? "Follow the badge advice" : "As their ranks open", d => Plugin.AdviceYardBadges.Value = !Plugin.AdviceYardBadges.Value, () => "FOLLOW THE BADGE ADVICE (default): the Training Yard plan unlocks and levels a survivor's badges when the run setup screen's badge advice would equip them for the survivors you can lead (your last run setup's mode and difficulty, else Normal I); a badge no survivor's advice equips waits until the rest of the tab is done. AS THEIR RANKS OPEN: every badge to level 1 as its rank opens, as before."); y += step;
             WalkRows(rows, "ad", w, rh, step, 1000f, ref y);
             EndRows(area, y - (step - rh));
         }
@@ -1320,7 +1322,7 @@ namespace YazsCompanion
             Cycler(rows, "di:badges", 0f, y, w, rh, "Card verdicts", "diamond", () => onOff(Plugin.ShowBadges.Value), d => Plugin.ShowBadges.Value = !Plugin.ShowBadges.Value,
                 () => "Frame the recommended card, hang the RECOMMENDED ribbon under it and print a reason in plain words under every offered card (the ribbon steps aside while the game shows its Skill Tree label). Off also hides the WHY band.", vw); y += step;
             Cycler(rows, "di:why", 0f, y, w, rh, "WHY band on the selected card", null, () => onOff(Plugin.ShowWhy.Value), d => Plugin.ShowWhy.Value = !Plugin.ShowWhy.Value,
-                () => "While a card is selected - the mouse over it, or the controller's focus on it - a band under the cards (on a screen wider than 16:9 whose menus fill the screen: a panel beside the card in the side wing, up to four lines) says the rest of its reasons and what the first card has over it (CLOSE CALL when the first two are nearly even). With a controller a card is always selected, so the band is always up. Needs Card verdicts.", vw); y += step;
+                () => "While a card is selected - the mouse over it, or the controller's focus on it - a band under the cards (on a screen wider than 16:9 whose menus fill the screen: a panel in the side wing, headed with the card's name, up to four reasons) says the rest of its reasons and what the first card has over it (CLOSE CALL when the first two are nearly even). With a controller a card is always selected, so the band is always up. Needs Card verdicts.", vw); y += step;
             // 0.15.0 (C15-06): how large the text on the selection screens is drawn ([General] BadgeScale) - the cards' reason lines, and
             // with them the WHY band and the hint; the preview window shows a reason line and the WHY band at their real size
             CardSampleUi sample = null;         // built with the preview window, below
@@ -1519,6 +1521,10 @@ namespace YazsCompanion
         static WideMode _ppWide; static bool _ppWideChanged, _ppWideWas; static int _ppRestores;      // 0.15.0 (C15-08): the wide Off / back step
         static float _ppLastPick = -10f; static int _ppPauseTries;
         static float _ppResumeAt;           // stage 61: when the walk resumed the run (the first offer is awaited from here)
+        // 0.16.0 (C16-11a): [Debug] PreviewPauseRecruit - one hero joins 3 s into the walk's run (Menu.Walk016.cs): done once a session,
+        // and when the 1-second check is due (realtime; -1 = none)
+        static bool _ppRecruitDone; static float _ppRecruitCheckAt = -1f;
+        static bool PpRecruitKeySet() { try { return Plugin.PreviewPauseRecruit != null && !string.IsNullOrWhiteSpace(Plugin.PreviewPauseRecruit.Value); } catch { return false; } }
         internal static bool FakePauseOnce;
 
         // Quick Run does not always start the run: it can stop at SELECT TEAM LEADER, and it can open the whole run
@@ -1672,7 +1678,7 @@ namespace YazsCompanion
                         _swStage = 4; _swAt = now + 0.5f; return;
                     default:
                         Preview.Restore();
-                        _swDone = true; Plugin.Logger.LogInfo("[loadout] setup walk done"); return;
+                        _swDone = true; Perf.ReportNow(); Plugin.Logger.LogInfo("[loadout] setup walk done"); return;      // fix_a review (H6): the [perf] sums before the done line
                 }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[loadout] setup walk: " + e); Preview.Restore(); _swDone = true; }
@@ -1781,6 +1787,7 @@ namespace YazsCompanion
                             var mm = MainMenu(); if (mm == null) { _ppAt = now + 2f; return; }
                             // C-B1: the window of PreviewResolution first (the setup and menu walks do the same), 2.5 s to settle
                             if (!_ppWindowed) { _ppWindowed = true; if (Preview.Window()) { _ppAt = now + 2.5f; return; } }
+                            DebugRecruitStart();        // 0.16.0 (C16-11a): [Debug] PreviewPauseRecruit read once, as the walk starts (Menu.Walk016.cs)
                             Plugin.Logger.LogInfo("[menu] pause walk: Quick Run"); mm.quickRunButton.onClick.Invoke();
                             _ppAt = now + 4f; _ppStage = 1; _ppStarted = now; return;
                         }
@@ -1792,6 +1799,14 @@ namespace YazsCompanion
                             // exercises the readout, the plan worked out while a screen closes, and the [Debug] Perf sections -
                             // or up to forty when no offer has come by then: a walk without one offer ranked and taken
                             // checks little (still under the fifty seconds after which a killed run leaves a save)
+                            // 0.16.0 (C16-11a): with [Debug] PreviewPauseRecruit set, one hero joins at 3 s (so the level-ups offer four
+                            // cards and the hover tour reaches cards 3 and 4), checked a second later (Menu.Walk016.cs)
+                            if (playing && t >= 3f && !_ppRecruitDone && PpRecruitKeySet()) { _ppRecruitDone = true; DebugRecruit(t); }
+                            if (_ppRecruitCheckAt > 0f && now >= _ppRecruitCheckAt) { _ppRecruitCheckAt = -1f; DebugRecruitCheck(); }
+                            // series r1 fix round: the squad stands still, and with the recruit's second gun no XP gem fell inside the
+                            // pickup ring in 42 s (both r1 walks): no offer by 20 s - the game's ExperienceProgress.Debug_LevelUp() (Menu.Walk016.cs);
+                            // without the recruit at 36 s, still before the 40 s pause below (fix_a review: the 50 s save rule)
+                            if (playing) DebugFirstLevelUp(t, now);
                             bool more = t < 30f || (Advisor.DebugPicks == 0 && t < 40f);
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }      // the first offer's hover tour holds the pick (the run clock stands)
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 0.5f; return; }      // an offer that is up is always answered
@@ -1913,13 +1928,16 @@ namespace YazsCompanion
                             // and put the display back before that offer drew, so the true-Deck window never showed a level-up and the hover
                             // tour never ran) without an answered offer yet, the walk waits here for the first one - its 'offer' / 'why'
                             // shots, the hover tour and the pick happen while the selection screen holds the run clock - and only then puts
-                            // the settings and the display back. Bounded by the play clock (48 s: under the 50 s after which a killed run
-                            // leaves a save) and 20 s of wall clock.
+                            // the settings and the display back. Bounded by the play clock (PauseRecruit.PlayBound, 41 s: the 50 s after
+                            // which a killed run leaves a save, less the ~3 s of play to the done line and the series' ~6 s to its kill -
+                            // fix_a review; 48 s before, which let a walk end past 50 s) and 20 s of wall clock.
                             bool playing = false; float t = 0f;
                             try { var gm = GameplayMaster.s_instance; if (gm != null && gm.currentGameMode != null) { playing = gm.currentGameMode.IsGameplayActive; t = gm.currentGameMode.CurrentModePlayTime; } } catch { }
+                            if (_ppRecruitCheckAt > 0f && now >= _ppRecruitCheckAt) { _ppRecruitCheckAt = -1f; DebugRecruitCheck(); }     // 0.16.0 (C16-11a)
+                            if (playing) DebugFirstLevelUp(t, now);      // series r1 fix round: still no offer at 36 s (20 s with the recruit) - the game's Debug_LevelUp
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 1.0f; return; }
-                            bool waiting = Advisor.DebugPicks == 0 && t < 48f && now - _ppResumeAt < 20f;
+                            bool waiting = Advisor.DebugPicks == 0 && t < PauseRecruit.PlayBound && now - _ppResumeAt < 20f;
                             if (waiting || now - _ppLastPick < 1.0f) { _ppAt = now + 0.25f; return; }
                             if (Advisor.DebugPicks == 0) Plugin.Logger.LogInfo("[menu] pause walk: no offer came after resuming (play clock " + t.ToString("0.0") + " s) - the walk ends without one");
                             _ppStage = 7; _ppAt = now + 0.5f; return;
@@ -1935,7 +1953,7 @@ namespace YazsCompanion
                         // C-B1: the display put back before the done line (the game is stopped from outside soon after it)
                         Preview.Restore(); _ppStage = 8; _ppAt = now + 1.5f; return;
                     default:
-                        _ppDone = true; Plugin.Logger.LogInfo("[menu] pause walk done"); return;
+                        _ppDone = true; Perf.ReportNow(); Plugin.Logger.LogInfo("[menu] pause walk done"); return;      // fix_a review (H6)
                 }
             }
             catch (Exception e)
@@ -2010,7 +2028,7 @@ namespace YazsCompanion
                     case 7:
                         Close(); Preview.Restore(); _pvAt = now + 1.5f; _pvStage = 8; return;
                     default:
-                        _pvDone = true; Plugin.Logger.LogInfo("[menu] preview done"); return;
+                        _pvDone = true; Perf.ReportNow(); Plugin.Logger.LogInfo("[menu] preview done"); return;      // fix_a review (H6)
                 }
             }
             catch (Exception e)

@@ -19,6 +19,7 @@ namespace YazsCompanion
         public readonly Dictionary<string, double> MilitaryStat = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> CritSquad = new List<string>();      // survivors that make crit items shine
         public readonly List<KeyValuePair<string, string>> ItemPairs = new List<KeyValuePair<string, string>>();   // items that name each other: worth more once the other is held
+        public readonly List<KeyValuePair<string, string>> ItemClashes = new List<KeyValuePair<string, string>>(); // 0.16.0 (C16-02): the player's own clashes (the item book has the stated ones)
         public readonly HashSet<string> ScalingItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);        // items that grow over the run: early or not at all
         // 0.13.0 badge advice (Loadout.cs). Every key starts at its code default, so a knowledge.json from an older build (or one
         // that leaves a key out) falls back to the default, never to 0.
@@ -26,6 +27,11 @@ namespace YazsCompanion
         public readonly Dictionary<string, BadgeMode> BadgeModes = BadgeMode.Defaults();                       // game mode enum name -> elite / boss shares, goal, zero list
         public readonly BadgeRules BadgeRules = new BadgeRules();
         public readonly Dictionary<string, BadgeNote> BadgeNotes = new Dictionary<string, BadgeNote>(StringComparer.OrdinalIgnoreCase);   // by short name, asset or id
+        // 0.16.0 (C16-07): the Training Yard's badge steering (knowledge.json "yardRules"): the least a badge's next levels must add per
+        // Training Yard point to be planned (badge-advice points, averaged over the survivors you can lead), and the levels a rank's
+        // stage plans at once. The user's Q06 left at its defaults (floor 0.15).
+        public double YardBadgeFloor = 0.15;
+        public int YardBadgeReach = 2;
         public string Source = "defaults";
 
         public static Knowledge Current = new Knowledge();
@@ -168,6 +174,13 @@ namespace YazsCompanion
                         var two = new List<string>(); foreach (var v in pair.EnumerateArray()) two.Add(v.GetString());
                         if (two.Count == 2) ItemPairs.Add(new KeyValuePair<string, string>(two[0], two[1]));
                     }
+                // 0.16.0 (C16-02): the player's own clashes, the same shape as itemPairs
+                if (root.TryGetProperty("itemClashes", out e))
+                    foreach (var pair in e.EnumerateArray())
+                    {
+                        var two = new List<string>(); foreach (var v in pair.EnumerateArray()) two.Add(v.GetString());
+                        if (two.Count == 2) ItemClashes.Add(new KeyValuePair<string, string>(two[0], two[1]));
+                    }
                 if (root.TryGetProperty("badgeStats", out e) && e.ValueKind == JsonValueKind.Object)
                     foreach (var p in e.EnumerateObject())
                     {
@@ -183,6 +196,8 @@ namespace YazsCompanion
                         m.Read(p.Value);
                     }
                 if (root.TryGetProperty("badgeRules", out e) && e.ValueKind == JsonValueKind.Object) BadgeRules.Read(e);
+                // 0.16.0 (C16-07): the Training Yard's badge steering (a missing key keeps the code default)
+                if (root.TryGetProperty("yardRules", out e) && e.ValueKind == JsonValueKind.Object) { YardBadgeFloor = Math.Max(0, Num(e, "badgeFloor", YardBadgeFloor)); YardBadgeReach = Math.Max(1, Math.Min(5, (int)Num(e, "badgeReach", YardBadgeReach))); }
                 if (root.TryGetProperty("badges", out e) && e.ValueKind == JsonValueKind.Object)
                     foreach (var p in e.EnumerateObject())
                     {
@@ -310,6 +325,8 @@ namespace YazsCompanion
     [""Access Keycard"", ""Black Box""], [""Access Keycard"", ""Jailbroken Phone""], [""Access Keycard"", ""Ragged Patch""], [""Access Keycard"", ""Hijacked Signal""],
     [""Omnigeode"", ""Emerald Gem""], [""Ultra Instinct"", ""One For All""]
   ],
+  // clashes: one item works against the other (worth less once the other is held); the ones the item texts state are built in
+  ""itemClashes"": [],
   // items that grow over the run (a stack per kill, per chest, per second): worth the slot early, not late
   ""scalingItems"": [ ""Ring Of Power"", ""Glass of Milk"", ""Black Box"", ""Wooden Stick"", ""Frozen Heart"", ""99'th Balloon"", ""Hijacked Signal"", ""Reserve Bench"", ""Life Savings"" ],
   ""critSquad"": [ ""Huntress"", ""Ghost"", ""SWAT"", ""Ranger"" ],
@@ -350,7 +367,7 @@ namespace YazsCompanion
     ""DamageToBosses"": { ""w"": 0.85, ""on"": ""boss"", ""why"": ""own multiplier, times the share of damage that hits bosses (mode table) - estimate (unmeasured, U6)"" },
     ""InstantWeaponReloadChance"": { ""w"": 0.30, ""on"": ""clip"", ""why"": ""a skipped reload on clip weapons: reloading is ~30 % of the cycle"" },
     ""InstantAbilityReloadChance"": { ""w"": 1.00, ""on"": ""ability"", ""why"": ""an instant refresh = a free cast: +1 % chance = +1 % casts"" },
-    ""InternalMilitaryTrainingRarityBonus"": { ""w"": 0.12, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""a Rare military card is 2x a Common; military cards ~15 % of run power"" },
+    ""InternalMilitaryTrainingRarityBonus"": { ""w"": 0.12, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""a Rare military card is about 2x a Common (1.9 - 2.5x in 1.0.2); military cards ~15 % of run power"" },
     ""XPMultiplier"": { ""w"": 0.50, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""+4 % XP = ~2 more level-ups in a 20:00 run"" },
     ""Luck"": { ""w"": 0.25, ""on"": ""all"", ""axis"": ""economy"", ""raw"": true, ""why"": ""rarer cards and drops; 4 luck < a Common luck card (5) - estimate (unmeasured, U4)"" },
     ""MagnetRange"": { ""w"": 0.06, ""on"": ""all"", ""axis"": ""economy"", ""why"": ""pickup comfort; XP is collected anyway"" },
@@ -391,6 +408,10 @@ namespace YazsCompanion
     ""swapMargin"": 1.0, ""swapMarginShare"": 0.15, ""buildWantsBoost"": 1.2, ""selectedBuildRerollBoost"": 1.15,
     ""unknownStatPerLevel"": 1.0, ""cashByRunGoal"": [ 0.3, 0.6, 1.2 ]
   },
+  // Training Yard ([General] ShowYard, [Advice] YardBadges): badgeFloor = the least a badge's next levels must add to be planned
+  // (badge-advice points - % squad damage over a run - per Training Yard point, averaged over the survivors you can lead);
+  // badgeReach = the levels a rank's stage plans at once (more levels come after the rank V passives)
+  ""yardRules"": { ""badgeFloor"": 0.15, ""badgeReach"": 2 },
   // your own word on single badges, by short name (""Gunner""), asset name or id: bias = points added, note = replaces the
   // reason shown. Example: ""Leveling"": { ""bias"": 2.0, ""note"": ""I farm the Training Yard"" }
   ""badges"": {
@@ -448,7 +469,7 @@ namespace YazsCompanion
                 { "DamageToBosses", S(0.85, "boss", null, "own multiplier, times the share of damage that hits bosses (mode table) - estimate (unmeasured, U6)") },
                 { "InstantWeaponReloadChance", S(0.30, "clip", null, "a skipped reload on clip weapons: reloading is ~30 % of the cycle") },
                 { "InstantAbilityReloadChance", S(1.00, "ability", null, "an instant refresh = a free cast: +1 % chance = +1 % casts") },
-                { "InternalMilitaryTrainingRarityBonus", S(0.12, "all", "economy", "a Rare military card is 2x a Common; military cards ~15 % of run power") },
+                { "InternalMilitaryTrainingRarityBonus", S(0.12, "all", "economy", "a Rare military card is about 2x a Common (1.9 - 2.5x in 1.0.2); military cards ~15 % of run power") },
                 { "XPMultiplier", S(0.50, "all", "economy", "+4 % XP = ~2 more level-ups in a 20:00 run") },
                 { "Luck", S(0.25, "all", "economy", "rarer cards and drops; 4 luck < a Common luck card (5) - estimate (unmeasured, U4)", raw: true) },
                 { "MagnetRange", S(0.06, "all", "economy", "pickup comfort; XP is collected anyway") },
