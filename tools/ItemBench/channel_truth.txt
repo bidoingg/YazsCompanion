@@ -1,0 +1,157 @@
+# channel_truth.txt - the one truth table of the "Beta updates" switch (Companion 0.16.2; the beta channel plan's critic
+# item 15, 2026-10-12). Which channel a reader takes from the environment variable YAZS_BETA and the Companion's
+# config file BepInEx\config\bidoi.yazs.companion.cfg, section [Update], key BetaUpdates (a bool, default true).
+# One file, three kinds of reader: the Companion's bench (UpdaterCases.cs), and every other program that follows the
+# switch (an updater, another plugin) - each reads this file and must give every row's answer.
+#
+# The rules:
+#   1. YAZS_BETA, any case: 0 off false no -> stable; 1 on true yes -> beta; unset, empty or anything else -> ignored
+#      (rule 2 decides). The value is taken as it is: no trimming.
+#   2. The config value, as BepInEx reads it: the [Update] section and the BetaUpdates key matched exactly (case
+#      included), lines starting with # skipped, the text after the first = trimmed; true / false in any case -> that;
+#      any other text (yes, 0, an empty value ...) -> true, BepInEx's own default for the key.
+#   3. No file, no [Update] section, or no BetaUpdates key in it: the Companion binds the key (default true) -> beta;
+#      a reader OUTSIDE the Companion -> stable (no setting: a machine whose Companion is older than 0.16.2 has none).
+#
+# Columns, separated by "|" (the spaces around each column are not part of it):
+#   env        YAZS_BETA: <unset> (not in the environment), <empty> (set to ""), or the value as set
+#   cfg        what the config file holds - the value written after "BetaUpdates = " in the file below, or one of:
+#                <no file>        the file does not exist
+#                <no section>     the file below without its [Update] section (and without the key)
+#                <other section>  "BetaUpdates = false" under [General], and no [Update] section
+#                <no key>         the [Update] section without a BetaUpdates line
+#                <key case>       "betaupdates = false" in [Update] (the key in another case: not the key)
+#                <commented>      "# BetaUpdates = false" in [Update] (a comment)
+#                <empty>          "BetaUpdates =" with nothing after it
+#   companion  the channel the Companion itself follows: beta | stable
+#   outside    the channel a reader outside the Companion follows: beta | stable
+#   from       what decided it: env (YAZS_BETA), cfg (the config value), missing (rule 3)
+#
+# The file a reader builds for a cfg value v (written with CRLF line endings, as BepInEx writes it on Windows and under
+# Proton; a reader must accept LF as well):
+#   ## Settings file was created by plugin YAZS Companion v0.16.2
+#   ## Plugin GUID: bidoi.yazs.companion
+#   <blank>
+#   [General]
+#   <blank>
+#   ShowBadges = true
+#   <blank>
+#   [Update]
+#   <blank>
+#   ## At every launch, fetch the release feed ...
+#   # Setting type: Boolean
+#   # Default value: true
+#   AutoUpdate = true
+#   <blank>
+#   # Setting type: Boolean
+#   # Default value: true
+#   BetaUpdates = v
+#   <blank>
+#   [Logging]
+#   <blank>
+#   Verbose = false
+#
+# env        | cfg             | companion | outside | from
+<unset>    | true            | beta      | beta    | cfg
+<unset>    | True            | beta      | beta    | cfg
+<unset>    | TRUE            | beta      | beta    | cfg
+<unset>    | tRuE            | beta      | beta    | cfg
+<unset>    | false           | stable    | stable  | cfg
+<unset>    | False           | stable    | stable  | cfg
+<unset>    | FALSE           | stable    | stable  | cfg
+<unset>    | yes             | beta      | beta    | cfg
+<unset>    | no              | beta      | beta    | cfg
+<unset>    | 1               | beta      | beta    | cfg
+<unset>    | 0               | beta      | beta    | cfg
+<unset>    | on              | beta      | beta    | cfg
+<unset>    | off             | beta      | beta    | cfg
+<unset>    | maybe           | beta      | beta    | cfg
+<unset>    | <empty>         | beta      | beta    | cfg
+<unset>    | <no key>        | beta      | stable  | missing
+<unset>    | <no section>    | beta      | stable  | missing
+<unset>    | <other section> | beta      | stable  | missing
+<unset>    | <key case>      | beta      | stable  | missing
+<unset>    | <commented>     | beta      | stable  | missing
+<unset>    | <no file>       | beta      | stable  | missing
+<empty>    | true            | beta      | beta    | cfg
+<empty>    | false           | stable    | stable  | cfg
+<empty>    | maybe           | beta      | beta    | cfg
+<empty>    | <no file>       | beta      | stable  | missing
+maybe      | true            | beta      | beta    | cfg
+maybe      | false           | stable    | stable  | cfg
+maybe      | maybe           | beta      | beta    | cfg
+maybe      | <no file>       | beta      | stable  | missing
+2          | true            | beta      | beta    | cfg
+2          | false           | stable    | stable  | cfg
+2          | maybe           | beta      | beta    | cfg
+2          | <no file>       | beta      | stable  | missing
+-1         | true            | beta      | beta    | cfg
+-1         | false           | stable    | stable  | cfg
+-1         | maybe           | beta      | beta    | cfg
+-1         | <no file>       | beta      | stable  | missing
+stable     | true            | beta      | beta    | cfg
+stable     | false           | stable    | stable  | cfg
+stable     | maybe           | beta      | beta    | cfg
+stable     | <no file>       | beta      | stable  | missing
+beta       | true            | beta      | beta    | cfg
+beta       | false           | stable    | stable  | cfg
+beta       | maybe           | beta      | beta    | cfg
+beta       | <no file>       | beta      | stable  | missing
+enabled    | true            | beta      | beta    | cfg
+enabled    | false           | stable    | stable  | cfg
+enabled    | maybe           | beta      | beta    | cfg
+enabled    | <no file>       | beta      | stable  | missing
+0          | true            | stable    | stable  | env
+0          | maybe           | stable    | stable  | env
+0          | <no file>       | stable    | stable  | env
+off        | true            | stable    | stable  | env
+off        | maybe           | stable    | stable  | env
+off        | <no file>       | stable    | stable  | env
+false      | true            | stable    | stable  | env
+false      | maybe           | stable    | stable  | env
+false      | <no file>       | stable    | stable  | env
+no         | true            | stable    | stable  | env
+no         | maybe           | stable    | stable  | env
+no         | <no file>       | stable    | stable  | env
+OFF        | true            | stable    | stable  | env
+OFF        | maybe           | stable    | stable  | env
+OFF        | <no file>       | stable    | stable  | env
+Off        | true            | stable    | stable  | env
+Off        | maybe           | stable    | stable  | env
+Off        | <no file>       | stable    | stable  | env
+FALSE      | true            | stable    | stable  | env
+FALSE      | maybe           | stable    | stable  | env
+FALSE      | <no file>       | stable    | stable  | env
+No         | true            | stable    | stable  | env
+No         | maybe           | stable    | stable  | env
+No         | <no file>       | stable    | stable  | env
+NO         | true            | stable    | stable  | env
+NO         | maybe           | stable    | stable  | env
+NO         | <no file>       | stable    | stable  | env
+1          | false           | beta      | beta    | env
+1          | <no key>        | beta      | beta    | env
+1          | <no file>       | beta      | beta    | env
+on         | false           | beta      | beta    | env
+on         | <no key>        | beta      | beta    | env
+on         | <no file>       | beta      | beta    | env
+true       | false           | beta      | beta    | env
+true       | <no key>        | beta      | beta    | env
+true       | <no file>       | beta      | beta    | env
+yes        | false           | beta      | beta    | env
+yes        | <no key>        | beta      | beta    | env
+yes        | <no file>       | beta      | beta    | env
+ON         | false           | beta      | beta    | env
+ON         | <no key>        | beta      | beta    | env
+ON         | <no file>       | beta      | beta    | env
+On         | false           | beta      | beta    | env
+On         | <no key>        | beta      | beta    | env
+On         | <no file>       | beta      | beta    | env
+TRUE       | false           | beta      | beta    | env
+TRUE       | <no key>        | beta      | beta    | env
+TRUE       | <no file>       | beta      | beta    | env
+Yes        | false           | beta      | beta    | env
+Yes        | <no key>        | beta      | beta    | env
+Yes        | <no file>       | beta      | beta    | env
+YES        | false           | beta      | beta    | env
+YES        | <no key>        | beta      | beta    | env
+YES        | <no file>       | beta      | beta    | env

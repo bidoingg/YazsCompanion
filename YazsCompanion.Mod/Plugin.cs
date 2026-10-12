@@ -24,8 +24,11 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.16.1";
+        public const string VERSION = "0.16.2";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
+        /// <summary>0.16.2 (the beta channel, WP1): the test builds' feed - the rolling prerelease 'beta' whose one asset latest.json
+        /// names the newest published build (a release or a test build) and the withdrawn ones (release.ps1 -Beta / -Pull write it).</summary>
+        public const string DefaultBetaUrl = "https://github.com/bidoingg/YazsCompanion/releases/download/beta/latest.json";
 
         /// <summary>The commit this DLL was built from (0.15.0): "abc1234", "abc1234-dirty" (built with uncommitted changes), or null
         /// (built outside git). The build stamps it into InformationalVersion ("0.15.0+abc1234", YazsCompanion.Mod.csproj); the load
@@ -34,12 +37,22 @@ namespace YazsCompanion
         {
             get
             {
+                string v = Info;
+                int plus = v == null ? -1 : v.IndexOf('+');
+                return plus >= 0 && plus + 1 < v.Length ? v.Substring(plus + 1) : null;
+            }
+        }
+
+        /// <summary>0.16.2: the whole InformationalVersion ("0.16.2+abc1234"): the rename probe's update_probe.txt and the deploy's
+        /// dev_build.txt name a build by it.</summary>
+        internal static string Info
+        {
+            get
+            {
                 try
                 {
                     var a = (System.Reflection.AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(typeof(Plugin).Assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
-                    string v = a != null ? a.InformationalVersion : null;
-                    int plus = v == null ? -1 : v.IndexOf('+');
-                    return plus >= 0 && plus + 1 < v.Length ? v.Substring(plus + 1) : null;
+                    return a != null ? a.InformationalVersion : null;
                 }
                 catch { return null; }
             }
@@ -68,6 +81,7 @@ namespace YazsCompanion
         internal static ConfigEntry<bool> Verbose;
         internal static ConfigEntry<bool> AutoUpdate;
         internal static ConfigEntry<string> UpdateUrl;
+        internal static ConfigEntry<bool> BetaUpdates;                 // 0.16.2 (the beta channel, WP1): take test builds - the DISPLAY tab's "Beta updates" row
         internal static ConfigEntry<bool> Screenshots;
         internal static ConfigEntry<bool> PreviewFlag;
         internal static ConfigEntry<bool> PreviewYard;
@@ -207,8 +221,10 @@ namespace YazsCompanion
             WideMenus.Bind(Config);         // 0.14.0: [General] WideMenus (+ [Debug] WideMenusWings)
             LogSquad = Config.Bind("Logging", "LogSquad", true, "Log the squad state (weapons, abilities with levels, items) with every offer.");
             Verbose = Config.Bind("Logging", "Verbose", false, "Also log every raw field of every card and survivor (for validating the ranking).");
-            AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the screen says so). The older file is removed by the new build.");
-            UpdateUrl = Config.Bind("Update", "UpdateUrl", DefaultUpdateUrl, "The latest.json of the release feed to check.");
+            AutoUpdate = Config.Bind("Update", "AutoUpdate", true, "At every launch, fetch the release feed (and, with BetaUpdates on, the test builds' feed) and download a newer mod build next to this one; it runs from the next launch on (a notice at the top of the menus says so). The older file is removed by the new build.");
+            UpdateUrl = Config.Bind("Update", "UpdateUrl", DefaultUpdateUrl, "The latest.json of the release feed to check. Another feed set here is checked alone, and only ever moves forward (for tests).");
+            // 0.16.2 (the beta channel, WP1 / decision D2: on by default for everyone; the description is the plan's 3.1, generic words)
+            BetaUpdates = Config.Bind("Update", "BetaUpdates", true, "Take test builds (the mod menu's DISPLAY > Beta updates). On = the newest published build, test builds (GitHub pre-releases) included; a release that follows replaces them. Off = releases only: a test build running now is swapped for the current release at the next start. Other mods may follow this setting for their own updates. The environment variable YAZS_BETA = 0 or 1 overrides it (on the Steam Deck: YAZS_BETA=0 first in the launch options).");
             Screenshots = Config.Bind("Debug", "Screenshots", false, "Save PNGs of the game frame into BepInEx\\plugins\\YazsCompanion\\shots at the moments that matter for checking the UI: offers, picks, sidebar changes (0.3 / 1.5 / 3.5 s into the highlight), its show/hide, and one a minute during play. For validating a build; off by default, at most 90 per session.");
             PreviewFlag = Config.Bind("Debug", "Preview", false, "Show the PLAN sidebar with sample data on the main menu about 5 s after launch (two survivors, then the change highlight after a pick, then a full squad, then the fade-out) and save a screenshot of each stage into the shots folder whatever the Screenshots setting. For checking the design without playing a run; off by default.");
             PreviewYard = Config.Bind("Debug", "PreviewYard", false, "About 6 s after launch, open the Training Yard from the main menu, walk its tabs and save a screenshot of each into the shots folder, then go back. For checking the Training Yard advice without touching the controls; off by default.");
@@ -272,7 +288,10 @@ namespace YazsCompanion
                     // 0.16.0: the item book or the 0.15.0 keyword reading (C16-02); a pretend list just set warns once a session (C16-01)
                     if (def.Section == "Debug" && def.Key == "ItemKeywords" && ItemKeywords != null) { try { ItemBook.UseKeywords(ItemKeywords.Value); } catch (Exception e) { Logger.LogWarning("[items] ItemKeywords not applied: " + e.Message); } }
                     if (def.Section == "Debug" && def.Key == "HeldPretend") PretendWarnOnce();
-                    Menu.SettingSaved(written);
+                    // 0.16.2 (WP1 / WP2): Beta updates (or AutoUpdate) changed - check again now, so whatever it needs is downloaded and
+                    // checked before the restart; the menu's SAVED says when it applies
+                    if (def.Section == "Update") { Updater.Recheck(UpdaterSetup()); Menu.SettingSaved(written, null, "applies at the next start"); }
+                    else Menu.SettingSaved(written);
                 }
                 catch { }
             };
@@ -287,7 +306,12 @@ namespace YazsCompanion
             try { BepInEx.Logging.Logger.Listeners.Add(new FileListener(Path.Combine(PluginDir, "companion.log"))); }
             catch (Exception e) { Logger.LogWarning("file log unavailable: " + e.Message); }
 
-            Updater.CleanupSiblings();
+            // 0.16.2 (the beta channel, WP1): the siblings and the update check come first - before the knowledge, the API and every
+            // Harmony patch (the check stood after them up to 0.16.1) - so a build whose Load() dies further down still fetches its fix,
+            // or with Beta updates off the release. The check runs on a worker; nothing here waits for the network.
+            try { Updater.CleanupSiblings(Assembly.GetExecutingAssembly().Location, VERSION); } catch (Exception e) { Logger.LogWarning("[update] cleanup skipped: " + e.Message); }
+            try { Updater.Wine = Updater.DetectWine(); Updater.CheckInBackground(UpdaterSetup()); }
+            catch (Exception e) { Logger.LogWarning("[update] check not started: " + e.GetType().Name + ": " + e.Message); }
             var knowledge = Knowledge.Load(Path.Combine(PluginDir, "knowledge.json"));
             Builds.Logger = s => Logger.LogInfo("[builds] " + s);
             Builds.Load(Path.Combine(PluginDir, "builds.json"));
@@ -308,9 +332,8 @@ namespace YazsCompanion
                 + "; panel " + (ShowPanel.Value ? "on" : "off") + "; auto-update " + (AutoUpdate.Value ? "on" : "off") + "; knowledge from " + knowledge.Source
                 + " (" + knowledge.ItemTier.Count + " items, " + knowledge.AbilityTier.Count + " abilities, " + knowledge.RescueTier.Count + " survivors)");
 
-            if (AutoUpdate.Value) Updater.CheckInBackground(UpdateUrl.Value, VERSION, PluginDir);
             // 0.12.2 (F02): a game patch that adds a card class shows in the first lines of the log - after the updater, in its own try:
-            // nothing it meets (a game build older than the interop's card classes) may stop the update check
+            // nothing it meets (a game build older than the interop's card classes) may stop the update check (0.16.2: it started above)
             try { Badge.CheckCardClasses(); } catch (Exception e) { Logger.LogWarning("[badge] card classes not checked: " + e.Message); }
             // 0.13.0: the badge advice's hooks, the game members it reads and the badge classes of this game build - in their own try
             // 0.14.0: the WHY band's hooks (each card class's OnSelected, the one OnDeselected they share)
@@ -321,6 +344,24 @@ namespace YazsCompanion
             PretendWarnOnce();          // C16-01: [Debug] HeldPretend names items - one Warning a session
             try { if (!string.IsNullOrWhiteSpace(PreviewPauseRecruit.Value) && !PreviewPause.Value) Logger.LogInfo("[menu] PreviewPauseRecruit is set but PreviewPause is off - nothing happens"); }      // C16-11a
             catch { }
+        }
+
+        /// <summary>0.16.2 (WP1): what an update check reads - both feeds (the default UpdateUrl), or a hand-set UpdateUrl alone (forward
+        /// only, as up to 0.16.1); the switch and AutoUpdate read at every check, so a change from the menu takes at the next one.</summary>
+        internal static Updater.Setup UpdaterSetup()
+        {
+            string url = (UpdateUrl.Value ?? "").Trim();
+            bool own = url.Length == 0 || string.Equals(url, DefaultUpdateUrl, StringComparison.OrdinalIgnoreCase);
+            return new Updater.Setup
+            {
+                StableUrl = own ? DefaultUpdateUrl : url,
+                BetaUrl = own ? DefaultBetaUrl : null,
+                Running = Assembly.GetExecutingAssembly().Location,
+                Version = VERSION, Commit = Commit, Info = Info,
+                Dir = PluginDir,
+                CfgBeta = () => BetaUpdates.Value,
+                AutoUpdate = () => AutoUpdate.Value,
+            };
         }
 
         // ---- 0.16.0 (C16-01): [Debug] HeldPretend - the held-item rules switched on as if the named items were held (advice test only).

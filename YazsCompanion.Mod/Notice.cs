@@ -2,6 +2,10 @@
 // survives scene changes, shown from the moment an update has been downloaded until the game is
 // restarted. Ticked from GameMaster.Update (alive in every scene) and, as a backup, from the sidebar tick.
 // Styled like the RECOMMENDED ribbon: a dark plate, gold text, a gold rule underneath and a diamond on each end.
+// 0.16.2 (the beta channel, WP2 / 3.2 of the plan): drawn outside a run only - hidden in play, back on the pause menu and every
+// menu (at a test build's cadence a strip up through every run would break "nothing blocks the screen in play"); its text names
+// the kind of build ("YAZS COMPANION 0.16.2 (RELEASE) DOWNLOADED - RESTART THE GAME TO APPLY", UpdateRules.NoticeText), and it
+// goes when the download it named was set aside (Updater: a newer download the switch no longer wants, critic 2).
 using System;
 using Il2CppInterop.Runtime;
 using UnityEngine;
@@ -12,7 +16,7 @@ namespace YazsCompanion
 {
     internal static class Notice
     {
-        const float StripW = 1700f, StripH = 76f, Tip = 30f;
+        const float StripW = 2100f, StripH = 76f, Tip = 30f;      // 0.16.2: 1700 -> 2100 for the kind in the text (and the text shrinks to fit)
 
         static GameObject _go;
         static TextMeshProUGUI _text;
@@ -27,10 +31,15 @@ namespace YazsCompanion
                 if (now < _next) return;
                 _next = now + 1f;
                 string pending = Updater.Pending;
-                if (pending == null) return;
-                bool alive = false; try { alive = _go != null && _text != null && _go.activeInHierarchy; } catch { }
-                if (!alive && !Create()) return;
-                string msg = "YAZS COMPANION " + pending + " DOWNLOADED   -   RESTART THE GAME TO APPLY";      // 0.14.0: "-", the font has no bullet
+                bool exists = false; try { exists = _go != null && _text != null; } catch { }
+                if (pending == null || Menu.InRun())
+                {
+                    if (exists && _go.activeSelf) _go.SetActive(false);
+                    return;
+                }
+                if (!exists && !Create()) return;
+                if (!_go.activeSelf) _go.SetActive(true);
+                string msg = UpdateRules.NoticeText(pending, Updater.PendingKind);      // 0.14.0: "-", the font has no bullet
                 if (msg != _shown) { _text.text = msg; _shown = msg; Plugin.Logger.LogInfo("[notice] " + msg); }
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[notice] " + e.Message); _next = Time.realtimeSinceStartup + 10f; }
@@ -66,6 +75,8 @@ namespace YazsCompanion
             Ui.Stretch(text.rectTransform, Tip, 0, Tip, 0);
             text.fontSize = 36f; text.fontStyle = FontStyles.Bold; text.alignment = TextAlignmentOptions.Center;
             text.color = Theme.GoldText; text.characterSpacing = 4f;
+            // 0.16.2: one line that shrinks to the strip (down to 26) rather than wrapping or running past the plate
+            try { text.enableWordWrapping = false; text.fontSizeMax = 36f; text.fontSizeMin = 26f; text.enableAutoSizing = true; } catch { }
 
             _go = go; _text = text; _shown = "";
             Plugin.Logger.LogInfo("[notice] overlay created using label '" + template.name + "'");

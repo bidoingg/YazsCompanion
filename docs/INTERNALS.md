@@ -138,6 +138,15 @@ new file). Two tools read a log:
   game mode by phase of the run, the exact ties for the first place by the rule that settled them, and the Training Yard
   purchases against the advice shown, and badge levels bought while held (a session that only visited the Training Yard
   is reported too). Standard library only; `--self-test` checks it against a made-up log.
+- **The updater** (0.16.2, `UpdaterCases.cs`, also in `--no-data`): the decision table of the two feeds (UP1), the labels, the
+  `YAZS_BETA` words, `tools\ItemBench\channel_truth.txt` - the "Beta updates" switch's one truth table, which every program that
+  follows the switch reads too (YAZS_BETA x the cfg value x a missing file / section / key -> channel, for the Companion and for a
+  reader outside it) -, latest.json and the https rule, development builds, the menu's words in every state, a scratch plugin
+  folder (the kept release - only ever the release the last answered check recorded -, `.off`, `.offnext`, the probe), whole
+  checks over in-memory feeds and a real loaded DLL renamed.
+  `pwsh -NoProfile -File tools\updater_drill.ps1` (the bench built first) runs the REAL check - HttpClient, files, renames -
+  against a feed served by `python -I -m http.server --bind 127.0.0.1` at `http://localhost:<port>`, 18 scenes over scratch
+  plugin folders whose running DLL is loaded as BepInEx loads a plugin; last line `updater drill: N of M PASS`.
 
 ## Prerequisites (already done on this machine)
 
@@ -170,6 +179,15 @@ with the console window turned off, the mod DLL (it writes `knowledge.json` on i
 `CHANGELOG.md`, and a `README-INSTALL.txt` with the Deck steps. Entry names use forward slashes, so Linux extracts real
 folders.
 
+Since 0.16.2 the deploy (not `-p:Deploy=false`) first removes the downloaded and set-aside builds beside it
+(`YazsCompanionMod-*.dll`, `*.probe.dll`, `*.dll.off`, `*.dll.offnext`: a development build never ties with a download of the
+same version), then writes `dev_build.txt` next to the DLL (its InformationalVersion and SHA-256): while that file names the
+running build, the auto-update leaves it alone (`release.ps1`'s local deploy removes it - also when the PC already runs the very
+bytes it publishes -, so do the updater's own installs, and the Companion drops it once a feed publishes the bytes that run).
+The deploy guard also reads the "Beta updates" switch as the Companion reads it (`YAZS_BETA`, else `[Update] BetaUpdates`, no
+key = On) and refuses while it is Off - releases only on this machine - unless `-p:DeployOverRelease=true`; try it alone with
+`dotnet msbuild YazsCompanion.Mod.csproj -t:YazsDeployGuard -p:YazsCompanionCfg=<a test cfg>`.
+
 Install on the Deck: Desktop Mode, extract the zip into the game folder (Steam > Manage > Browse local
 files), set the launch option `WINEDLLOVERRIDES="winhttp=n,b" %command%`, use Proton Experimental or 9+,
 launch. `BepInEx/LogOutput.log` proves it loaded. Verified on the user's Deck (Wine 11, SD card path
@@ -199,6 +217,28 @@ progress. Without it the PC kept a pre-release build of the same version that th
 versions only). Bump `VERSION` in `Plugin.cs` first; the tag and the feed come from it. `-DryRun` runs every gate and
 prints the commands it would run, publishing nothing (`-AllowDirty` lets a dry run go on a tree with uncommitted
 changes); `-Draft` publishes later; `-NoBuild` reuses the build only when the identity gate finds it built from HEAD.
+Test builds (0.16.2): `release.ps1 -Beta` runs every gate and publishes the build as a GitHub pre-release (`--prerelease`,
+never the latest release, no Drive copy; its VERSION must be above the newest published build - plain numbers, never a
+`-beta.N` suffix). `-Promote <version> -VerdictFile <file>` makes a published test build the release without a rebuild (`gh
+release edit v<version> --prerelease=false --latest`, then the Drive copy of its zip); the verdict file's first line must start
+`PROMOTE-READY` and name the version (and, when it names one, the tag's commit), its second line the newest evidence time it
+judged - refused when the file is older than that time or the PC's companion.log was written after it - and the Deck upload
+folders it judged (`Deck uploads: <n>, newest <folder>, set <hash>`, the hash = the first 12 hex digits of SHA-256 over the sorted
+`yyyyMMdd_HHmmss` folder names joined by a newline): refused when it says `Deck not read`, names none, `-DeckLogs` (default the
+Drive's Deck logs folder) cannot be reached or holds another set now - a late upload keeps the Deck's own file times, so only its
+folder shows it (`-Force` promotes anyway: write the reason down). `-Pull <version>` withdraws a build: the test builds' feed lists it under `withdrawn` and names
+the newest build left (every updater on it steps back), "latest" moves to the newest release left when it was the release, then
+the release becomes a draft; refused when no build at or above 0.16.2 (the floor) would remain. The test builds' feed is the
+rolling pre-release `beta` with one asset, `latest.json` (a copy of the newest published build's own, plus `withdrawn`); every
+publish re-points it (a release only when its version is at or above the feed's) and the first one creates it. A new `channel`
+gate checks the floor and the feed before the build; latest.json carries `commit` from 0.16.2 on, and `dist\latest.json` stays
+the copy of the release's feed (a test build's own is staged in `dist\test\`, a dry run's in `dist\dryrun\`, the test builds'
+feed in `dist\beta\`; a promotion or a pull that moves the release writes the release's back). The local deploy judges the
+highest `YazsCompanionMod*.dll` of the plugin folder (after a step back that is the versioned file), copies the release in as
+`YazsCompanionMod.dll` and sets the other builds aside; for a test build only while the PC's switch is On. When the PC already
+runs the released bytes (`the PC already runs the released DLL`) nothing is copied, and `dev_build.txt` goes all the same. `-DryRun
+-TestState <json>` tries -Beta / -Promote / -Pull against a made-up GitHub (the feeds and the release list; `pluginDir` a made-up
+plugin folder for the local deploy's verdict).
 Load-test the build in the game before releasing: a build that fails to load leaves every auto-updated install without
 the mod until the next release.
 
@@ -399,6 +439,38 @@ frames (`a click selected the button - given up again, as in 0.16.0 (cleared)` o
 does not press the plate the click pressed. TabToggle from the keyboard (the game maps T onto it on the PC) is refused
 (`a press by key not taken - the game's TabToggle key is not the button's ...`): the keyboard's key is `LoadoutEquipKey`
 alone (C5).
+
+**The updater** (0.16.2; `Updater.cs`, the decision in `UpdateRules.cs`). One line per check, the channel's record:
+`[update] channel beta (Beta updates on): release 0.16.2, newest 0.16.3, running 0.16.3 = test build - up to date` - the reason
+is `Beta updates on|off` or `set by YAZS_BETA=0`; `release` the release feed's version (`none` when it did not answer); `newest`
+the test builds' feed's (`none` when there is none yet, `feed failed`); the running build is a `release`, a `test build`, a
+`development build` or a `withdrawn test build`; the result is `up to date`, `downloaded 0.16.3 (test build) - it runs from the
+next start`, `0.16.3 (test build) already downloaded - ...`, `stepped down: the release 0.16.2 downloaded and checked, this build
+set aside - 0.16.2 runs from the next start` (or `the kept release 0.16.2 put back`), `step down: ... but this build could not be
+set aside - a request was left for a launcher`, `not installed: sha256 mismatch` / `the file is not 0.16.2` / `the download
+failed` / `a non-https download url`, or a reason nothing moved (`a development build - updates leave it alone`, `the
+test-builds feed did not answer`, `the release feed did not answer`, `no feed answered`, `the feeds name only a withdrawn build`
+(a pull's first seconds, when the release feed still names the build just withdrawn), `would go below 0.16.2`, `ahead of every
+published build - a local build`, `a hand-set feed (UpdateUrl) only goes forward`). With AutoUpdate off: `[update] channel beta
+(Beta updates on): auto-update is off ([Update] AutoUpdate) - nothing checked` (not the check line's shape: readers of the
+channel line skip it). The rename probe, once a session: `[update] setting this build aside works here` or `[update] setting this
+build aside is refused here (<why>)` (tried once per build, kept in `update_probe.txt`). The release as the last answered check
+saw it is kept in `update_release.txt` (line 1 the version, line 2 `sha256 <hex>`; a launcher may read it to put the release
+back without a network, so the format does not change without them): `[update] the release is 0.16.2 (kept in
+update_release.txt: ...)` - the only build a `.keep` may be. Around them: `[update] the release 0.16.2 is kept as YazsCompanionMod-0.16.2.dll.keep
+(the way back from the test build, there before its first start)` (a test build downloaded while the release runs), `[update]
+kept YazsCompanionMod-0.16.2.dll as YazsCompanionMod-0.16.2.dll.keep (the release 0.16.2, the way back from this build)`,
+`[update] removed the kept build <file> (<why>)` (not the recorded release: at most one `.keep`, always the release), `[update]
+the release <file> stays beside this build: <file>.offnext asks a launcher to set this build aside`, `[update] removed the
+set-aside build ...`, `[update] the test build 0.16.3 is set aside (YazsCompanionMod-0.16.3.dll.off); 0.16.2 runs from the next
+start`, `[update] the kept release 0.16.2 is back as YazsCompanionMod-0.16.2.dll (its SHA-256 is the feed's) - no download`,
+`[update] <file> set aside (newer than 0.16.2, which this check wants)` / `(a withdrawn build)` / `(the test build downloaded this
+session; Beta updates are off)`, `[update] <file> put back: it runs again from the next start`, a Warning `[update] could not set
+the test build aside (<why>) - it keeps running; a request was left for the launcher (<file>.offnext)` (the strip then promises
+no restart), `[update] removed a stale dev_build.txt (...)` / `[update] removed dev_build.txt: this build is the published 0.16.2
+(its SHA-256 is the feed's)`, `[update] the test-builds feed did not answer (...) - asking again in 60 s` (once a session, and
+once more after each change of the switch). The strip: `[notice] YAZS COMPANION 0.16.2 (RELEASE) DOWNLOADED  -  RESTART THE GAME
+TO APPLY`.
 
 **The test walks** (0.16.0, debug only): `[menu] pause walk: PreviewPauseRecruit <Auto|Class> - one hero joins 3 s into
 the run`, then `[menu] pause walk: recruit <Class> joined at 3.0 s (Unlock Character <Class> Powerup, OnApply(false)) -
@@ -685,7 +757,9 @@ SHOWN - ...`).
 `UIViewSkillTree.Update`; every tween has its own clock advanced by the frame time capped at 50 ms, so a hitch delays an
 entrance instead of swallowing it; unscaled, so it runs on paused selection screens). The auto-updater's downloaded DLL
 waits next to the running one because BepInEx loads only the highest `[BepInPlugin]` version of a GUID and skips the
-others ("because a newer version exists"); the restart strip (`Notice.cs`) lives on its own overlay canvas that
+others ("because a newer version exists"); since 0.16.2 a step back renames the running file to `<file>.off` once the lower
+build is verified beside it (Windows lets a loaded DLL be renamed, never overwritten or deleted; under Proton the probe line
+says), and the update check starts at the top of `Load()`; the restart strip (`Notice.cs`, drawn outside a run only) lives on its own overlay canvas that
 survives scene changes, ticked from `GameMaster.Update`; the feed's notes are written for the new version when it is
 downloaded (or found downloaded) and for the running version at a check that finds it the latest, and older versions'
 notes are removed (`[update] release notes of 0.15.0 kept in notes_0.15.0.txt`).

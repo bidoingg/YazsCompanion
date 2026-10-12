@@ -5,6 +5,99 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.2 (2026-10-12) - Beta updates: test builds, and the way back
+
+From this release on, new builds can go out as test builds (GitHub pre-releases) before they become the release, and one
+switch says which you take. 0.16.2 is the first build that knows both feeds and the first that can step back to a release;
+it changes no advice and nothing drawn in play.
+
+### The switch: DISPLAY > Beta updates
+
+- The last row of the mod menu's DISPLAY tab, **Beta updates**: `On - newest builds` (the default) takes the newest published
+  build, test builds included - a release that follows replaces them; `Off - releases only` takes releases only, and a test
+  build that runs now is swapped for the current release at the next start. In the cfg: `[Update] BetaUpdates = true`.
+- The environment variable `YAZS_BETA` overrides it: `0` / `off` / `false` / `no` = releases only, `1` / `on` / `true` / `yes` =
+  test builds (any case; anything else is ignored). On the Steam Deck it goes first in the launch options; the row then says
+  `Set by the launch options (YAZS_BETA=0)` and its arrows do nothing.
+- The row's help says what runs and what the switch would do: `This mod: 0.16.3, a test build (release 0.16.2, newest 0.16.3) -
+  up to date, checked 19:42. Off would put the release 0.16.2 back at the next start.`; after a change `The release 0.16.2 is
+  downloaded and checked; the test build 0.16.3 is set aside - the release runs from the next start.`; a development build,
+  auto-update off, offline, a machine that cannot set a build aside each say so. It ends with the rescue for when the game cannot
+  reach the menu: on Windows `set BetaUpdates = false under [Update] in BepInEx\config\bidoi.yazs.companion.cfg`, under Proton
+  `put YAZS_BETA=0 first in the launch options` (the mod tells the two apart).
+- A change is checked at once (the download is done before the restart) and says `SAVED - applies at the next start`; the tab's
+  lead line says so too. The menu header names the kind of build: `v0.16.3  TEST BUILD`, `v0.16.4  DEV`, a release bare.
+- The restart strip names the kind (`YAZS COMPANION 0.16.2 (RELEASE) DOWNLOADED - RESTART THE GAME TO APPLY`) and is drawn on
+  the menus only: hidden in a run, back on the pause menu.
+
+### Two feeds, one check
+
+- The release feed is unchanged (`releases/latest/download/latest.json`). The test builds' feed is new:
+  `releases/download/beta/latest.json`, the newest published build (a release or a test build) plus a `withdrawn` list. Both are
+  fetched side by side at every check; latest.json also carries the build's `commit` now. Older Companions ignore both fields and
+  never see a test build.
+- The check moved to the top of the load, before the knowledge, the API and every hook: a build that fails further down still
+  fetches its fix (or, with Off, the release).
+- One line per check says it all: `[update] channel beta (Beta updates on): release 0.16.2, newest 0.16.3, running 0.16.3 = test
+  build - up to date`. A test-builds feed that does not answer moves nothing (`the test-builds feed did not answer`; the build
+  stays `test build`) and is asked once more a minute later; a missing one (404) means no test build is out.
+- A hand-set `UpdateUrl` is checked alone and only ever moves forward, as before.
+
+### Going back
+
+- Off on a published test build, or a build the maintainer withdraws, steps back: the lower build is downloaded, its SHA-256 and
+  its own version stamp checked, and only then the running file is renamed `<file>.off` (the next start loads the lower build and
+  removes the .off). Turned back On before the restart, the file is put back.
+- The kept release: when a test build is downloaded while the release runs, the release is copied beside it at once as
+  `YazsCompanionMod-<version>.dll.keep` (about 1 MB), so going back needs no download - and a launcher can put it back before
+  the game starts, even when a test build fails before the menu. It is only ever the release: every check that reaches the
+  release feed notes that build in `update_release.txt` (version and SHA-256), and a `.keep` is kept only while it is that
+  build - at most one, never just the next older build; a start that runs the release again drops it.
+- A newer build downloaded while On is set aside when the switch goes Off before the restart (and a withdrawn download likewise),
+  so it cannot win the next start - also when a feed does not answer that check.
+- Where a loaded file cannot be renamed, the build keeps running, a `<file>.offnext` request is left for a launcher (the release
+  waits beside it, so the next start downloads nothing), the restart strip does not promise a restart, and the help says how to
+  do it by hand. Whether renaming works is probed once per build at the first start (`[update] setting this build aside works
+  here` or `... is refused here (why)`) - before it is ever needed.
+- A withdrawn build is never downloaded, kept or called up to date, also in the seconds after a pull when the release feed still
+  names it.
+- Never below 0.16.2 (the floor): the first build that can step back.
+
+### For the maintainer
+
+- `release.ps1 -Beta` publishes a test build (`--prerelease`, never the latest release, no Drive copy, above the newest published
+  build); `-Promote <version> -VerdictFile <file>` makes a test build the release without a rebuild (refused without a
+  PROMOTE-READY verdict that names the version, whose commit is the tag's, that is not older than the evidence it names or the
+  PC's companion.log, and that judged exactly the Deck upload folders `-DeckLogs` holds now - a late upload is caught by its
+  folder; `-Force` overrides); `-Pull <version>` withdraws a build (the feed steps every updater back, the latest
+  release moves when needed, the release becomes a draft; refused when nothing at or above 0.16.2 would remain). Every publish
+  re-points the test builds' feed (the first creates the rolling prerelease `beta`). A new `channel` gate checks the floor and the
+  feed. `-TestState` lets the dry runs try made-up GitHub states.
+- The release's local deploy judges the highest `YazsCompanionMod*.dll` of the PC's plugin folder (after a step back that is the
+  versioned file), puts the release in as `YazsCompanionMod.dll` and sets the others aside; for a test build only while the PC's
+  switch is On.
+- Development builds are left alone by the updater: a commit with `-dirty`, a version published from another commit, or the
+  `dev_build.txt` that `build.cmd`'s deploy now writes beside the DLL (its version and SHA-256; release.ps1's local deploy -
+  also when the PC already runs the bytes it publishes - and the updater's own installs remove it, and it gives way once a feed
+  publishes the very bytes that run). The deploy first removes downloaded and set-aside builds (no tie with a download of the
+  same version), and refuses while the PC's switch is Off unless `-p:DeployOverRelease=true`.
+- `tools\ItemBench\channel_truth.txt`: the switch's one truth table (YAZS_BETA x the cfg x a missing key -> channel), read by
+  every program that follows the switch. `tools\updater_drill.ps1`: the real check against a localhost feed.
+
+### How it was checked, and what was not seen
+
+- Bench (`--strict` and `--no-data`): UpdaterCases UP1 - UP11 - the decision table, the labels, YAZS_BETA, the 103 rows of the
+  truth table for the Companion and an outside reader, latest.json and the https rule (plain http only from a feed at
+  `http://localhost`), development builds, the words of every state, a scratch plugin folder, whole checks over in-memory feeds
+  (download, step back with and without the kept release, refusals, withdrawn builds, a failed feed and its retry, the dev
+  marker), and a real loaded DLL set aside and put back. The drill (`tools\updater_drill.ps1`): 18 scenes against a real HTTP
+  feed. release.ps1's dry runs of a release, a test build, a promotion and a pull; the deploy guard against made-up cfgs.
+- Seen in a PC launch on 10-12 (a development build, so the updater left it alone, as it should): `[update] setting this build
+  aside works here`, `[update] the release is 0.16.1 (kept in update_release.txt ...)` and `[update] channel beta (Beta updates
+  on): release 0.16.1, newest none, running 0.16.2 = development build`. Not seen yet: the DISPLAY row on screen, a real step
+  back to a release, and the Steam Deck - its probe line answers whether a build can be set aside under Proton (the Steam Deck's
+  updater sets one aside by renames before the game starts either way).
+
 ## 0.16.1 (2026-10-11) - seen live
 
 Fixes from the first PC session with 0.16.0 (10-10, 3440 x 1440): a chest line that named the wrong gain and a WHY whose

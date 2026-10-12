@@ -82,19 +82,82 @@
       ]]></Code>
     </Task>
   </UsingTask>
+  <!-- 2026-10-12 (0.16.2, the beta channel WP3): the guard also follows the "Beta updates" switch. While it reads Off on this machine
+       (releases only), a development build is not copied over the release that was chosen - unless -p:DeployOverRelease=true (a test
+       of a new build; put the release back afterwards). The switch is read as the Companion reads it (tools\ItemBench\channel_truth.txt,
+       the companion column): YAZS_BETA = 0 off false no / 1 on true yes (any case) first; else [Update] BetaUpdates in the cfg as
+       BepInEx reads it (true / false any case, other text = true); no file, section or key = On (the Companion binds the key with its
+       default). Test it alone, nothing deployed:
+         dotnet msbuild YazsCompanion.Mod.csproj -t:YazsDeployGuard -nologo -p:YazsCompanionCfg=C:\temp\test.cfg [-p:DeployOverRelease=true] -->
+  <PropertyGroup>
+    <YazsPluginDir Condition="'$(YazsPluginDir)' == ''">$(BepInExDir)\plugins\YazsCompanion</YazsPluginDir>
+    <YazsCompanionCfg Condition="'$(YazsCompanionCfg)' == ''">$(BepInExDir)\config\bidoi.yazs.companion.cfg</YazsCompanionCfg>
+  </PropertyGroup>
+  <UsingTask TaskName="YazsBetaSwitchTask" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <CfgPath ParameterType="System.String" Required="true" />
+      <On ParameterType="System.Boolean" Output="true" />
+      <From ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        On = true; From = "no setting: the Companion's default";
+        string env = Environment.GetEnvironmentVariable("YAZS_BETA");
+        string e = (env ?? "").ToLowerInvariant();
+        if (e == "0" || e == "off" || e == "false" || e == "no") { On = false; From = "YAZS_BETA=" + env; }
+        else if (e == "1" || e == "on" || e == "true" || e == "yes") { On = true; From = "YAZS_BETA=" + env; }
+        else if (File.Exists(CfgPath))
+        {
+            string section = null;
+            foreach (var raw in File.ReadAllLines(CfgPath))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("#")) continue;
+                if (line.StartsWith("[") && line.EndsWith("]")) { section = line.Substring(1, line.Length - 2); continue; }
+                int eq = line.IndexOf('=');
+                if (eq < 0 || section != "Update" || line.Substring(0, eq).Trim() != "BetaUpdates") continue;
+                bool b; string v = line.Substring(eq + 1).Trim();
+                On = bool.TryParse(v, out b) ? b : true;
+                From = "[Update] BetaUpdates = " + v + " in " + CfgPath;
+            }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
   <Target Name="YazsDeployGuard">
     <YazsGameRunningTask ProcessName="$(YazsGameProcess)">
       <Output TaskParameter="Count" PropertyName="_YazsGameRunning" />
       <Output TaskParameter="Ids" PropertyName="_YazsGameIds" />
     </YazsGameRunningTask>
-    <Error Condition="'$(_YazsGameRunning)' != '0'" Code="YAZSDEPLOY" Text="DEPLOY REFUSED: '$(YazsGameProcess)' is running (process id $(_YazsGameIds)) - nothing was copied into $(BepInExDir)\plugins\YazsCompanion. The compiled DLL is in bin\Release: close the game, then run build.cmd again (compile only: build.cmd -p:Deploy=false)." />
-    <Message Importance="high" Text="Deploy guard: '$(YazsGameProcess)' is not running - the deploy goes on" />
+    <Error Condition="'$(_YazsGameRunning)' != '0'" Code="YAZSDEPLOY" Text="DEPLOY REFUSED: '$(YazsGameProcess)' is running (process id $(_YazsGameIds)) - nothing was copied into $(YazsPluginDir). The compiled DLL is in bin\Release: close the game, then run build.cmd again (compile only: build.cmd -p:Deploy=false)." />
+    <YazsBetaSwitchTask CfgPath="$(YazsCompanionCfg)">
+      <Output TaskParameter="On" PropertyName="_YazsBetaOn" />
+      <Output TaskParameter="From" PropertyName="_YazsBetaFrom" />
+    </YazsBetaSwitchTask>
+    <Error Condition="'$(_YazsBetaOn)' != 'true' and '$(DeployOverRelease)' != 'true'" Code="YAZSDEPLOY" Text="DEPLOY REFUSED: Beta updates is Off on this machine ($(_YazsBetaFrom)) - it takes releases only, so a development build is not copied over the release in $(YazsPluginDir). The compiled DLL is in bin\Release. To deploy anyway (a test of a new build; put the release back afterwards): build.cmd -p:DeployOverRelease=true." />
+    <Message Importance="high" Text="Deploy guard: '$(YazsGameProcess)' is not running; Beta updates $(_YazsBetaOn) ($(_YazsBetaFrom))$(DeployOverRelease.Replace('true', ', DeployOverRelease')) - the deploy goes on" />
   </Target>
 
-  <!-- Deploy straight into BepInEx/plugins after a build (skip with -p:Deploy=false); refused while the game runs (YazsDeployGuard above) -->
+  <!-- Deploy straight into BepInEx/plugins after a build (skip with -p:Deploy=false); refused while the game runs (YazsDeployGuard above).
+       0.16.2 (the beta channel, WP3 deploy hygiene + critic 7): first the downloaded builds (YazsCompanionMod-*.dll) and the set-aside
+       ones (*.dll.off, *.dll.offnext) go - a development build never ties with a downloaded release of the same VERSION, and nothing set
+       aside comes back -; then dev_build.txt names this build (its InformationalVersion and SHA-256): while it does, the Companion's
+       auto-update leaves the build alone. release.ps1's local deploy and the updater's own installs remove it (and so does the
+       Companion once a feed publishes these very bytes). Review fix (2026-10-12): a rename probe cut short on the plain name
+       (YazsCompanionMod.probe.dll, the same version as this build: a tie) goes too. -->
   <Target Name="DeployToGame" AfterTargets="Build" DependsOnTargets="YazsDeployGuard" Condition="'$(Deploy)' != 'false'">
-    <MakeDir Directories="$(BepInExDir)\plugins\YazsCompanion" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BepInExDir)\plugins\YazsCompanion" />
-    <Message Importance="high" Text="Deployed $(TargetFileName) to $(BepInExDir)\plugins\YazsCompanion" />
+    <MakeDir Directories="$(YazsPluginDir)" />
+    <ItemGroup>
+      <_YazsStale Include="$(YazsPluginDir)\YazsCompanionMod-*.dll;$(YazsPluginDir)\YazsCompanionMod*.probe.dll;$(YazsPluginDir)\YazsCompanionMod*.dll.off;$(YazsPluginDir)\YazsCompanionMod*.dll.offnext" />
+    </ItemGroup>
+    <Delete Files="@(_YazsStale)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(YazsPluginDir)" />
+    <GetFileHash Files="$(TargetPath)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_YazsDllHash" />
+    </GetFileHash>
+    <WriteLinesToFile File="$(YazsPluginDir)\dev_build.txt" Lines="$(InformationalVersion);sha256 $(_YazsDllHash);a development deploy (build.cmd): the auto-update leaves this build alone while this file names it" Overwrite="true" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) to $(YazsPluginDir) ($(InformationalVersion); removed first: @(_YazsStale->'%(Filename)%(Extension)', ', '))" />
   </Target>
 </Project>

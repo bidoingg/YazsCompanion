@@ -143,6 +143,7 @@ namespace YazsCompanion.Bench
             bad += DeckRoundCases.Run(Items, probePath);                // 0.16.1 R-02 / R-03 / R-05 / R-07: the 10-11 Steam Deck round's card words (DeckRoundCases.cs)
             bad += EquipOrderCases.Run();                               // 0.16.1: EQUIP ADVICE in the advice's order, the UNDO's row, the pad's Y (EquipOrderCases.cs)
             bad += PcRoundCases.RunPure();                              // 0.16.1 (PC round 10-11) COMPANION-LOG-03 / -06: Extermination's horizon, one 'Boosted by' (PcRoundCases.cs)
+            bad += UpdaterCases.Run();                                  // 0.16.2 (the beta channel WP1 - WP3): the switch, two feeds, the way back (UpdaterCases.cs)
             return bad == 0 ? 0 : 3;
         }
 

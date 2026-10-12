@@ -121,8 +121,9 @@ namespace YazsCompanion
         /// <summary>The main menu is up right now, by its own Update (no search).</summary>
         public static bool OnMainMenu { get { return _mainHooked && Live(_mainView, _mainFrame); } }
         /// <summary>A run is being played right now (not paused): neither menu can be up, so nothing is searched for. The
-        /// main menu scene has a GameplayMaster of its own, without a game mode - hence the mode test.</summary>
-        static bool InRun()
+        /// main menu scene has a GameplayMaster of its own, without a game mode - hence the mode test. 0.16.2: internal - the restart
+        /// strip (Notice.cs) is drawn only while this is false.</summary>
+        internal static bool InRun()
         {
             try
             {
@@ -220,18 +221,20 @@ namespace YazsCompanion
                 ReadInput();
                 if (_dirty && _open) { _dirty = false; BuildBody(); }
                 if (_open) PreviewUpkeep();
+                if (_open) BetaUpkeep();        // 0.16.2 (WP2): the Beta updates footer follows the update check
             }
             catch (Exception e) { Plugin.Logger.LogError("[menu] " + e); Close(); }
         }
 
         /// <summary>A setting was written (BepInEx saves the file inside the setter; builds.json is written by Builds): say so
-        /// in the header for a moment. Called from the config's SettingChanged and after every change to the builds.</summary>
-        internal static void SettingSaved(bool written, string why = null)
+        /// in the header for a moment. Called from the config's SettingChanged and after every change to the builds. 0.16.2 (WP2):
+        /// <paramref name="note"/> replaces "applies at once" (the Beta updates row: "applies at the next start").</summary>
+        internal static void SettingSaved(bool written, string why = null, string note = null)
         {
             if (!_open || _saved == null) return;
             try
             {
-                _saved.text = written ? "SAVED  <color=" + Theme.DimHex + ">-  applies at once</color>" : "NOT SAVED  <color=" + Theme.DimHex + ">-  " + (why ?? "the file could not be written") + "</color>";
+                _saved.text = written ? "SAVED  <color=" + Theme.DimHex + ">-  " + (note ?? "applies at once") + "</color>" : "NOT SAVED  <color=" + Theme.DimHex + ">-  " + (why ?? "the file could not be written") + "</color>";
                 _saved.color = written ? Theme.GoldText : Theme.Rust;
                 var label = _saved;
                 Fx.Cancel("menu.saved");
@@ -707,7 +710,9 @@ namespace YazsCompanion
             var crest = Pic(_stage, "Crest", 120, 36, 260, 260, Art.Emblem, Color.white);
             crest.pivot = new Vector2(0.5f, 0.5f); crest.anchoredPosition = new Vector2(250, -166);
             Text(_stage, "Title", 410, 66, 1500, 110, 96f, Theme.White, "<color=" + Theme.GoldHex + ">YAZS</color> COMPANION", TextAlignmentOptions.Left, true);
-            Text(_stage, "Sub", 414, 182, 1500, 60, 42f, Theme.Grey, "v" + Plugin.VERSION + "   -   builds, advice and display", TextAlignmentOptions.Left);
+            // 0.16.2 (WP2): the version says what kind of build runs - "v0.16.3  TEST BUILD", "v0.16.4  DEV", a release bare
+            string tag = UpdateRules.HeaderTag(Updater.State.Label);
+            Text(_stage, "Sub", 414, 182, 1500, 60, 42f, Theme.Grey, "v" + Plugin.VERSION + (tag.Length > 0 ? "  <color=" + Theme.GoldHex + ">" + tag + "</color>" : "") + "   -   builds, advice and display", TextAlignmentOptions.Left);
             _tabBar = Place(Ui.NewRect("Tabs", _stage), 0, 0, W, H);
             BuildTabs();
             _saved = Text(_stage, "Saved", 2520f, 238f, 1200f, 60f, 38f, Theme.GoldText, "", TextAlignmentOptions.Right, true);
@@ -1311,7 +1316,8 @@ namespace YazsCompanion
             // the settings on the left; on the right the PLAN readout itself, as it will look in play with the settings as
             // they stand - same canvas geometry as the HUD, so the same pixels
             float x = 120f, w = 2060f, y = 352f, rh = 116f, step = 124f, vw = 800f;      // 0.14.0: eleven rows (the ADVICE tab's geometry) - the eleventh ends at 1800, above the footer rule (1846); 0.15.0: twelve, eleven show at once
-            var lead = Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws, saved as you change it and applied at once. The preview shows the PLAN readout and the card text at their real size.", TextAlignmentOptions.Left);
+            // 0.16.2 (WP2): the lead names the one row that does not apply at once (180 characters: one line at 3600 units, as ADVICE's 193 at 3200)
+            var lead = Text(_body, "Lead", x, y, 3600f, 60, 44f, Theme.Grey, "What the mod draws, saved as you change it and applied at once - Beta updates at the next start. The preview shows the PLAN readout and the card text at their real size.", TextAlignmentOptions.Left);
             y += 92f;
             // 0.15.0 (C15-05): the rows scroll as on the ADVICE tab; the preview window is as tall as the area, not as the rows
             float top = y, room = RowsRoom(top, rh, step);
@@ -1346,6 +1352,12 @@ namespace YazsCompanion
             Cycler(rows, "di:motion", 0f, y, w, rh, "Motion", null, () => onOff(Plugin.Motion.Value), d => { Plugin.Motion.Value = !Plugin.Motion.Value; redraw(); },
                 () => "Animate what the mod draws. During play nothing loops; the flair is kept for menus like this one.", vw); y += step;
             Cycler(rows, "di:wide", 0f, y, w, rh, "Menus on wide screens", null, WideMenus.Label, WideMenus.Step, WideMenus.Help, vw); y += step;
+            // 0.16.2 (the beta channel, WP2 / 3.1-3.2 of the plan): the one switch for test builds, last on the tab - it lives here because
+            // this menu outlives any other mod's broken test build. The value is the switch as the updater reads it (YAZS_BETA wins:
+            // then left / right do nothing); the footer is Updater.State in words and follows it while the row has the focus (Tick)
+            Cycler(rows, BetaRow, 0f, y, w, rh, "Beta updates", null, () => UpdateRules.RowValue(BetaOn()),
+                d => { if (UpdateRules.EnvChoice(Environment.GetEnvironmentVariable(UpdateRules.EnvName)).HasValue) return; Plugin.BetaUpdates.Value = !Plugin.BetaUpdates.Value; },
+                BetaFooter, vw); y += step;
             WalkRows(rows, "di", w, rh, step, vw, ref y);
             EndRows(area, y - (step - rh));
 
@@ -1362,6 +1374,34 @@ namespace YazsCompanion
             Ui.Frame(Place(Ui.NewRect("Edge", _body), wx, top, ww, wh), "Line", 0, 3, Theme.GoldRule, 18f);
             _pvCaption = Text(_body, "PreviewCaption", wx, top + wh + 18f, ww, 96f, 42f, Theme.Grey, "", TextAlignmentOptions.TopLeft, false, true);
             _pvWindow = host; _pvDirty = true;
+        }
+
+        // ---------------------------------------------------------------- DISPLAY: Beta updates (0.16.2, the beta channel WP2)
+        const string BetaRow = "di:beta";
+        static int _betaSeen = -1;
+
+        /// <summary>The switch as the updater reads it: YAZS_BETA when it says 0 / 1 (or one of their words), else [Update] BetaUpdates.</summary>
+        static bool BetaOn() { return UpdateRules.Switch(Environment.GetEnvironmentVariable(UpdateRules.EnvName), Plugin.BetaUpdates.Value).Beta; }
+
+        /// <summary>The row's footer: the last check's snapshot in words (UpdateRules.Footer, benched), with the switch as it stands
+        /// now - changed since that check, the footer says a check is under way (the change asks for one at once).</summary>
+        static string BetaFooter()
+        {
+            var st = Updater.State.Copy();
+            var now = UpdateRules.Switch(Environment.GetEnvironmentVariable(UpdateRules.EnvName), Plugin.BetaUpdates.Value);
+            if (st.Switch != null && st.Switch.Beta != now.Beta && !st.AutoUpdateOff) st.Checking = true;
+            st.Switch = now; st.Wine = Updater.Wine;
+            if (string.IsNullOrEmpty(st.Running)) st.Running = Plugin.VERSION;
+            return UpdateRules.Footer(st);
+        }
+
+        /// <summary>A new update snapshot while the menu is open: the row and its footer read it again when the row has the focus.</summary>
+        static void BetaUpkeep()
+        {
+            int seen = Updater.State.Changes;
+            if (seen == _betaSeen) return;
+            _betaSeen = seen;
+            if (_focus != null && _focus.Key == BetaRow) { if (_focus.Refresh != null) _focus.Refresh(); SetDesc(BetaFooter()); }
         }
 
         // ---------------------------------------------------------------- MODS: the options other mods registered (Api\Extensions.cs)

@@ -733,16 +733,26 @@ proves it loaded. Building from source, the package and the release: [docs/INTER
 
 ## Auto-update
 
-At every launch the mod fetches `https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json`
-in the background (`Updater.cs`). If it names a newer version, the DLL is downloaded next to the running one as
-`YazsCompanionMod-<version>.dll`, verified against the published SHA-256 and checked to be a managed assembly.
-Nothing in use is replaced: the next launch runs the new file (BepInEx loads only the highest version of a plugin),
-which deletes the older copies. Until that restart a gold strip at the top of the screen reads `YAZS COMPANION x.y.z
-DOWNLOADED - RESTART THE GAME TO APPLY`. `knowledge.json` is refreshed with a build's new defaults only if you never
-edited it (a hash stamp in `knowledge.json.stamp`; the old file is kept as `.bak`). Config: `AutoUpdate` (default on)
-and `UpdateUrl` in `BepInEx\config\bidoi.yazs.companion.cfg`. Offline launches just skip the check; a bad download is
-discarded. Since 0.15.0 the feed's release notes are kept next to the DLL as `notes_<version>.txt`, for a later
-what's-new card (the running and newer versions' only). Log lines: `[update] ...`, `[notice] ...`.
+At every launch the mod checks two feeds in the background (`Updater.cs`): the releases and, since 0.16.2, the test builds (GitHub
+pre-releases) - `https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json` and
+`.../releases/download/beta/latest.json`. A newer build is downloaded next to the running one as `YazsCompanionMod-<version>.dll`,
+verified against the published SHA-256 and checked to be a managed assembly. Nothing in use is replaced: the next launch runs the
+new file (BepInEx loads only the highest version), which deletes the older copies (not a kept release, below). Until that restart
+a gold strip on the menus (never in a run) reads `YAZS COMPANION x.y.z (RELEASE) DOWNLOADED - RESTART THE GAME TO APPLY`.
+
+**Beta updates** (mod menu > DISPLAY, the last row; `[Update] BetaUpdates`, on by default): On takes the newest published build,
+test builds included - a release that follows replaces them; Off takes releases only, and a test build that runs now is swapped
+for the current release at the next start (the release is downloaded and checked first - or taken from the `.dll.keep` copy
+kept when the test build came -, then the test build is renamed `.dll.off`). The row's help says what runs and what the switch
+would do; the environment variable `YAZS_BETA` = `0` or `1` overrides it. **If a test build keeps the game from reaching the
+menu**: on Windows set `BetaUpdates = false` under `[Update]` in `BepInEx\config\bidoi.yazs.companion.cfg`; on the Steam Deck put
+`YAZS_BETA=0` first in the launch options. Other mods may follow the same switch for their own updates.
+
+`knowledge.json` is refreshed with a build's new defaults only if you never edited it (a hash stamp in `knowledge.json.stamp`;
+the old file is kept as `.bak`). Config: `AutoUpdate` (default on), `BetaUpdates`, `UpdateUrl` (a feed set here is checked
+alone, forward only). Offline launches skip the check, a bad download is discarded, a development build is left alone. The
+feed's release notes are kept as `notes_<version>.txt` (the running and newer versions' only). Log lines: `[update] ...` (one
+`[update] channel ...` line per check), `[notice] ...`.
 
 ## Logs
 

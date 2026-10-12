@@ -11,6 +11,7 @@
 //        0.16.0: ItemBench --write-itembook [--probe <probe.json>] rewrites itembook_expected.txt (ItemBookCases.cs, C16-02)
 //        0.16.0: --timings (with a full or --strict run) prints YB8's milliseconds (YardBadgeCases.cs); without it a bench log is
 //        the same bytes on every run of one tree
+//        0.16.2: ItemBench --updater-drill --root <dir> --base http://localhost:<port> --dlls <dir> ... (tools\updater_drill.ps1 runs it)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -37,6 +38,8 @@ namespace YazsCompanion.Bench
             int ci = Array.IndexOf(args, "--check-log");
             if (ci >= 0) return LogCheck.Command(args, ci);
             if (args.Contains("--api-surface")) return ApiContract.Print();       // 0.15.0 (C15-01): the start of a new api_v<N>.txt
+            // 0.16.2 (the beta channel, WP1): the host of tools\updater_drill.ps1 - the real update check against a localhost feed (UpdaterDrill.cs)
+            if (args.Contains("--updater-drill")) return UpdaterDrill.Run(args);
             // 0.13.0: replay the badge advice of a log (no game data needed, so before any path handling)
             int ri = Array.IndexOf(args, "--replay-loadout");
             if (ri >= 0) return Loadouts.ReplayFile(ri + 1 < args.Length ? args[ri + 1] : null);
