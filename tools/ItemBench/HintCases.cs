@@ -198,7 +198,9 @@ namespace YazsCompanion.Bench
             // SKIP: the no-item quest, every card AVOID (C16-01c: for an empty slot), the weak cards
             var nq = In("Chest", 0.3, 8, K("Pills", 0.4, 1), K("Potato", 0.4, 2)); nq.NoItems = "take no items";
             var q = run("SKIP, a quest that wants no item", nq);
-            var av = run("SKIP, every card AVOID", In("LevelUp", 0.5, 0, K("Medical Drone", 0.85, 1, "ability"), K("Stimpack", 0.6, 2, "ability")));
+            var avIn = In("LevelUp", 0.5, 0, K("Medical Drone", 0.85, 1, "ability"), K("Stimpack", 0.6, 2, "ability"));
+            foreach (var k in avIn.Cards) k.Skipped = true;            // 0.16.1 (C-8): a real cost - the build skips them ('every card is weak' otherwise)
+            var av = run("SKIP, every card AVOID", avIn);
             var slot = In("Chest", 0.3, 0, K("Emerald Gem", 0.35, 1), K("Ruby Gem", 0.30, 2)); slot.SlotBy = "Wooden Stick"; foreach (var k in slot.Cards) k.HeldCost = 2.17;
             var sl = run("SKIP, every card AVOID for an empty slot (Wooden Stick)", slot);
             var hurt = In("Chest", 0.6, 0, K("Teddy Bear", 1.3, 1), K("Golden Key", 1.1, 2)); hurt.Health = 0.6; hurt.Survival = 1.3;
@@ -326,6 +328,7 @@ namespace YazsCompanion.Bench
         static void Skips()
         {
             var avoid = In("LevelUp", 0.5, 0, K("A", 0.85, 1, "ability"), K("B", 0.6, 2, "ability"), K("C", 0.4, 3, "ability"));
+            foreach (var k in avoid.Cards) k.Skipped = true;           // 0.16.1 (C-8): abilities the build skips - a real cost (SeenLiveCases: the weak words)
             var a = ScreenCall.Decide(avoid);
             Check("H2", "every card AVOID, no reroll: SKIP", a.Show && a.Action == HintAction.Skip && a.Words.StartsWith("every card here would hurt"), "'" + a.Words + "'");
             var avoidR = In("LevelUp", 0.5, 4, K("A", 0.85, 1, "ability"), K("B", 0.6, 2, "ability"));

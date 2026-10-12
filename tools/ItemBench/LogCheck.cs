@@ -18,8 +18,9 @@
 // 0.16.0 (C16-11e): after the checks, INFO sections - the proofs a log may hold, not checks: per kind 'seen N, first at
 // HH:MM:SS: <text>' or 'not in this log', each kind's pattern anchored on the line's message (after '[Info] '):
 //   real-session proofs  first-input (prints the source: pad / key / mouse / touch), yard (a Training Yard purchase or
-//                        refund), equip (EQUIP ADVICE / UNDO pressed - prints how: touch / mouse / key; a line of a build
-//                        before 0.16.0 has no source and counts apart), ribbon (the badge ribbon stepped aside)
+//                        refund), equip (EQUIP ADVICE / UNDO pressed - prints how: touch / mouse / key, 0.16.1 pad; a line of
+//                        a build before 0.16.0 has no source and counts apart), equip-order (0.16.1: an EQUIP that left the
+//                        slots in the advice's order), ribbon (the badge ribbon stepped aside)
 //   quest proofs         quest-story (a '[quest] ... -> story objective ...' step)
 //   walk proofs          side-panel (a WHY panel in a side wing), results (a results-screen shot step), recruit-tour (the
 //                        pause walk's hover tour over cards 2 to 4 of 4)
@@ -114,7 +115,9 @@ namespace YazsCompanion.Bench
         {
             new ProofKind("first-input", "real-session proofs", @"^\[menu\] first input this session: (pad|key|mouse|touch)$", source: true),
             new ProofKind("yard", "real-session proofs", @"^\[yard\] (bought|refunded) "),
-            new ProofKind("equip", "real-session proofs", @"^\[loadout\] equip: (?:EQUIP ADVICE \(advice #\d+\)|UNDO) pressed(?: by (touch|mouse|key))? - ", source: true),
+            new ProofKind("equip", "real-session proofs", @"^\[loadout\] equip: (?:EQUIP ADVICE \(advice #\d+\)|UNDO) pressed(?: by (touch|mouse|key|pad))? - ", source: true),
+            // 0.16.1: an EQUIP run that left the slots in the advice's order (its done line; 'NOT the advice's order' does not count)
+            new ProofKind("equip-order", "real-session proofs", @"^\[loadout\] equip: done - \d+ press(?:es)?, the selection is now \S+ = slots [#\dQ\- ]+, the advice's order$"),
             new ProofKind("ribbon", "real-session proofs", @"^\[badge\] ribbon stepped aside "),
             // Quest.cs writes the quest's key, or 'the quest' when it has none
             new ProofKind("quest-story", "quest proofs", @"^\[quest\] (?:\S+|the quest) -> story objective "),
@@ -758,9 +761,27 @@ namespace YazsCompanion.Bench
                 && Pt(pBoth, "equip") == "seen 2, first at 10:04:00: touch (touch 1, key 1); 1 without a source (a build before 0.16.0)",
                 Pt(pBoth, "equip"));
             Check("L15", "--expect equip: not met by the 0.15.0 line, met by the new one", !exOld.Pass && exOld.Text.EndsWith("none says how it was pressed") && exNew.Pass, exOld.Text + " | " + exNew.Text);
-            string leSrc = Src("LoadoutEquip.cs");
+            string leSrc = Src("LoadoutEquip.cs"), lvSrc = Src("LoadoutView.cs");
+            // 0.16.1 review 2: the source is decided by the pure EquipInput.Decide (LoadoutView.cs; EquipOrderCases EO11 runs it) from what
+            // LoadoutEquip.Frame reads - Menu.Pointer() for a click on the plate
             Check("L15", "the writer: LoadoutEquip's pressed line says 'pressed by <source>' - Menu.Pointer() for a click on the plate (touch / mouse), 'key' for the key",
-                leSrc != null && leSrc.Contains("\" pressed by \"") && leSrc.Contains("source = Menu.Pointer()") && leSrc.Contains("source = \"key\""));
+                leSrc != null && lvSrc != null && leSrc.Contains("\" pressed by \"") && leSrc.Contains("onPlate ? Menu.Pointer() : \"\"") && leSrc.Contains("string source = press.Source")
+                && lvSrc.Contains("Source = string.IsNullOrEmpty(pointer) ? \"mouse\" : pointer") && lvSrc.Contains("if (cfgKey) return new EquipPress { Source = \"key\" }"));
+            // 0.16.1: the pad's Y / A ('pad'), and the done line that proves the slots read in the advice's order (equip-order)
+            string eqPad = Lf(@"10:04:00.000 [Info] [loadout] equip: EQUIP ADVICE (advice #3) pressed by pad - remove Thunder, remove Tough, remove Power, add Gunner, add Tough, add Power = 6 clicks through the game's own badge button, 0.12 s apart; selection before 1,0,18,20 -> 0,16,18,20 (slots #1 #2 #3 #4); the pad's Y (TabToggle)
+10:04:01.000 [Info] [loadout] equip: done - 6 presses, the selection is now 0,16,18,20 = slots #1 #2 #3 #4, the advice's order
+");
+            string eqNot = Lf(@"10:04:01.000 [Info] [loadout] equip: done - 2 presses, the selection is now 0,18,20,16 = slots #1 #3 #4 #2, NOT the advice's order
+10:04:02.000 [Info] [loadout] equip: undone - 6 presses, the selection is now 1,0,18,20 = the row before the EQUIP
+");
+            var pPad = ProofsText(Healthy + eqPad); var pNot = ProofsText(Healthy + eqNot); var exPad = Expect(pPad, new List<string> { "equip", "equip-order" });
+            Check("L15", "0.16.1: 'pressed by pad' -> pad; a done line 'the advice's order' -> equip-order, a 'NOT the advice's order' or an UNDO's line -> not; --expect equip,equip-order met",
+                Pt(pPad, "equip") == "seen 1, first at 10:04:00: pad" && Pt(pPad, "equip-order").StartsWith("seen 1, first at 10:04:01: [loadout] equip: done - 6 presses")
+                && Pt(pNot, "equip-order") == "not in this log" && exPad.All(r => r.Pass),
+                Pt(pPad, "equip") + " | " + Pt(pPad, "equip-order") + " | " + Pt(pNot, "equip-order"));
+            Check("L15", "the writer: 'pad' for the pad's Y (TabToggle) and A on the plate with the pad's focus, 'key' for Enter / Space (a keyboard key down; the keyboard's TabToggle is refused); the done line names the advice's order",
+                leSrc != null && lvSrc != null && leSrc.Contains("(tab || submit) && Menu.KeyboardHeld()") && lvSrc.Contains("string source = keyboard ? \"key\" : \"pad\"") && lvSrc.Contains("Source = \"pad\", How = \"the pad's Y (TabToggle)\"")
+                && leSrc.Contains("\"the advice's order\"") && leSrc.Contains("\"[loadout] equip: \" + (_undoing ? \"undone\" : \"done\") + \" - \""));
 
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;

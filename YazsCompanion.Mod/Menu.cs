@@ -387,8 +387,8 @@ namespace YazsCompanion
         internal static string Pointer() { try { if (UnityEngine.Input.touchCount > 0) return "touch"; } catch { } return "mouse"; }     // 0.16.0 (C16-11e): internal - LoadoutEquip's input source
 
         /// <summary>Any keyboard key held (the KeyCodes below the mouse buttons; joystick buttons come after them). Asked only until the
-        /// first input is said.</summary>
-        static bool KeyboardHeld()
+        /// first input is said - and (0.16.1, internal) by LoadoutEquip on the frame a TabToggle / Submit press starts a run: 'key' or 'pad'.</summary>
+        internal static bool KeyboardHeld()
         {
             try
             {
@@ -1516,6 +1516,9 @@ namespace YazsCompanion
         // window of that size from the main menu on, as the setup and menu walks do - the level-ups then come at the Deck's real layout
         // and pixels - and puts the display back before its done line (and when it fails). The first offer also gets the hover tour
         // (Advisor.DebugTourDue: cards 2-4 selected the game's way, a 'why_cardN' shot after each '[why]' line).
+        // 0.16.1 (C-3): before the tour, the hint preview (RerollHint.DebugPreviewDue: a REROLL and a SKIP hint drawn in turn as real ones draw
+        // them - the frame on the button, the best card's 'IF YOU KEEP' - with a 'hint_reroll' / 'hint_skip' shot each; the walk's level-ups
+        // are strong, so no real hint would show them).
         static bool _ppDone, _ppResumed, _ppWindowed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
         static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
         static WideMode _ppWide; static bool _ppWideChanged, _ppWideWas; static int _ppRestores;      // 0.15.0 (C15-08): the wide Off / back step
@@ -1808,6 +1811,7 @@ namespace YazsCompanion
                             // without the recruit at 36 s, still before the 40 s pause below (fix_a review: the 50 s save rule)
                             if (playing) DebugFirstLevelUp(t, now);
                             bool more = t < 30f || (Advisor.DebugPicks == 0 && t < 40f);
+                            if (playing && RerollHint.DebugPreviewDue(now)) { _ppAt = now + 0.1f; return; }      // 0.16.1 (C-3): the first offer's hint preview (REROLL, SKIP), before the hover tour
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }      // the first offer's hover tour holds the pick (the run clock stands)
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 0.5f; return; }      // an offer that is up is always answered
                             // the game opens its pause menu by itself when its window is not the focused one as the run comes
@@ -1935,6 +1939,7 @@ namespace YazsCompanion
                             try { var gm = GameplayMaster.s_instance; if (gm != null && gm.currentGameMode != null) { playing = gm.currentGameMode.IsGameplayActive; t = gm.currentGameMode.CurrentModePlayTime; } } catch { }
                             if (_ppRecruitCheckAt > 0f && now >= _ppRecruitCheckAt) { _ppRecruitCheckAt = -1f; DebugRecruitCheck(); }     // 0.16.0 (C16-11a)
                             if (playing) DebugFirstLevelUp(t, now);      // series r1 fix round: still no offer at 36 s (20 s with the recruit) - the game's Debug_LevelUp
+                            if (playing && RerollHint.DebugPreviewDue(now)) { _ppAt = now + 0.1f; return; }      // 0.16.1 (C-3): the first offer's hint preview (REROLL, SKIP), before the hover tour
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 1.0f; return; }
                             bool waiting = Advisor.DebugPicks == 0 && t < PauseRecruit.PlayBound && now - _ppResumeAt < 20f;

@@ -23,6 +23,8 @@
 //  - the side panel of a wide screen (0.15.x, C-M1 of the 10-07 review) gets the same items with a shorter "vs #1" sentence: the
 //    first card's own line stands under that card, so the panel names the decider alone ("Experiment 21 goes first", or with the
 //    style in two words: "... goes first: weapons first") - WhyBlock.SideItems.
+//  - 0.16.1 (C-1): an item no guide tiers - rated by the Companion's own estimate from its text - says so first among its facts
+//    ("Unrated by the guides - the Companion's estimate from its text"; the card says "(unrated)" where a guide item says its tier).
 // The [card] log lines are not touched: [why] logs what the band drew.
 // Pure (no game types): the offline bench sweeps the builders and replays the 10-05 offers.
 using System;
@@ -257,7 +259,10 @@ namespace YazsCompanion
                         case SayKind.Weapon: WeaponFacts(w, raw, lend); break;
                         case SayKind.NextTier: case SayKind.OtherBranch: case SayKind.FirstWeapon: raw.Add(Wording.Card(w, 1, null, null)); TagFacts(w, raw, true); break;
                         case SayKind.Evolution: EvolutionFacts(w, raw, lend); break;
-                        case SayKind.Item: ItemFacts(w.Item, raw); break;
+                        case SayKind.Item:
+                            // 0.16.1 (C-1): an item no guide tiers - whose rating it is comes first among its facts (the card says "(unrated)")
+                            if (w.Item != null && w.Item.Estimate) raw.Add(Wording.EstimateWhy);
+                            ItemFacts(w.Item, raw); break;
                         case SayKind.Tags: PodFacts(w, raw); break;
                         case SayKind.Stat: StatFacts(w, raw); break;
                         case SayKind.Recruit: RecruitFacts(w.Recruit, raw, shown); break;
@@ -477,7 +482,13 @@ namespace YazsCompanion
             if (special && w.Special != null) raw.Add(First(Wording.Special(w.Special)));
             if (w.ShortType != null) raw.Add(w.ShortType + " is " + w.Short + " tags from its 10-tag effect");
             if (w.ShareType != null) raw.Add(First(Wording.Share(w.ShareType, w.SharePct)));
-            if (w.Boost != null) raw.Add(First(Wording.Boosted(w.Boost, null)));
+            // 0.16.1 (COMPANION-LOG-06, PC round 10-11): with the passive's owner, as the ability's head words it (Synergy.AbilityHeads:
+            // Boosted(b.Name, b.Owner)) - the same key, so Reasons' de-duplication keeps one. Without it 16 WHY bands of the 10-11 session
+            // (and every log since 10-08) said 'Boosted by X (Owner)' and 'Boosted by X' side by side, one of the panel's four reasons spent.
+            // 0.16.1 (COMPANION-LOG-06, PC round 10-11, the review): not an evolution's - it carries no head (Ranker sets one on abilities
+            // only), and its own line can be 'Evolution - boosted by X' (Wording.Evolution, short for room): with the owner the key no
+            // longer sits inside that line, and the WHY repeated the card. Without it the line swallows the reason, as in 0.16.0
+            if (w.Boost != null) raw.Add(First(Wording.Boosted(w.Boost, w.Kind == SayKind.Evolution ? null : w.BoostOwner)));
         }
 
         // ---- an item: every reason Wording.Item would say, strongest first - it is asked again with each reason it gave taken out
@@ -498,7 +509,9 @@ namespace YazsCompanion
         {
             var c = new ItemSay { Quest = s.Quest, Held = s.Held, QuestLine = s.QuestLine, Lead = s.Lead, Tier = s.Tier, Note = s.Note, RuleNote = s.RuleNote, NoteSay = s.NoteSay,
                 Lacks = s.Lacks, Want = s.Want, WantBuild = s.WantBuild, Scaling = s.Scaling, Clock = s.Clock, Keyword = s.Keyword, KeywordAxis = s.KeywordAxis, KeywordValue = s.KeywordValue, Survival = s.Survival,
-                LeadForms = s.LeadForms, HeldCost = s.HeldCost };     // 0.16.0 (C16-01)
+                LeadForms = s.LeadForms, HeldCost = s.HeldCost,       // 0.16.0 (C16-01)
+                Estimate = s.Estimate, Weak = s.Weak, Cost = s.Cost, EconNoun = s.EconNoun,       // 0.16.1 (C-1, C-8, C161-01)
+                Shorter = s.Shorter };                                // 0.16.1 (R-03 / R-07): the note's shorter forms, as on the card
             c.Boosts.AddRange(s.Boosts); c.Hurts.AddRange(s.Hurts); c.Nobody.AddRange(s.Nobody);
             return c;
         }
@@ -512,6 +525,7 @@ namespace YazsCompanion
             if (s.LeadForms != null) { s.LeadForms = null; return true; }      // 0.16.0 (C16-01): Wording.Item says it before the Lead
             if (s.Lead != null) { s.Lead = null; return true; }
             if (s.Hurts.Count > 0) { s.Hurts.Clear(); return true; }
+            if (s.Weak && s.Tier != null && s.Tier.Trim().ToUpperInvariant() == "C") { s.Weak = false; return true; }      // 0.16.1 (C-8): "C-tier in the guides"
             var typed = s.Boosts.Where(b => b.Typed).OrderByDescending(b => b.Weight).FirstOrDefault();
             if (typed != null) { s.Boosts.Remove(typed); return true; }
             if (s.Want != null) { s.Want = null; return true; }

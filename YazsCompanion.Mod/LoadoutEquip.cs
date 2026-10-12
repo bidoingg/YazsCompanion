@@ -1,23 +1,32 @@
 // The one-click EQUIP ADVICE button on the run setup screen (0.13.0, the user's decision OD1 = (b): built, OFF by default,
 // switched on from the mod menu's BADGES page: [Advice] LoadoutEquip). A plate next to CHOSEN BADGES says what it would do
-// ("EQUIP ADVICE  6 clicks", "· <key>" when [Advice] LoadoutEquipKey names one - none by default); a click on it (mouse, Deck
-// touch) or the key presses the game's OWN badge button along the
-// pure plan of LoadoutView (removes first, then adds; never a forced badge, never a locked one, never past the slots) - one
-// press every 0.12 s, each exactly what a click by hand does: the game plays its sound, writes RunSetup_Badge1..4 into the
-// profile and refreshes the slots. Every press is logged, the start line with how it was pressed (0.16.0, C16-11e: 'pressed by
-// touch', 'mouse' or 'key'). Afterwards the plate offers UNDO (the inverse plan, under the same
-// guards) until the screen closes or the player clicks a badge by hand.
+// ("EQUIP ADVICE  6 clicks", "· Y" while the game is in pad mode, "· <key>" when [Advice] LoadoutEquipKey names one - none by
+// default); a click on it (mouse, Deck touch), the key, the pad's Y (0.16.1: the game's TabToggle, the button its own start
+// screens use for their extra action - from the pad only: the keyboard key the game maps onto it, T on the PC, is refused) or
+// A on the plate once the d-pad has brought the focus there (0.16.1: the plate is a Button in the screen's own automatic
+// navigation, with a bright frame while it has the pad's focus; Enter / Space likewise after the arrow keys; a click's or a
+// tap's selection of it is given up again at once, as 0.16.0's plate never held one - EquipInput) presses the game's OWN badge
+// button along the pure plan of LoadoutView (removes first, then adds - since 0.16.1 in the advice's order, so slot i ends
+// holding badge #i; never a forced badge, never a locked one, never past the slots) - one press every 0.12 s, each exactly
+// what a click by hand does: the game plays its sound, writes RunSetup_Badge1..4 into the profile and refreshes the slots.
+// Every press is logged: the start line says how it was pressed (0.16.0, C16-11e: 'pressed by touch', 'mouse' or 'key';
+// 0.16.1 'pad') and the slots before -> after, the done line the slots' numbers and whether they read in the advice's order.
+// Afterwards the plate offers UNDO (0.16.1: the old row back - the same badges in the same slots - under the same guards)
+// until the screen closes or the player changes the selection by hand.
 //
 // The guards are checked again, against live state, before EVERY press (GuardedClick): the screen is up and takes input, the
 // mod menu is closed, the setting is on, the button still holds the badge the step names; for an add the badge is unlocked
 // (no padlock, the game's own level >= 1, the button interactable) and the game has a free slot; for a remove the badge is
 // selected and not forced; and the selection is what the presses so far lead to (EquipRun.Next) - a click by hand in between
 // stops the run. GuardedClick is the only place in Loadout*.cs that may call the game's OnClickBadge (the bench's safety scan
-// fails otherwise). The pad route (a cloned game button in the screen's navigation) comes later.
+// fails otherwise). No press starts while the screen takes no input (it flies in or out) or the mod menu holds the game's
+// menus; Y is not taken while one of the game's other views that read TabToggle themselves is live (machine code of 1.0.2:
+// the main menu, hero, arena, item pool, run history, save profile and camp hub views) - it would act there too.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using Il2CppInterop.Runtime;
 using UnityEngine;
 using UnityEngine.UI;
@@ -29,14 +38,19 @@ namespace YazsCompanion
     {
         const string PlateName = "YazsLoadoutEquip";
         const float Gap = 0.12f;
+        const string PadAction = "TabToggle";            // the pad's Y on the game's start screens (Run History, Leaderboards, Change preset)
         static readonly CultureInfo IC = CultureInfo.InvariantCulture;
 
-        static RectTransform _plate; static TextMeshProUGUI _caption; static IntPtr _viewPtr;
+        static RectTransform _plate, _ring; static TextMeshProUGUI _caption; static IntPtr _viewPtr;
         static EquipRun _run, _undo; static bool _running, _undoing; static float _nextPress;
         static List<int> _after;                 // the selection the last run left: UNDO is offered while it stays so
         static LoadoutVisit _visit; static int _advice;
+        static LoadoutView _from;                // the view the last EQUIP started from: the numbers its done line reads the slots by
         static Camera _cam; static bool _camRead;
         static string _keyName; static KeyCode _key; static bool _keyValid;
+        static bool _pad, _focused, _focusSaid; static float _nextPadRead;
+        static bool _selected, _padFocus; static int _mouseFrame = -1000, _tickFrame = -1000;     // review 2: whose focus the plate holds (EquipInput.Focus)
+        static readonly HashSet<string> _said = new HashSet<string>();      // once a visit: why a press was not taken
         public static string PlanText = "";
 
         public static bool On { get { try { return Plugin.AdviceLoadoutEquip.Value; } catch { return false; } } }
@@ -64,14 +78,16 @@ namespace YazsCompanion
             if (_running) Plugin.Logger.LogInfo("[loadout] equip: stopped - the screen closed after " + (_run != null ? _run.Done : 0) + " presses");
             if (_undo != null) Plugin.Logger.LogInfo("[loadout] equip: UNDO withdrawn - the screen closed");
             try { if (_plate != null) UnityEngine.Object.Destroy(_plate.gameObject); } catch { }
-            _running = false; _run = null; _undo = null; _after = null; _plate = null; _caption = null; _viewPtr = IntPtr.Zero; _visit = null; _camRead = false; PlanText = "";
+            _running = false; _run = null; _undo = null; _after = null; _plate = null; _ring = null; _caption = null; _viewPtr = IntPtr.Zero; _visit = null; _camRead = false; PlanText = "";
+            _from = null; _focused = false; _focusSaid = false; _selected = false; _padFocus = false; _said.Clear();
         }
 
-        /// <summary>The selection changed while no run was pressing: a click by hand takes the UNDO away.</summary>
+        /// <summary>The selection changed while no run was pressing: a click by hand takes the UNDO away (0.16.1: any change of the row -
+        /// the UNDO puts back an order, and a reorder by hand would make it put back another).</summary>
         public static void SelectionChanged(List<int> live)
         {
             if (_running || _undo == null || _after == null) return;
-            if (new HashSet<int>(live ?? new List<int>()).SetEquals(_after)) return;
+            if ((live ?? new List<int>()).SequenceEqual(_after)) return;
             _undo = null; _after = null;
             Plugin.Logger.LogInfo("[loadout] equip: UNDO withdrawn - the selection was changed by hand");
         }
@@ -82,6 +98,7 @@ namespace YazsCompanion
             return f != null ? f.Short : id.ToString(IC);
         }
         static string Plan(IEnumerable<EquipStep> steps) { return string.Join(", ", steps.Select(s => (s.Add ? "add " : "remove ") + Name(s.Id))); }
+        static string Ids(IList<int> l) { return l == null || l.Count == 0 ? "empty" : string.Join(",", l); }
 
         // ---------------------------------------------------------------- where and what
         /// <summary>From LoadoutUi.Draw: the plate to the right of the slot row when there is room, else under the summary rows,
@@ -101,6 +118,7 @@ namespace YazsCompanion
                 if (!alive) { _plate = Build(vrt, template); _viewPtr = vp; _camRead = false; if (_plate == null) return; }
                 // a touch under the summary's size, never under the 15 px floor (SPEC 2.1: no text under 15 px)
                 float f = Mathf.Max(Mathf.Max(lo.SumFontUnits, lo.FontUnits) * 0.95f, LoadoutLayout.MinPx / Mathf.Max(0.0001f, li.UnitPx)), h = LoadoutLayout.LineFactor * f + 24f;
+                _pad = ReadPad();
                 Caption(v);
                 _caption.fontSize = f;
                 float tw = 0f; try { _caption.ForceMeshUpdate(); tw = _caption.preferredWidth; } catch { }
@@ -138,10 +156,13 @@ namespace YazsCompanion
             catch (Exception e) { Hide(); LoadoutState.Once("equip:fail:" + e.GetType().Name, "the EQUIP ADVICE button could not be drawn: " + e.Message, true); }
         }
 
+        /// <summary>What presses the plate besides a click, for its caption: the pad's Y in pad mode, else the key when one is set.</summary>
+        static string Binding() { if (_pad) return "Y"; return KeyLabel(); }
+
         static void Caption(LoadoutView v)
         {
             if (_caption == null) return;
-            string key = KeyLabel(); string dim = "<color=" + Theme.DimHex + ">";
+            string key = Binding(); string dim = "<color=" + Theme.DimHex + ">";
             if (_running) _caption.text = "<b>" + (_undoing ? "UNDOING" : "EQUIPPING") + "</b>  " + dim + (_run != null ? _run.Done + " / " + _run.Steps.Count : "") + "</color>";
             else if (_undo != null && (v == null || v.Plan.Count == 0 || _after != null)) _caption.text = "<b><color=" + Theme.GoldHex + ">UNDO</color></b>  " + dim + _undo.Steps.Count + " click" + (_undo.Steps.Count == 1 ? "" : "s") + (key.Length > 0 ? " · " + key : "") + "</color>";
             else if (v != null) _caption.text = "<b><color=" + Theme.GoldHex + ">EQUIP ADVICE</color></b>  " + dim + v.Plan.Count + " click" + (v.Plan.Count == 1 ? "" : "s") + (key.Length > 0 ? " · " + key : "") + "</color>";
@@ -155,11 +176,28 @@ namespace YazsCompanion
             var bg = Ui.Image(r, "Bg", Theme.Plate); Ui.Stretch(bg, 0, 0, 0, 0);
             try { bg.GetComponent<Image>().raycastTarget = true; } catch { }        // the click lands on the plate, not on a game control under it
             Ui.Frame(r, "Frame", 0f, 3f, Theme.GoldLine, 20f);
+            // 0.16.1 (the 10-11 Deck report: "no easy way to nav to the auto-equip button"): a Button with the Automatic navigation every
+            // button of this screen has (the level1 scene: no explicit links), so the d-pad reaches it like a game button - to the right
+            // of the last filled slot; no transition (the ring below shows the pad's focus), no onClick (Frame presses it, as for a click).
+            // Review 2: a click or a tap selects it too (Selectable.OnPointerDown) - Frame gives that selection up again (EquipInput.Focus)
+            try
+            {
+                var b = r.gameObject.AddComponent(Il2CppType.Of<Button>()).TryCast<Button>();
+                if (b != null)
+                {
+                    b.transition = Selectable.Transition.None;
+                    var nav = b.navigation; nav.mode = Navigation.Mode.Automatic; b.navigation = nav;
+                }
+            }
+            catch (Exception e) { LoadoutState.Once("equip:nonav", "the EQUIP ADVICE button is not in the pad's navigation (" + e.GetType().Name + ": " + e.Message + ") - Y still presses it"); }
+            _ring = Ui.Frame(r, "Focus", -9f, 5f, Theme.HlGold, 0f);
+            _ring.gameObject.SetActive(false);
             _caption = Ui.CloneText(template, r, "Caption");
-            if (_caption == null) { UnityEngine.Object.Destroy(r.gameObject); return null; }
+            if (_caption == null) { UnityEngine.Object.Destroy(r.gameObject); _ring = null; return null; }
             Ui.Stretch(_caption.rectTransform, 30f, 4f, 30f, 4f);
             _caption.alignment = TextAlignmentOptions.Center; _caption.fontStyle = FontStyles.Normal; _caption.color = Theme.Cream;
             try { _caption.overflowMode = TextOverflowModes.Overflow; _caption.characterSpacing = 0f; } catch { }
+            _focused = false; _selected = false; _padFocus = false;
             r.gameObject.SetActive(false);
             return r;
         }
@@ -180,30 +218,139 @@ namespace YazsCompanion
             catch { return false; }
         }
 
-        /// <summary>From LoadoutUi.Tick, every frame: a click on the plate or the key starts a run; a run presses every 0.12 s.</summary>
+        static bool ReadPad() { try { return GameMaster.Get != null && GameMaster.Get.UsesPad; } catch { return false; } }
+
+        /// <summary>The game switched between pad and mouse mode: the caption gains or loses '· Y' and is placed again at its width.</summary>
+        static void PadMode()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextPadRead) return;
+            _nextPadRead = now + 0.25f;
+            bool pad = ReadPad();
+            if (pad == _pad) return;
+            _pad = pad;
+            LoadoutUi.Dirty();
+        }
+
+        /// <summary>A Rewired action this frame, as the screen's own Update reads its Cancel (no pause override: when the game holds its
+        /// input - a fade, an unfocused window - it is not taken). A build without the call says so once.</summary>
+        static bool Action(string action)
+        {
+            try { return GameMaster.GetButtonDown(action, false); }
+            catch (Exception e) { LoadoutState.Once("equip:input:" + action, "the EQUIP ADVICE button cannot read the game's '" + action + "' action (" + e.GetType().Name + ": " + e.Message + ")", true); return false; }
+        }
+
+        /// <summary>The plate holds the event system's selection - the pad's focus, or a click's until Track gives that up.</summary>
+        static bool Focused()
+        {
+            try
+            {
+                var es = UnityEngine.EventSystems.EventSystem.current;
+                var go = es == null ? null : es.currentSelectedGameObject;
+                return go != null && _plate != null && go.Pointer == _plate.gameObject.Pointer;
+            }
+            catch { return false; }
+        }
+
+        static void Focus(bool on)
+        {
+            if (on == _focused) return;
+            _focused = on;
+            try { if (_ring != null) _ring.gameObject.SetActive(on); } catch { }
+            if (on && !_focusSaid) { _focusSaid = true; Plugin.Logger.LogInfo("[loadout] equip: the button has the screen's focus (" + (_pad ? "pad mode: the d-pad reached it" : "keyboard: the arrow keys reached it") + ") - A or Enter presses it"); }
+        }
+
+        /// <summary>Review 2, every frame while the plate is shown (a run included): whose focus the plate holds. Only the d-pad's (or the
+        /// arrow keys') counts - for the ring, for A / Submit and for the focus line. A click or a tap selects the plate as well
+        /// (Selectable.OnPointerDown); that selection is given up at once, as 0.16.0 left it (its plate had no select handler, so the
+        /// input module cleared the selection on the same tap): else the next A, Enter or Space would press the plate the click
+        /// pressed - EQUIP, then UNDO - without the d-pad ever having gone there.</summary>
+        static void Track()
+        {
+            int frame = Time.frameCount;
+            bool seenLast = _tickFrame == frame - 1; _tickFrame = frame;
+            try { if (UnityEngine.Input.GetMouseButtonDown(0) || UnityEngine.Input.GetMouseButton(0) || UnityEngine.Input.GetMouseButtonUp(0)) _mouseFrame = frame; } catch { }
+            bool selected = Focused(), pad, release;
+            EquipInput.Focus(selected, _selected, _padFocus, frame - _mouseFrame, seenLast, out pad, out release);
+            if (release)
+            {
+                try { var es = UnityEngine.EventSystems.EventSystem.current; if (es != null) es.SetSelectedGameObject(null); selected = Focused(); } catch { }
+                if (_said.Add("click focus")) Plugin.Logger.LogInfo("[loadout] equip: a click selected the button - given up again, as in 0.16.0 (" + (selected ? "NOT cleared" : "cleared") + "): A, Enter or Space press it only after the d-pad or the arrow keys bring the focus there");
+            }
+            _selected = selected; _padFocus = pad;
+            Focus(pad);
+        }
+
+        // the game's own views whose Update reads TabToggle (machine code of 1.0.2): while one of them is live, Y acts there as well
+        [MethodImpl(MethodImplOptions.NoInlining)] static bool MainInteractive(UIViewMainMenu v) { return v._isInteractive; }
+        static readonly KeyValuePair<string, Func<UIMainMenu, Behaviour>>[] Readers =
+        {
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("main menu", m => { var v = m._uiViewMainMenu; if (v == null) return null; bool live = true; try { live = MainInteractive(v); } catch { } return live ? v : null; }),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("hero select", m => m._uiViewChooseHero),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("arena select", m => m._uiViewChooseArena),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("item pool", m => m._uiViewItemsPoolMainMenu),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("run history", m => m._uiViewRunHistory),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("save profile", m => m._uiViewSaveProfile),
+            new KeyValuePair<string, Func<UIMainMenu, Behaviour>>("camp hub", m => m._uiViewGameHub),
+        };
+
+        /// <summary>The first of the game's other TabToggle views that is live now ("" = none). A member a game patch took away is skipped.</summary>
+        static string OtherReader()
+        {
+            UIMainMenu m = null; try { m = UIMainMenu.s_instance; } catch { }
+            if (m == null) return "";
+            foreach (var r in Readers) { try { var b = r.Value(m); if (b != null && b.isActiveAndEnabled) return r.Key; } catch { } }
+            return "";
+        }
+
+        static void Refused(string source, string why)
+        {
+            if (_said.Add(source + "|" + why)) Plugin.Logger.LogInfo("[loadout] equip: a press by " + source + " not taken - " + why);
+        }
+
+        /// <summary>From LoadoutUi.Tick, every frame: a click on the plate, the key, the pad's Y or A on the plate while the pad's focus is
+        /// there starts a run; a run presses every 0.12 s.</summary>
         public static void Frame(UIViewRunSetup view, LoadoutVisit visit, LoadoutView v)
         {
+            if (Shown) Track(); else { _selected = false; _padFocus = false; Focus(false); }
             if (_running) { if (Time.realtimeSinceStartup >= _nextPress) PressNext(view); return; }
-            if (!Shown || !On) return;
-            bool go = false; string source = null;
+            if (!Shown || !On) { Focus(false); return; }
+            PadMode();
             // 0.16.0 (C16-11e, DK-C11): how it was pressed goes into the pressed line - a click on the plate is 'touch' or 'mouse' as the
-            // menu tells them apart (Menu.Pointer: Input.touchCount), the key is 'key'; --check-log's 'equip' kind reads it
-            try { if (UnityEngine.Input.GetMouseButtonDown(0) && Hit(UnityEngine.Input.mousePosition)) { go = true; source = Menu.Pointer(); } } catch { }
-            if (!go && KeyLabel().Length > 0) { try { go = UnityEngine.Input.GetKeyDown(_key); if (go) source = "key"; } catch { } }
-            if (!go || visit == null || v == null || Menu.IsOpen) return;
-            if (_undo != null && (v.Plan.Count == 0 || _after != null)) Start(view, _undo, true, source);
+            // menu tells them apart (Menu.Pointer: Input.touchCount), the key is 'key'; --check-log's 'equip' kind reads it. 0.16.1: the
+            // pad's Y (TabToggle) and A on the focused plate are 'pad'. Review 2 (EquipInput.Decide): TabToggle from the keyboard (T on the
+            // PC's map) is refused - the keyboard's key is [Advice] LoadoutEquipKey alone (C5); A / Submit only on the pad's focus (Track),
+            // 'key' for Enter / Space after the arrow keys; never on a mouse-click frame (the game's UISubmit fires on the left button too)
+            bool click = false, onPlate = false, cfgKey = false, tab = false, submit = false;
+            try { click = UnityEngine.Input.GetMouseButtonDown(0); onPlate = click && Hit(UnityEngine.Input.mousePosition); } catch { }
+            if (!onPlate && KeyLabel().Length > 0) { try { cfgKey = UnityEngine.Input.GetKeyDown(_key); } catch { } }
+            if (!onPlate && !cfgKey) tab = Action(PadAction);
+            if (!onPlate && !cfgKey && !tab && _padFocus && !click) submit = Action("UISubmit");
+            if (!onPlate && !cfgKey && !tab && !submit) return;
+            var press = EquipInput.Decide(onPlate, onPlate ? Menu.Pointer() : "", click, cfgKey, tab, submit, (tab || submit) && Menu.KeyboardHeld(), _padFocus);
+            if (visit == null || v == null || Menu.Blocking) return;
+            if (!press.Go) { if (press.Refused.Length > 0) Refused(press.RefusedBy, press.Refused); return; }
+            string source = press.Source, how = press.How;
+            bool canInteract = true; try { canInteract = LoadoutState.CanInteract(view); } catch { }
+            if (!canInteract) { Refused(source, "the screen takes no input right now (it flies in or out)"); return; }
+            if (how.Contains("TabToggle")) { string other = OtherReader(); if (other.Length > 0) { Refused(source, "the game's " + other + " view is live and reads TabToggle (Y) too"); return; } }
+            if (_undo != null && (v.Plan.Count == 0 || _after != null)) Start(view, _undo, true, source, how, v);
             else if (v.Plan.Count > 0)
             {
                 Func<int, bool> unlocked = id => { int l; return visit.Levels.TryGetValue(id, out l) && l >= 1; };
-                Start(view, LoadoutView.RunOf(v, unlocked), false, source);
+                Start(view, LoadoutView.RunOf(v, unlocked), false, source, how, v);
             }
         }
 
-        static void Start(UIViewRunSetup view, EquipRun run, bool undo, string source)
+        static void Start(UIViewRunSetup view, EquipRun run, bool undo, string source, string how, LoadoutView v)
         {
             _run = run; _undoing = undo; _running = run.Steps.Count > 0; _nextPress = Time.realtimeSinceStartup;
+            if (!undo) _from = v;
+            var planned = LoadoutView.Apply(run.Start, run.Steps, run.Forced, run.Unlocked, run.Slots);
+            string reads = undo ? "the row before the EQUIP" : "slots " + (_from != null ? _from.SlotsText(planned) : "?");
             Plugin.Logger.LogInfo("[loadout] equip: " + (undo ? "UNDO" : "EQUIP ADVICE (advice #" + _advice + ")") + " pressed by " + (string.IsNullOrEmpty(source) ? "mouse" : source) + " - " + Plan(run.Steps) + " = " + run.Steps.Count
-                + " click" + (run.Steps.Count == 1 ? "" : "s") + " through the game's own badge button, " + Gap.ToString("0.00", IC) + " s apart; selection before " + string.Join(",", run.Start));
+                + " click" + (run.Steps.Count == 1 ? "" : "s") + " through the game's own badge button, " + Gap.ToString("0.00", IC) + " s apart; selection before " + Ids(run.Start) + " -> " + Ids(planned) + " (" + reads + ")"
+                + (string.IsNullOrEmpty(how) ? "" : "; " + how));
             if (undo) _undo = null;
             Caption(null);
             if (!_running) Finish(view);
@@ -231,14 +378,29 @@ namespace YazsCompanion
             catch (Exception e) { if (_run != null) _run.Stopped = "the press failed: " + e.GetBaseException().Message; Finish(view); }
         }
 
+        /// <summary>What the selection reads after a run: for an EQUIP the numbers slot by slot and whether they rise in the advice's order;
+        /// for an UNDO whether the old row is back.</summary>
+        static string Reads(EquipRun run, List<int> live)
+        {
+            if (_undoing)
+            {
+                var row = LoadoutView.Apply(run.Start, run.Steps, run.Forced, run.Unlocked, run.Slots);
+                return live.SequenceEqual(row) ? "the row before the EQUIP" : "NOT the row before the EQUIP (" + Ids(row) + ")";
+            }
+            if (_from == null) return "slots ?";
+            return "slots " + _from.SlotsText(live) + ", " + (_from.InOrder(live) ? "the advice's order" : "NOT the advice's order");
+        }
+
         static void Finish(UIViewRunSetup view)
         {
             _running = false;
             var run = _run; if (run == null) return;
-            var live = LoadoutState.LiveSelection(view) ?? new List<int>();
-            if (run.Finished) Plugin.Logger.LogInfo("[loadout] equip: " + (_undoing ? "undone" : "done") + " - " + run.Done + " press" + (run.Done == 1 ? "" : "es") + ", the selection is now " + (live.Count > 0 ? string.Join(",", live) : "empty"));
-            else Plugin.Logger.LogInfo("[loadout] equip: stopped after " + run.Done + " of " + run.Steps.Count + " presses - " + (run.Stopped.Length > 0 ? run.Stopped : "nothing left to press") + "; the selection is " + (live.Count > 0 ? string.Join(",", live) : "empty"));
-            if (!_undoing && run.Done > 0) { _undo = run.Undo(); _after = live; }
+            var read = LoadoutState.LiveSelection(view);
+            var live = read ?? new List<int>();
+            if (run.Finished) Plugin.Logger.LogInfo("[loadout] equip: " + (_undoing ? "undone" : "done") + " - " + run.Done + " press" + (run.Done == 1 ? "" : "es") + ", the selection is now " + Ids(live) + " = " + Reads(run, live));
+            else Plugin.Logger.LogInfo("[loadout] equip: stopped after " + run.Done + " of " + run.Steps.Count + " presses - " + (run.Stopped.Length > 0 ? run.Stopped : "nothing left to press") + "; the selection is " + Ids(live));
+            // the UNDO starts from what the game shows (a click by hand that stopped the run included), else from what the presses made
+            if (!_undoing && run.Done > 0) { _undo = run.Undo(read); _after = live; }
             else if (_undoing) { _undo = null; _after = null; }
             _run = null;
             LoadoutUi.Dirty();

@@ -283,7 +283,7 @@ namespace YazsCompanion
             y += step;
             Cycler(_body, "lo:equip", rx, y, rw, rh, "One-click EQUIP ADVICE", "chevrons", () => Plugin.AdviceLoadoutEquip.Value ? "On" : "Off",
                 d => { Plugin.AdviceLoadoutEquip.Value = !Plugin.AdviceLoadoutEquip.Value; _focusKey = "lo:equip"; _dirty = true; },
-                () => "ON: the run setup screen shows an EQUIP ADVICE button next to CHOSEN BADGES. A click on it" + (string.IsNullOrWhiteSpace(Plugin.AdviceLoadoutEquipKey.Value) ? "" : " (or " + Plugin.AdviceLoadoutEquipKey.Value.Trim() + ")") + " presses the game's own badge buttons for you along the advice - removes first, then adds; never a quest's badge, never a locked one - exactly as clicks by hand would (the game saves the selection as usual). UNDO until the screen closes. OFF (default): advice only.", 760f);
+                () => "ON: the run setup screen shows an EQUIP ADVICE button next to CHOSEN BADGES. A click on it" + (string.IsNullOrWhiteSpace(Plugin.AdviceLoadoutEquipKey.Value) ? "" : " (or " + Plugin.AdviceLoadoutEquipKey.Value.Trim() + ")") + ", or Y on a controller (or A once the d-pad has reached the button), presses the game's own badge buttons for you along the advice - removes first, then adds, so the slots read 1, 2, 3, 4; never a quest's badge, never a locked one - exactly as clicks by hand would (the game saves the selection as usual). UNDO puts the old row back until the screen closes. OFF (default): advice only.", 760f);
             y += step;
             if (readOnly) Btn(_body, "lo:done", rx, y, rw, rh, "DONE", null, CloseBadges, () => "Back.");
             else

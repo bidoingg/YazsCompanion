@@ -8,8 +8,9 @@
 //           after, a military training 2.0, a Research Pod 2.0) and the game still has a reroll for the screen; "(2 rerolls
 //           left)" when two or fewer are. The chest floor was 3.0 in the plan: over the user's 147 logged chests it would have
 //           spoken on 70 (48 %), 65 of them taken as offered; at 2.5 it speaks on 34 (23 %), 1.98 among them;
-//   SKIP    every card would hurt the squad (all AVOID), or every card is under SkipUnder and the screen's skip bonus is
-//           worth more: the game's ApplySkipBonus grants cash ((TeamMoneyMultiplier + the enemy scaling - 1) x 300) and heals
+//   SKIP    every card is under 1 (all AVOID: 'would hurt' when each costs the squad something, else 'weak' - 0.16.1, C-8), or
+//           every card is under SkipUnder and the screen's skip bonus is worth more: the game's ApplySkipBonus grants cash
+//           ((TeamMoneyMultiplier + the enemy scaling - 1) x 300) and heals
 //           20 % of the team's max health (machine code of 1.0.2: GetSkipBonusMoney / GetSkipBonusHp,
 //           research\review_1005\impl\c4\dis_skip_banish.txt) - the heal counts while the squad is hurting, the cash as the
 //           run goal values it (Context.Cash);
@@ -30,6 +31,13 @@
 // 'the heal and cash are worth more', 'Quest: no items'; the rescue screen's 'Tank fits better') - RerollHint draws it when the line goes
 // UNDER its button (1280 x 800: the band over the button is 63 units), where it stands in the WHY band's row; over the button (the PC) the
 // long words stay. BANISH (off by default) and the quest's rescue form keep their words.
+// 0.16.1 (C-3 + DK-C07, the user's decision B2-Q3 of 10-10 "move it to the button"): ONE gold frame per screen. Up to 0.16.0 a REROLL or
+// SKIP hint framed its button in gold while the best card kept its own gold frame and RECOMMENDED ribbon - two gold frames, two opposite
+// instructions, and the hint came 0.6 s after the card's (the Deck: 1 of 4 hints followed; live 10-10 11:57:59 the framed card taken 8 s
+// after a REROLL hint). Now, when the hint says REROLL or SKIP (TakesFrame), the gold frame and the ribbon go to that button (GoldFrame;
+// the line over it reads 'RECOMMENDED: REROLL  -  ...', HeadWord) and the best card gives them up: its ribbon turns grey and reads 'IF YOU
+// KEEP' (KeepLead) over its own line, grey too; all of it with the cards, no 0.6 s wait (RerollHint.cs). BANISH keeps the card's frame
+// (the best card stays the pick; its button's frame is grey). The bench checks one gold frame in every hint state.
 // Pure (no game types): RerollHint.cs reads the screen and draws the line, the offline bench replays the logged chests.
 using System;
 using System.Collections.Generic;
@@ -39,6 +47,9 @@ using System.Linq;
 namespace YazsCompanion
 {
     internal enum HintAction { None, Reroll, Skip, Banish }
+
+    /// <summary>0.16.1 (C-3): where a selection screen's one gold frame is - on the best card, on the hint's button, nowhere (badges off, no hint).</summary>
+    internal enum FrameOn { None, Card, Button }
 
     /// <summary>One card of the offer as the action hints see it.</summary>
     internal sealed class HintCard
@@ -241,10 +252,16 @@ namespace YazsCompanion
                 c.Show = true; c.Action = HintAction.Skip;
                 // C16-01c: every card fills an empty slot that Wooden Stick / Empty Chest pays for - the empty slot is worth more than these
                 bool slot = x.Cards.All(k => k.HeldCost > 0);
+                // 0.16.1 (C-8): "would hurt" only when every card really costs the squad something - a pick the quest rules out, an ability the
+                // build skips (it takes a slot the build plans for), or an item card (the item rules keep an item that costs nothing at 1.00, so
+                // one under 1 carries a cost; 'already held' only does nothing); cards under 1 for anything else (a stat card that does nothing,
+                // an empty card) are weak, and the words say so
+                bool hurt = x.Cards.All(k => (k.Head ?? "").StartsWith("quest", StringComparison.OrdinalIgnoreCase) || k.Skipped || (k.Kind == "item" && k.Head != "already held"));
                 c.Words = slot ? Pick(x.SlotBy != null ? "an empty slot is worth more than these (" + x.SlotBy + ")" : null, "an empty slot is worth more than these cards", "an empty slot is worth more here")
-                               : Pick("every card here would hurt this squad - take the skip bonus", "every card here would hurt this squad");
-                c.Short = Pick(slot ? "an empty slot is worth more" : "every card hurts");
-                c.Why += " | every card is under 1 (AVOID)" + (slot ? " (merit " + F2(merit) + " before the held slot cost " + F2(meritCard.HeldCost) + ")" : "")
+                        : hurt ? Pick("every card here would hurt this squad - take the skip bonus", "every card here would hurt this squad")
+                               : Pick("every card here is weak for this squad - take the skip bonus", "every card here is weak for this squad");
+                c.Short = Pick(slot ? "an empty slot is worth more" : hurt ? "every card hurts" : "every card is weak");
+                c.Why += " | every card is under 1 (AVOID" + (slot || hurt ? "" : "; none costs the squad anything: weak") + ")" + (slot ? " (merit " + F2(merit) + " before the held slot cost " + F2(meritCard.HeldCost) + ")" : "")
                     + "; skip bonus +" + x.SkipCash + " cash, +" + x.SkipHeal + " health";
                 return c;
             }
@@ -350,6 +367,33 @@ namespace YazsCompanion
 
         /// <summary>The action's name as the line shows it in front of its words.</summary>
         public static string Name(HintAction a) { return a == HintAction.Skip ? "SKIP" : a == HintAction.Banish ? "BANISH" : a == HintAction.Reroll ? "REROLL" : ""; }
+
+        // ---------------------------------------------------------------- 0.16.1 (C-3): one gold frame per screen
+        /// <summary>The card ribbon's word, which the hint's line carries over its button: 'RECOMMENDED: REROLL'.</summary>
+        public const string Recommended = "RECOMMENDED";
+        /// <summary>What the best card's ribbon reads when the hint takes its frame - in grey, over the card's own line in grey (Badge.Yield): the
+        /// ribbon's slot holds it, so the line keeps its whole room (inline, as 2ND is, it cost 14 characters - half the Deck's lines cut).</summary>
+        public const string KeepLead = "IF YOU KEEP";
+
+        /// <summary>Does a shown hint of this action take the gold frame (and the RECOMMENDED ribbon) from the best card? REROLL and SKIP do - the
+        /// screen's verdict is then not to pick any card as it stands; BANISH does not (the best card is still the pick after it).</summary>
+        public static bool TakesFrame(HintAction a) { return a == HintAction.Reroll || a == HintAction.Skip; }
+
+        /// <summary>The one gold frame of a screen: on the hint's button while a REROLL or SKIP hint shows and the game shows that button
+        /// (<paramref name="buttonShown"/>), else on the best card while the badges are on (<paramref name="badges"/>, [General] ShowBadges),
+        /// else nowhere. Never both: Badge draws the card's frame only for Card, RerollHint the button's gold one only for Button (a BANISH
+        /// button's frame is grey).</summary>
+        public static FrameOn GoldFrame(bool badges, bool shown, HintAction a, bool buttonShown)
+        {
+            if (shown && TakesFrame(a) && buttonShown) return FrameOn.Button;
+            return badges ? FrameOn.Card : FrameOn.None;
+        }
+
+        /// <summary>The line's head in front of its words: over its button (the long words) 'RECOMMENDED: REROLL' / 'RECOMMENDED: SKIP' - the
+        /// ribbon the best card gave up; under it (<paramref name="brief"/>: the short words of the 1280 x 800 row, C16-15) the action alone, so
+        /// the line takes no more of the WHY band's row than 0.16.0's did (DK-C04); BANISH always its name alone.</summary>
+        public static string HeadWord(HintAction a, bool brief) { return TakesFrame(a) && !brief ? Recommended + ": " + Name(a) : Name(a); }
+
 
         // the first form within the budget, in the card font's glyphs (the last one when none fits)
         static string Pick(params string[] forms)

@@ -18,6 +18,11 @@
 // 0.16.0 (C16-02): every chest item of game 1.0.2 is read by its rule in the item book (ItemBook.cs: what it gives and takes as
 // the tags below, what it needs, its run curve, its worth when no guide tiers it, its words) instead of the keyword patterns; an
 // item the book does not name keeps the keyword reading, and [Debug] ItemKeywords (UseBook = false) brings it back for every item.
+// 0.16.1 (C-8): a card under 1 reads AVOID in rust - "this would hurt the squad". Only an item that really costs this squad something
+// (ItemContext.Cost: a type or stat it weakens that the squad uses, health, a clash, a 10-tag effect switched off, ...) may fall under
+// 1; a merely weak one - a guide C tier with little fit, a range item without its range - stays at 1.00 (grey, ItemSay.Weak: "C-tier in
+// the guides"), every card above it in the same order. (C-1) ItemSay.Estimate: no guide tier, the book's own worth decides; (C161-01)
+// ItemSay.EconNoun: what an "economy" gain really gives.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -85,6 +90,10 @@ namespace YazsCompanion
         public HeldFacts HeldFacts;
         public bool Animal;
         public string Asset;
+        // 0.16.1 (C-8): the first thing the item being scored really takes from this squad (set by Evaluate's terms; null: nothing) - a
+        // type or a stat it weakens that the squad uses, health, a clash with an item held, a 10-tag effect it switches off, the cooldown
+        // reduction Mana Potion switches off, the slot Wooden Stick / Empty Chest price. Only such an item may score under 1 (AVOID)
+        internal string Cost;
     }
 
     internal static class ItemRules
@@ -161,6 +170,7 @@ namespace YazsCompanion
             var row = RowOf(name);                           // 0.16.0 (C16-02): the book's rule replaces the keyword reading
             if (row == null && UseBook) NoRule(name);
             var keepRow = c.Row; c.Row = row;
+            c.Cost = null;                                   // 0.16.1 (C-8): what this item takes from the squad, found by the terms below
             // a bonus per squad size (Duct Tape): only the line of the current size is scored, not the sum of the three. The
             // highlighted statistics list all three lines too, so for such an item the line's own words decide
             string sizeLine; string text = SizedText(description, c.Squad == null ? 0 : c.Squad.Count, out sizeLine);
@@ -212,6 +222,9 @@ namespace YazsCompanion
             if (held != null && held.Cooldowns != null && HeldRules.IsItem(HeldRules.ManaPotion, name, c.Asset)
                 && !held.Has(HeldRules.ManaPotion) && !(c.Held != null && c.Held.Contains(HeldRules.ManaPotion.Name)))
                 HeldRules.ManaPotionCard(held.Cooldowns, ref tierScore, out manaLead, out manaLog);
+            // 0.16.1 (C-8): switching the squad's ability cooldown reduction off is a real cost ('costs your cooldown reduction'); no ability
+            // with a cooldown to reset is only a weak card
+            if (manaLead != null && manaLead.Any(l => l.IndexOf("cooldown reduction", StringComparison.Ordinal) >= 0)) NoteCost(c, manaLead[manaLead.Length - 1]);
 
             double score = 1.0 + tierScore + fit * 0.6;
             score += TagPoints(name, description, c, fitWhy);
@@ -224,11 +237,17 @@ namespace YazsCompanion
             // (HeldRules.CdrItem with its item book row's share: Chick Magnet, Hyperactivity, Devil's Deal)
             string[] cdrLead = null; string cdrWhy = null;
             if (held != null) score = HeldRules.CdrItem(held, name, c.Asset, score, out cdrLead, out cdrWhy);
+            // 0.16.1 (C-8): under 1 is AVOID, in rust - "it would hurt this squad". An item that takes nothing from the squad (no cost found
+            // above) is weak at worst: it stays at 1.00, grey - a guide C tier with little fit reads "C-tier in the guides" (Wording.Item),
+            // every card above it keeps its order. Up to 0.16.0 Brave Toaster (C) read "AVOID   Stronger status effects - suits Huntress"
+            bool weak = false;
+            if (score < 1.0 && c.Cost == null) { weak = true; score = 1.0; }
             // 0.16.0 (C16-01c): an item that fills an empty slot while Wooden Stick / Empty Chest are held (HeldRules.SlotCost); the card
             // line names the cost only when it turns the card AVOID, else it is a WHY reason
             string[] slotSay = null; double merit = score, slotCost = 0;
             if (held != null) slotCost = HeldRules.SlotCost(c, name, out slotSay, out _);
-            if (slotCost > 0) { score -= slotCost; if (c.Say != null) c.Say.HeldCost = slotCost; }
+            if (slotCost > 0) { score -= slotCost; NoteCost(c, slotSay != null && slotSay.Length > 0 ? slotSay[0] : "fills an empty item slot"); if (c.Say != null) c.Say.HeldCost = slotCost; }
+            if (score < 1.0) weak = false;
 
             if (tier != null) why.Add(tier + "-tier item" + (note != null ? ", " + note : ""));
             else if (note != null) why.Add(note);
@@ -253,9 +272,54 @@ namespace YazsCompanion
             }
             if (manaLead != null) { why.Insert(0, HeldRules.ItemPrefix + manaLead[0]); if (c.Say != null) c.Say.LeadForms = manaLead; }
             if (manaLog != null) why.Add(manaLog);
-            if (c.Say != null) { c.Say.Tier = tier; c.Say.Note = note; c.Say.RuleNote = note != null && note != guideNote; c.Say.NoteSay = c.Say.RuleNote ? noteSay : null; if (c.Ctx != null) c.Say.Clock = c.Ctx.ClockText; }
+            // 0.16.1 (C-8): the log says why a weak card is no AVOID ('[card] ... 1.00 - C-tier item; ...; weak here, but it costs nothing')
+            if (weak) why.Add(WeakWhy);
+            if (c.Say != null)
+            {
+                c.Say.Tier = tier; c.Say.Note = note; c.Say.RuleNote = note != null && note != guideNote; c.Say.NoteSay = c.Say.RuleNote ? noteSay : null; if (c.Ctx != null) c.Say.Clock = c.Ctx.ClockText;
+                // 0.16.1: no guide tier - the book's own worth (or the keyword reading) rated it (C-1); kept at 1.00, weak but costing nothing (C-8)
+                c.Say.Estimate = tier == null; c.Say.Weak = weak; c.Say.Cost = c.Cost;
+                c.Say.Shorter = Shorter(row, note, guideNote);          // 0.16.1 (R-03 / R-07): the note's forms for a narrow card
+            }
             return score;
         }
+
+        /// <summary>0.16.1 (C-8): the log's reason on an item kept at 1.00 - weak for this squad, but it takes nothing from it.</summary>
+        public const string WeakWhy = "weak here, but it costs nothing (no AVOID)";
+
+        /// <summary>0.16.1 (R-07): the clip rule's condition, after the item's own words ("doubles every magazine - your guns use magazines").</summary>
+        public const string ClipWorks = "your guns use magazines";
+
+        /// <summary>0.16.1 (R-03 / R-07 of the 10-11 Steam Deck round): the note's shorter card forms, longest first - under the item's own
+        /// words (the book's, or the guide note knowledge.json has for it) the book's Brief; under a rule's note that leads with the book's
+        /// words ("doubles every magazine - your guns use magazines") those words alone, then their Brief. Null: none (a rule's own words).</summary>
+        static string[] Shorter(BookEntry row, string note, string guideNote)
+        {
+            if (row == null || note == null) return null;
+            if (note == guideNote) return row.Brief != null ? new[] { row.Brief } : null;
+            if (row.Say != null && note.StartsWith(row.Say + " - ", StringComparison.Ordinal)) return row.Brief != null ? new[] { row.Say, row.Brief } : new[] { row.Say };
+            return null;
+        }
+
+        /// <summary>0.16.1 (C-8): the first real cost of the item being scored, in words (ItemContext.Cost).</summary>
+        static void NoteCost(ItemContext c, string what) { if (c != null && c.Cost == null && !string.IsNullOrEmpty(what)) c.Cost = what; }
+
+        /// <summary>0.16.1 (C161-01): what an "economy" gain gives, in the item's own words - the book row's noun ("luck", "XP", "level-ups"),
+        /// else read from the game's text for an item the book does not name ("XP", "luck", "level-ups", joined with "and"); null: the text
+        /// names none of them (the tag's generic "XP and luck" then).</summary>
+        public static string EconomyNoun(BookEntry row, string text)
+        {
+            if (row != null && !string.IsNullOrEmpty(row.Econ)) return row.Econ;
+            if (string.IsNullOrEmpty(text)) return null;
+            var parts = new List<string>();
+            if (EconXp.IsMatch(text)) parts.Add("XP");
+            if (EconLuck.IsMatch(text)) parts.Add("luck");
+            if (EconLevel.IsMatch(text)) parts.Add("level-ups");
+            if (parts.Count == 0) return null;
+            return parts.Count == 1 ? parts[0] : string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[parts.Count - 1];
+        }
+        static readonly Regex EconXp = new Regex(@"\bxp\b|experience", RegexOptions.IgnoreCase), EconLuck = new Regex(@"\bluck", RegexOptions.IgnoreCase),
+            EconLevel = new Regex(@"level-ups?\b", RegexOptions.IgnoreCase);
 
         static bool Is(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
 
@@ -289,7 +353,10 @@ namespace YazsCompanion
                 case "clip":
                     {
                         double f = 1; if (arg != null) double.TryParse(arg, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out f);
-                        if (c.ClipShare > 0) { tierScore += f * (1.2 * c.ClipShare - 0.4); note = "the squad reloads magazines"; }
+                        // 0.16.1 (R-07 of the 10-11 Steam Deck round): what the item does first, in its own words (the book's), then the
+                        // condition, worded as one - up to here "the squad reloads magazines" was Magazine Clip's only card line, and it read
+                        // as what the item does (it doubles every magazine)
+                        if (c.ClipShare > 0) { tierScore += f * (1.2 * c.ClipShare - 0.4); var own = RowOf(name); note = own != null && own.Say != null ? own.Say + " - " + ClipWorks : ClipWorks; }
                         else if (c.ClipShare == 0)
                         {
                             if (tierScore > 0) tierScore *= 1 - 0.8 * f;
@@ -301,6 +368,7 @@ namespace YazsCompanion
                 case "shield":
                     tierScore = c.ShieldOwned ? 1.5 : -2.0;
                     note = c.ShieldOwned ? "viable behind the Energy Shield" : "no Energy Shield: double damage taken, less max HP";
+                    if (!c.ShieldOwned) NoteCost(c, "double damage taken, less max HP");        // 0.16.1 (C-8)
                     return null;
                 case "own":
                     {   // the item deals its own damage of that type: the squad's tags of the type raise it, nothing on the squad has to deal it
@@ -439,7 +507,7 @@ namespace YazsCompanion
             {
                 string other = Is(pair.Key, name) ? pair.Value : Is(pair.Value, name) ? pair.Key : null;
                 if (other == null || !c.Held.Contains(other)) continue;
-                v -= 0.9; why.Insert(0, "clashes with " + Your(other));
+                v -= 0.9; why.Insert(0, "clashes with " + Your(other)); NoteCost(c, "clashes with " + Your(other));       // 0.16.1 (C-8): a real cost
                 if (c.Say != null) c.Say.Lead = "clashes with " + Your(other);
             }
             return Math.Max(-1.8, v);
@@ -580,7 +648,7 @@ namespace YazsCompanion
                     }
                     else foreach (var s in squad) { double v; if (kw.Cls.TryGetValue(s, out v) && v > best) { best = v; who = s; } }
                     if (kw.Type != null && !exact && best > 0) fits = true;
-                    if (inNeg) { if (best > 0) { score -= 0.7 * best; why.Add("hurts " + who + ": " + kw.Tag); if (c.Say != null && (row == null || row.Say == null || kw.Type != null)) c.Say.Hurts.Add(Fit(kw, who, power, exact, c.Tags, 0.7 * best * wt)); } goto done; }
+                    if (inNeg) { if (best > 0) { score -= 0.7 * best; why.Add("hurts " + who + ": " + kw.Tag); NoteCost(c, "weakens " + (kw.Type ?? Wording.KeywordNoun(kw.Tag))); if (c.Say != null && (row == null || row.Say == null || kw.Type != null)) c.Say.Hurts.Add(Fit(kw, who, power, exact, c.Tags, 0.7 * best * wt)); } goto done; }
                     if (best > 0) { score += best * axis; why.Add(who + ": " + kw.Tag); named = true; if (c.Say != null && Draw(row, wt, inPos && row != null && row.Uses[ki])) c.Say.Boosts.Add(Fit(kw, who, power, exact, c.Tags, best * axis * wt)); }
                     else if (kw.Exclusive || (kw.PowerTag != null && c.OwnedTags != null && kw.Generic <= 0 && kw.Survival <= 0))
                     {
@@ -593,9 +661,15 @@ namespace YazsCompanion
                 }
                 if (inNeg)
                 {
-                    if (kw.Cls == null && kw.Generic > 0) { score -= 0.5 * kw.Generic; why.Add("costs " + kw.Tag); if (c.Say != null && (row == null || row.Say == null)) c.Say.Hurts.Add(new ItemFit { What = kw.Tag, Weight = 0.5 * kw.Generic * wt }); }
+                    if (kw.Cls == null && kw.Generic > 0)
+                    {
+                        // 0.16.1 (C161-01): an "economy" cost named as the item names it (Gold Medal: XP)
+                        string econ = kw.Tag == "economy" ? EconomyNoun(row, parsed.Text) : null;
+                        score -= 0.5 * kw.Generic; why.Add("costs " + kw.Tag); NoteCost(c, "costs " + (econ ?? Wording.KeywordNoun(kw.Tag)));
+                        if (c.Say != null && (row == null || row.Say == null)) c.Say.Hurts.Add(new ItemFit { What = kw.Tag, Noun = econ, Weight = 0.5 * kw.Generic * wt });
+                    }
                     // 0.16.0 (C16-02): a cost in health (Devil's Deal, Burger, Jewel of Death): weighs what survival weighs now
-                    else if (kw.Cls == null && kw.Survival > 0) { double sv = ctx == null ? 1 : Math.Max(0.3, ctx.Survival); score -= 0.5 * kw.Survival * sv; why.Add("costs health"); if (c.Say != null && (row == null || row.Say == null)) c.Say.Hurts.Add(new ItemFit { What = "health", Weight = 0.5 * kw.Survival * sv * wt }); }
+                    else if (kw.Cls == null && kw.Survival > 0) { double sv = ctx == null ? 1 : Math.Max(0.3, ctx.Survival); score -= 0.5 * kw.Survival * sv; why.Add("costs health"); NoteCost(c, "costs health"); if (c.Say != null && (row == null || row.Say == null)) c.Say.Hurts.Add(new ItemFit { What = "health", Weight = 0.5 * kw.Survival * sv * wt }); }
                     goto done;
                 }
                 if (kw.Generic > 0)
@@ -604,7 +678,11 @@ namespace YazsCompanion
                     if (kw.Cls == null)
                     {
                         why.Add(kw.Tag + AxisNote(axisName, axis, ctx));
-                        if (c.Say != null && c.Say.Keyword == null) { c.Say.Keyword = kw.Tag; c.Say.KeywordAxis = cashHeals ? "heal" : kw.Axis; c.Say.KeywordValue = axis; }
+                        if (c.Say != null && c.Say.Keyword == null)
+                        {
+                            c.Say.Keyword = kw.Tag; c.Say.KeywordAxis = cashHeals ? "heal" : kw.Axis; c.Say.KeywordValue = axis;
+                            if (kw.Tag == "economy") c.Say.EconNoun = EconomyNoun(row, parsed.Text);     // 0.16.1 (C161-01): "more luck", not "more XP and luck"
+                        }
                         if (cashHeals)
                         {   // C16-01e: the reason, and the card's words where cash is what the item gives (a book row's full-weight gain)
                             why.Add(HeldRules.CashHealWhy);
@@ -722,6 +800,7 @@ namespace YazsCompanion
                         if (l + (special ? 3 : 0) > worst) { worst = l + (special ? 3 : 0); hurt = t + " " + n + (special ? " and its special" : ""); }
                     }
                     double net = Math.Max(-1.5, Math.Min(3.0, 0.4 * (0.85 * tags.Share(topType) * moved - lost) - 1.2 * specials));
+                    if (net < 0 && hurt != null) NoteCost(c, "wipes your " + hurt.Split(' ')[0] + " tags");        // 0.16.1 (C-8): a real cost
                     // not switched on yet (22 to 29): worth the old "close to it" bonus at most, and nothing when switching it on
                     // would wipe more than it pools
                     if (top < 30 && net >= 0.8) { why.Add(topType + " " + top + "/30: close to switching it on"); if (say != null) say.Lead = topType + " has " + top + " of the 30 tags it needs"; return 0.8; }
@@ -741,7 +820,7 @@ namespace YazsCompanion
             }
             if (Is(name, "One For All"))
             {
-                if (top >= 10 && withPoints <= 3) { why.Add("would flatten your " + topType + " stack of " + top); if (say != null) say.Lead = "would flatten your " + top + " " + topType + " tags"; return -1.5; }
+                if (top >= 10 && withPoints <= 3) { why.Add("would flatten your " + topType + " stack of " + top); NoteCost(c, "flattens your " + topType + " tags"); if (say != null) say.Lead = "would flatten your " + top + " " + topType + " tags"; return -1.5; }
                 if (withPoints >= 4) { why.Add("evens out " + withPoints + " tag types"); if (say != null) say.Lead = "evens out your " + withPoints + " damage type tags"; return 0.6; }
                 return 0;
             }
@@ -769,7 +848,7 @@ namespace YazsCompanion
                 }
                 else if (n < 0 && tags.SpecialAt > 0 && cur >= tags.SpecialAt && cur + n < tags.SpecialAt && fit > 0)
                 {
-                    v -= 1.2; why.Insert(0, n + " " + type + " drops it under the special (" + tags.SpecialAt + ")");
+                    v -= 1.2; why.Insert(0, n + " " + type + " drops it under the special (" + tags.SpecialAt + ")"); NoteCost(c, "switches off your " + type + " 10-tag effect");
                     if (say != null) say.Lead = "switches off your " + type + " 10-tag effect";
                 }
             }
@@ -852,6 +931,7 @@ namespace YazsCompanion
         {
             List<string> whys; string[] lead;
             double v = HeldRules.ConvertCard(c, name, out whys, out lead);
+            if (v < 0) NoteCost(c, whys != null && whys.Count > 0 ? whys[0] : "stops a status your items need");       // 0.16.1 (C-8): a real cost
             if (whys != null) foreach (var w in whys) heldWhy.Add(HeldRules.Prefix + w);
             if (lead != null && c.Say != null) c.Say.LeadForms = lead;
             return v;

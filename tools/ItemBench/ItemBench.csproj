@@ -35,6 +35,8 @@
     <Compile Include="..\..\YazsCompanion.Mod\HeldRules.cs" Link="mod\HeldRules.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\ScreenBand.cs" Link="mod\ScreenBand.cs" />
     <Compile Include="..\..\YazsCompanion.Mod\Menu.Walk016.cs" Link="mod\Menu.Walk016.cs" />
+    <!-- 0.16.1 (R-05 of the 10-11 Deck round): the names table's pure half (Compose / Swap, the cards kept whole) -->
+    <Compile Include="..\..\YazsCompanion.Mod\Names.Table.cs" Link="mod\Names.Table.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- the parity file of the badge advice: research\badges_1004\tools\value_model.py's report (1.0.2, leader only) -->

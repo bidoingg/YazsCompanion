@@ -23,7 +23,9 @@
 // reason line; clear of every card, button, the divider, the team panel and the skip reward. A wing whose text room is under nine
 // ems leaves the WHY to the band, and 16:9, 16:10 (the Steam Deck) and WideMenus off keep the band exactly as 0.14.0 laid it
 // (the third of four cards keeps its wing - beside the selected card, as Q4 chose; the 10-07 review's C-m8: the header names the
-// card since 0.16.0, and where the panel goes on four-card screens is the user's answer, C16-10b). The action hint keeps its line.
+// card since 0.16.0; 0.16.1 (C16-10b, the user's B3-Q2 of 10-10: "placement fine, add the link marker"): the wing stays, and a gold
+// diamond on the selected card's top edge matches the panel's inner end diamond, drawn as the same jewel - WhyUi.Link). The action hint
+// keeps its line.
 // 0.16.0 (C16-14, DK-C03 of the 10-07 Deck round): a preferred size within NearPx of the 15 px floor (the Deck's 16 - 16.8 px) tries
 // the wanted lines at 15 px - the full pad, then the tight one - before one line at the preferred size; the lines wanted per band.
 // 0.16.0 (C16-15, DK-C04): a stretch must hold the block's first item at 15 px (WhyBandIn.NeedW) - the selected card's own piece when it
@@ -453,7 +455,8 @@ namespace YazsCompanion
         /// "none" - the band - when both do, and on a screen whose canvas is no wider than the view (16:9; 16:10 like the Steam Deck;
         /// WideMenus off). A card between keeps its wing however far it stands from it (the user's Q4: beside the selected card; the
         /// 10-07 review's C-m8 - the third of four cards about 1000 px from the left wing's panel: since 0.16.0 (C16-10) the panel's
-        /// header names its card, and where it goes on four-card screens is the user's answer, C16-10b). The room then reaches up to the
+        /// header names its card; 0.16.1 (C16-10b, the user's answer: the placement stays) a gold diamond on the card links it to the
+        /// panel's inner end, WhyUi.Link - <see cref="LinkTip"/> says which end). The room then reaches up to the
         /// cards' top (0.15.x, C-M1), clear of anything in the wing above the measure: a wrapped reason, or a name on rows of its own
         /// (<see cref="Header"/>), grows the panel upward (<see cref="WhySide.Lines"/>: the lines under the lead's own line).
         /// <see cref="WhySide.Pos"/> / <see cref="WhySide.Of"/>: which card of the row, left to right, the panel speaks for.</summary>
@@ -630,6 +633,29 @@ namespace YazsCompanion
 
         /// <summary>The height of the diamonds' centre from the block's top: the first line's middle (a block of one line: its middle).</summary>
         public static float TipFromTop(float font) { return Pad * font + LinePitch * font / 2f; }
+
+        // ---------------------------------------------------------------- the link marker (0.16.1, C16-10b)
+        /// <summary>0.16.1 (C16-10b, the user's B3-Q2 of 10-10 - option (d) of C-6: "placement fine, add the link marker"): which end diamond of a
+        /// side panel is the link - the one facing the cards, on the header's line: 1 (its right end, TipR) for a panel in the LEFT wing, 0 (TipL)
+        /// in the right wing; -1 for the band under the cards (16:9, 16:10, WideMenus off), which stands under its card and needs no link.</summary>
+        public static int LinkTip(WhySide s)
+        {
+            if (s == null || s.At == null || !s.At.StartsWith("side", StringComparison.Ordinal)) return -1;
+            return s.Left ? 1 : 0;
+        }
+
+        /// <summary>0.16.1 (C16-10b): the card's link diamond in the card's own units, drawn as large on screen as the panel's end diamond:
+        /// <paramref name="tipUnits"/> view units at <paramref name="unitPx"/> pixels each, over the card's pixels per unit at rest
+        /// (<paramref name="cardUnitPx"/>: Badge's reason line px over its font). A unit not measured: <paramref name="fallback"/>.</summary>
+        public static float LinkSize(float tipUnits, float unitPx, float cardUnitPx, float fallback)
+        {
+            if (!(tipUnits > 0) || !(unitPx > 0) || !(cardUnitPx > 0)) return fallback;
+            return tipUnits * unitPx / cardUnitPx;
+        }
+
+        /// <summary>0.16.1 (C16-10b): the link jewel's rings as shares of its outer diamond - a gold diamond, a plate-dark one inside it, a gold core:
+        /// one look on the card and on the panel's end, unlike the frame's solid corner diamonds and the band's plain end diamonds.</summary>
+        public const float LinkRing = 0.62f, LinkCore = 0.3f;
     }
 
     /// <summary>The size of the text on the selection screens (0.15.0, C15-06): the reason line under each card (with the RECOMMENDED
@@ -677,6 +703,18 @@ namespace YazsCompanion
         /// (the model of what Badge measures on the card).</summary>
         public static float ReasonPx1OnCanvas(float screenH, float canvasUnits) { return canvasUnits > 0 ? ReasonUnits * CardChain * screenH / canvasUnits : 0f; }
         public static float ReasonPx1(float w, float h) { return ReasonPx1OnCanvas(h, CanvasUnits(w, h)); }
+
+        /// <summary>0.16.1 (C161-02, DK-C12): a card text's size in pixels AT REST - its font in card units, the card's resting chain on the HUD
+        /// canvas (its parents' scale over the canvas's, times the prefab's resting 0.95: Badge.Scale measures it as the offer is badged; the
+        /// model's <see cref="CardChain"/> 0.77), the canvas's height in pixels and in units. No hover input: the card's Selected animation grows
+        /// the hovered card about 7 %, and up to 0.16.0 the WHY read its size off the reason line's lossyScale - live 10-10 one screen showed
+        /// 21.6 px on the card the WHY first spoke for (0.6 s in, its hover grown) and 20.5 px on the next (spoken the frame it was hovered).
+        /// Now every card of a screen gets this one size. 0 when an input is missing.</summary>
+        public static float RestPx(float fontUnits, float restChain, float pixels, float canvasUnits)
+        {
+            if (!(fontUnits > 0) || !(restChain > 0) || !(pixels > 0) || !(canvasUnits > 0)) return 0f;
+            return fontUnits * restChain * pixels / canvasUnits;
+        }
 
         /// <summary>A HUD canvas taller than 16:9's 2160 units (the Deck's 16:10: 2400; 4:3: 2880).</summary>
         public static bool Tall(float canvasUnits) { return canvasUnits > RefH + 0.5f; }

@@ -38,6 +38,19 @@
 // 0.16.0 (C16-15, DK-C04 of the 10-07 Deck round): a line drawn UNDER its button (1280 x 800: the band over it is 63 units) stands in the
 // WHY band's row and cut it (one rescue card had no WHY at all) - there it says its short words (ScreenCall.Short: 'REROLL  -  a weak
 // offer', 'REROLL  -  Tank fits better'), about half as wide; over its button (the PC) the long words stay. The frame is unchanged.
+// 0.16.1 (C-3 + DK-C07, the user's B2-Q3 of 10-10 "move it to the button"): ONE gold frame per screen (ScreenCall.GoldFrame). Up to 0.16.0
+// a REROLL / SKIP hint framed its button in gold 0.6 s after the cards came, while the best card kept its gold frame and RECOMMENDED
+// ribbon - two gold frames saying opposite things, the card's first (the Deck followed 1 hint of 4; live 10-10 11:57:59 the framed card
+// was taken 8 s after a REROLL hint). Now the frame goes on the button IN THE FRAME THE CARDS ARE BADGED (Apply -> FrameNow), and the
+// best card gives up its frame (Badge.Yield: its ribbon grey, reading 'IF YOU KEEP' over its own line, grey too); the line over the button
+// carries the ribbon's word - 'RECOMMENDED: REROLL  -  the best card here is weak for this squad' (ScreenCall.HeadWord) - and under it
+// (1280 x 800) the short words keep their 0.16.0 head ('REROLL  -  a weak offer'), so the WHY band's row has the room C16-15 gave it.
+// The line is placed on the next frame (the buttons laid out) and unfolds there - only the line moves in -, and is measured again once
+// the screen has flown in (SettleAfter, the old 0.6 s: '... the line moved as the screen settled' when that changed it). BANISH keeps
+// the card's frame (the best card stays the pick); its button's frame is grey. When the verdict goes while the screen stays (a
+// re-judge), the card's frame comes back (Badge.Restore). '[badge] <screen> <clock>: REROLL advised - the gold frame on the Reroll
+// button; #1 <card> gave it up: 'IF YOU KEEP' over its line '...'' says what moved, once per offer and verdict. For the pause walk ([Debug] PreviewPause) only,
+// DebugPreviewDue draws a REROLL and a SKIP hint in turn on its first offer (the walk's level-ups are strong), with a shot each.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -60,7 +73,9 @@ namespace YazsCompanion
     {
         const string FrameName = "YazsRerollFrame", LineName = "YazsRerollHint";
         // canvas units at scale 1 (the card badges' sizes: the reason line's font, the ribbon's tips)
-        const float Font = 40f, LineH = 62f, Tip = 36f, Pad = 26f, MaxW = 1800f, Gap = ScreenBand.Gap, PlaceDelay = 0.6f;
+        // 0.16.1 (C-3): SettleAfter - the line is measured again this long after the cards came (the screen has flown in by then; up to
+        // 0.16.0 the whole hint waited for it, PlaceDelay)
+        const float Font = 40f, LineH = 62f, Tip = 36f, Pad = 26f, MaxW = 1800f, Gap = ScreenBand.Gap, SettleAfter = 0.6f;
 
         sealed class Avail
         {
@@ -84,7 +99,16 @@ namespace YazsCompanion
         static string _short;                            // 0.16.0 (C16-15): its short form - drawn when the line goes under its button
         static Button _button;                           // the button the hint is about (its frame)
         static float _placeAt = -1f;
-        static bool _shown;
+        static bool _shown;                              // the line placed (or the frame alone decided) on this offer
+        // 0.16.1 (C-3): the action on screen (the walk's preview's while it runs), its button's frame drawn, the best card that gave up its
+        // frame (Badge.Yield; null: none), when the cards came, the frame the line may be placed from, the settle re-measure, the line as drawn
+        static HintAction _action;
+        static bool _framed, _lineOn, _settleSaid;
+        static Card _keptCard;
+        static float _offerAt = -1f, _settleAt = -1f;
+        static int _placeFrame = -1;
+        static string _drawn;
+        static bool Badges { get { try { return Plugin.ShowBadges.Value; } catch { return true; } } }
         static readonly RerollCount _count = new RerollCount();     // the count the verdict uses, the game's for this offer, a re-judge due
         static bool _rejudge;                            // the game's count differs from the one judged with: judge again on the next Tick
         static IntPtr _hookPtr; static int _hookFrame = -9, _hookCount = -1, _hookBanish = -1; static bool _hookSaid;
@@ -112,6 +136,8 @@ namespace YazsCompanion
                 // first): keep that one, else the count comes right after the cards (the screen opening) - see RerollCount
                 int hook = _hookPtr == p && Time.frameCount - _hookFrame <= 1 ? _hookCount : -1;
                 if (_sel != null && _selPtr != p) Hide();
+                // 0.16.1 (C-3): Advisor has just badged these cards afresh (Badge.Show: the frame on the new best card) - nothing is given up yet
+                _keptCard = null; _offerAt = Time.realtimeSinceStartup; _settleSaid = false;
                 _sel = sel; _selPtr = p; _cards = cards; _screen = screen; _clock = s.Clock; _call = null; _rescue = null; _rejudge = false;
                 if (!OnFor(screen))
                 {
@@ -241,19 +267,28 @@ namespace YazsCompanion
         static string _againWhy = "";                    // what the re-judge's log line says the cards were judged with before
         static string Count(int n) { return n >= 0 ? n.ToString(CultureInfo.InvariantCulture) : "?"; }
 
-        /// <summary>From Advisor: a selection screen closed (the pick, a skip) - the hint goes with it.</summary>
-        public static void Close() { Hide(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; }
+        /// <summary>From Advisor: a selection screen closed (the pick, a skip) - the hint goes with it. 0.16.1 (C-3): the best card is left as it
+        /// is (its screen animates out; the next offer badges every card afresh).</summary>
+        public static void Close() { Hide(false); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _preview = null; }
 
         /// <summary>The HUD went away with the scene: nothing of ours is left to hide (the unlock cards are looked up again next run).</summary>
-        public static void Forget() { _placeAt = -1f; _text = null; _short = null; _shown = false; _button = null; LineRect = new R4(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; _banishing = null; }
+        public static void Forget()
+        {
+            _placeAt = -1f; _settleAt = -1f; _text = null; _short = null; _drawn = null; _shown = false; _framed = false; _lineOn = false; _button = null; _keptCard = null; _preview = null;
+            LineRect = new R4(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; _banishing = null;
+        }
 
-        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and a float compare a frame.</summary>
+        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and two float compares a frame.
+        /// 0.16.1 (C-3): the line is placed on the frame after the hint was decided (never the same frame: the buttons are laid out by then),
+        /// and measured again once the screen has flown in. The clock is read only while one of the two is due (review 10-10: no engine
+        /// call on the frames nothing waits).</summary>
         public static void Tick()
         {
             if (_rejudge) Rejudge();
-            if (_placeAt < 0f || Time.realtimeSinceStartup < _placeAt) return;
-            _placeAt = -1f;
-            Place();
+            if (_placeAt < 0f && _settleAt < 0f) return;
+            float now = Time.realtimeSinceStartup;
+            if (_placeAt >= 0f && now >= _placeAt && Time.frameCount > _placeFrame) { _placeAt = -1f; Place(false); }
+            if (_settleAt >= 0f && now >= _settleAt && _placeAt < 0f) { _settleAt = -1f; Place(true); }
         }
 
         // the game's count differed from the one the cards were judged with: judge them again, once, with what the game left on
@@ -401,14 +436,74 @@ namespace YazsCompanion
             bool flipped = _call == null || _call.Show != call.Show || _call.Action != call.Action;
             _call = call;
             if (always || flipped) { if (_in != null) Log(_rescue, rr, when); else LogScreen(call, when); }
-            if (!call.Show) { Hide(); return; }
-            string text = _in != null ? call.Words : Head(call.Action) + Wording.Safe(Names.Text(call.Words));
+            if (_preview != null) return;                    // 0.16.1: the walk's preview holds the screen - the verdict is drawn when it ends (_call)
+            Apply(call);
+        }
+
+        // 0.16.1 (C-3): a verdict onto the screen. Shown: the frame on its button at once (FrameNow: gold, and the best card gives up its own,
+        // for REROLL / SKIP; grey for BANISH), the line from the next frame (Place). Not shown: the hint goes and the best card's frame comes back.
+        static void Apply(ScreenCall call)
+        {
+            if (call == null || !call.Show) { Hide(); return; }
+            string text = LineOf(call, false);
             // 0.16.0 (C16-15): the short words too - Place draws them when the line goes under its button
-            string brief = _in != null ? call.Short ?? call.Words : Head(call.Action) + Wording.Safe(Names.Text(call.Short ?? call.Words));
+            string brief = LineOf(call, true);
             Button b = ButtonOf(call.Action);
-            if (_shown && text == _text && brief == _short && b != null && _button != null && b.Pointer == _button.Pointer) return;     // the same words on screen already (a count that moved, still > 0)
-            if (_shown && (_button == null || b == null || b.Pointer != _button.Pointer)) Hide();                      // another action: its own button
-            _text = text; _short = brief; _button = b; _placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : PlaceDelay);
+            bool same = b != null && _button != null && b.Pointer == _button.Pointer;
+            if ((_shown || _framed) && !same) Hide();                                   // another action: its own button (the card's frame back first - one frame, nothing drawn between)
+            _action = call.Action; _button = b;
+            FrameNow();
+            if (_shown && same && text == _text && brief == _short) return;            // the same words on screen already (a count that moved, still > 0)
+            _text = text; _short = brief;
+            _placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : 0f); _placeFrame = Time.frameCount;
+            // measured again once the screen has flown in (a verdict that comes later - a re-judge, a reroll's new cards - finds it in place)
+            float settle = _offerAt + SettleAfter;
+            if (!_shown && Time.realtimeSinceStartup < settle) _settleAt = settle;
+        }
+
+        // the line's words: the rescue screen's verdict carries its own head (LineText); every other screen's words get theirs here -
+        // 'RECOMMENDED: REROLL' over the button, the action alone in the short form under it (0.16.1, ScreenCall.HeadWord)
+        static string LineOf(ScreenCall call, bool brief)
+        {
+            if (call.Rescue != null) return brief ? call.Short ?? call.Words : call.Words;
+            return Head(call.Action, brief) + Wording.Safe(Names.Text(brief ? call.Short ?? call.Words : call.Words));
+        }
+
+        // 0.16.1 (C-3): the frame on the hint's button with the cards - gold when the hint takes the screen's one gold frame (ScreenCall.GoldFrame:
+        // REROLL / SKIP, the button shown), and then the best card gives up its own (Keep); grey for BANISH (the best card stays the pick). A
+        // button not shown (yet): nothing - the card keeps its frame; Place asks again once the line is placed.
+        static void FrameNow()
+        {
+            RectTransform brt = null; bool up = false;
+            try { brt = _button == null ? null : _button.transform.TryCast<RectTransform>(); up = brt != null && _button.gameObject.activeInHierarchy; } catch { up = false; }
+            if (!up) return;
+            bool gold = ScreenCall.GoldFrame(Badges, true, _action, true) == FrameOn.Button;
+            var frame = Frame(brt);                                                    // the card frame's, a size smaller
+            Tint(frame, gold ? Theme.Gold : Theme.Grey);
+            if (!_framed) { _framed = true; EnterFrame(frame); }
+            if (gold && Badges) Keep();
+        }
+
+        // the best card gives up its frame and ribbon (Badge.Yield) - once per offer and verdict, said in one line
+        static void Keep()
+        {
+            if (_keptCard != null || _cards == null) return;
+            Card best = null;
+            foreach (var c in _cards) if (c != null && c.Rank == 1) { best = c; break; }
+            if (best == null) return;
+            string words = Badge.Yield(best);
+            if (words == null) return;
+            _keptCard = best;
+            Plugin.Logger.LogInfo("[badge] " + _screen + " " + _clock + ": " + ScreenCall.Name(_action) + " advised - the gold frame on the " + ButtonWord() + " button; #1 " + best.Name
+                + " gave it up: '" + ScreenCall.KeepLead + "' over its line '" + words + "'" + (_preview != null ? " (the walk's preview)" : ""));
+        }
+
+        // the verdict that took the frame went while the screen stays: the best card wears its frame again
+        static void RestoreCard()
+        {
+            var c = _keptCard; _keptCard = null;
+            if (c == null) return;
+            if (Badge.Restore(c)) Plugin.Logger.LogInfo("[badge] " + _screen + " " + _clock + ": the gold frame back on #1 " + c.Name + (_preview != null || _pvStep > 0 ? " (the walk's preview)" : " (the hint went)"));
         }
 
         static Button ButtonOf(HintAction a)
@@ -451,7 +546,9 @@ namespace YazsCompanion
             Plugin.Logger.LogInfo(sb.ToString());
         }
 
-        static string Head(HintAction a) { return "<b><color=" + Theme.GoldHex + ">" + ScreenCall.Name(a) + "</color></b><color=" + Theme.DimHex + ">  -  </color>"; }
+        // the line's head: 0.16.1 (C-3) 'RECOMMENDED: REROLL' / 'RECOMMENDED: SKIP' over the button - the ribbon the best card gave up -, the
+        // action alone in the short form under it and for BANISH (ScreenCall.HeadWord)
+        static string Head(HintAction a, bool brief) { return "<b><color=" + Theme.GoldHex + ">" + ScreenCall.HeadWord(a, brief) + "</color></b><color=" + Theme.DimHex + ">  -  </color>"; }
 
         // REROLL - Tank would fit this squad better; a second survivor that clears the margin too: "Tank or SWAT", and "(+1 more)"
         // when still more do; for a class the active quest needs (0.13.0, C1): REROLL - the quest needs Huntress.
@@ -463,18 +560,23 @@ namespace YazsCompanion
         {
             var who = c.Better.Take(2).Select(r => Wording.Safe(Names.Class((CT)r.Class))).ToList();
             if (who.Count == 0) who.Add(Wording.Safe(Names.Class((CT)c.Best.Class)));
-            string head = Head(HintAction.Reroll);
+            string head = Head(HintAction.Reroll, brief);
             if (c.ForQuest) return head + "the quest needs " + (who.Count > 1 ? who[0] + " or " + who[1] : who[0]);
             return head + (brief ? Wording.RerollShort(who) : Wording.Reroll(who, Math.Max(0, c.Better.Count - who.Count)));
         }
 
         // ---------------------------------------------------------------- drawing
-        static void Hide()
+        static void Hide() { Hide(true); }
+
+        // the hint off the screen: its line, its button's frame; 0.16.1 (C-3) with <restore> the best card wears its frame again (the verdict went,
+        // the screen stays) - not when the screen closes (Close: it animates out as it is)
+        static void Hide(bool restore)
         {
-            _placeAt = -1f; _text = null; _short = null;
-            bool was = _shown; _shown = false;
+            _placeAt = -1f; _settleAt = -1f; _text = null; _short = null; _drawn = null;
+            bool was = _shown || _framed; _shown = false; _framed = false; _lineOn = false;
             bool had = !LineRect.Empty; LineRect = new R4();
             if (had) WhyUi.Relayout();
+            if (restore) RestoreCard(); else _keptCard = null;
             if (!was || _sel == null) { _button = null; return; }
             Fx.Cancel("reroll:");
             try
@@ -486,7 +588,10 @@ namespace YazsCompanion
             _button = null;
         }
 
-        static void Place()
+        // the line: placed on the frame after the verdict (<settle> false), and measured again once the screen has flown in (<settle> true:
+        // moved only when the spot changed, said once an offer - '... the line moved as the screen settled'). 0.16.1 (C-3): the frame is
+        // FrameNow's, drawn with the cards; up to 0.16.0 all of it waited 0.6 s.
+        static void Place(bool settle)
         {
             if (_text == null || _sel == null) return;
             try
@@ -496,12 +601,10 @@ namespace YazsCompanion
                 var button = _button;
                 var brt = button == null ? null : button.transform.TryCast<RectTransform>();
                 var view = sel.transform.TryCast<RectTransform>();
-                if (brt == null || view == null) { Plugin.Logger.LogInfo(Tag + "not drawn - the screen has no " + ScreenCall.Name(_call != null ? _call.Action : HintAction.Reroll).ToLowerInvariant() + " button"); return; }
+                if (brt == null || view == null) { if (!settle) Plugin.Logger.LogInfo(Tag + "not drawn - the screen has no " + ScreenCall.Name(_action).ToLowerInvariant() + " button" + Pv()); return; }
                 bool first = !_shown;
+                FrameNow();                 // a button that came up after the verdict: its frame now (and the best card gives up its own)
                 float s = Scale(view);
-
-                // the gold frame on the button (the recommended card's, a size smaller)
-                var frame = Frame(brt);
 
                 // where the line fits, measured in the view's space: between the lowest card line and the button's top (the band
                 // manager's rule, ScreenBand.Hint)
@@ -511,8 +614,7 @@ namespace YazsCompanion
                 float floor = b.Y0;
                 try
                 {   // a FREE label standing over the button is kept clear too
-                    var act = _call != null ? _call.Action : HintAction.Reroll;
-                    var fl = act == HintAction.Banish ? sel.banishFreeLabel : act == HintAction.Reroll ? sel.rerollFreeLabel : null;      // the Skip button has none
+                    var fl = _action == HintAction.Banish ? sel.banishFreeLabel : _action == HintAction.Reroll ? sel.rerollFreeLabel : null;      // the Skip button has none
                     var frt = fl == null || !fl.activeInHierarchy ? null : fl.transform.TryCast<RectTransform>();
                     if (frt != null) { var fr = SelectBands.Rect(frt, view, _corners); if (fr.Y1 <= b.Y0 + 4f) floor = Mathf.Min(floor, fr.Y0); }
                 }
@@ -524,24 +626,20 @@ namespace YazsCompanion
                 var line = view.Find(LineName); var lrt = line == null ? null : line.TryCast<RectTransform>();
                 if (spot.Where == null)
                 {
-                    if (lrt != null) lrt.gameObject.SetActive(false);
-                    if (!LineRect.Empty) { LineRect = new R4(); WhyUi.Relayout(); }
-                    if (first) Plugin.Logger.LogInfo(Tag + "drawn as the frame alone - no room for the line (over the button " + spot.Band.ToString("0") + " units, under it " + spot.Below.ToString("0") + ", the line needs " + spot.Need.ToString("0") + ")");
-                    _shown = true;
-                    if (first) Entrance(frame, null, null, true);
+                    Alone(lrt, first, settle, "no room for the line (over the button " + spot.Band.ToString("0") + " units, under it " + spot.Below.ToString("0") + ", the line needs " + spot.Need.ToString("0") + ")");
                     return;
                 }
                 string where = spot.Where == "over" ? "over the " + ButtonWord() + " button" : "under the " + ButtonWord() + " button (the band over it is " + spot.Band.ToString("0") + " units)";
                 if (lrt == null) lrt = BuildLine(view, brt);
-                if (lrt == null) { Plugin.Logger.LogInfo(Tag + "not drawn - no label to clone for the line"); return; }
+                if (lrt == null) { if (!settle) Plugin.Logger.LogInfo(Tag + "not drawn - no label to clone for the line"); return; }
                 var textT = lrt.Find("Text"); var text = textT == null ? null : textT.GetComponent<TextMeshProUGUI>();
                 float k = spot.K, sk = s * k, tip = Tip * sk, pad = Pad * sk;
                 text.fontSize = Font * sk;
                 // 0.16.0 (C16-15): under the button the line stands in the WHY band's row (1280 x 800) - its short words there, so the band
-                // keeps its room; over the button (the PC since 0.12.2) the long words
+                // keeps its room; over the button (the PC since 0.12.2) the long words - 0.16.1 (C-3): with the ribbon's 'RECOMMENDED:' head
                 string drawn = spot.Where == "under" && _short != null ? _short : _text;
-                bool brief = drawn != _text;                                         // the log's ', short form' (BANISH and the quest's rescue form have none)
-                text.text = drawn;
+                bool brief = drawn != _text;                                         // the log's ', short form' (BANISH has none)
+                if (text.text != drawn) text.text = drawn;
                 float tw = 0f; try { tw = text.preferredWidth; } catch { }
                 if (!(tw > 0f)) tw = 22f * sk * drawn.Length * 0.5f;
                 float w = Mathf.Min(MaxW * s, tw + tip + 2 * pad + 4f), want = w;
@@ -550,11 +648,7 @@ namespace YazsCompanion
                 try { x0 = ScreenBand.HintX(b, want, vr.width / 2f, spot.Top, spot.Top + h * k, SelectBands.Panels(sel, view, _corners), out w); } catch { w = want; }
                 if (w < tip + 2 * pad + 200f * sk)
                 {
-                    lrt.gameObject.SetActive(false);
-                    if (!LineRect.Empty) { LineRect = new R4(); WhyUi.Relayout(); }
-                    if (first) Plugin.Logger.LogInfo(Tag + "drawn as the frame alone - the line would run into the team panel (" + want.ToString("0") + " units wanted, " + w.ToString("0") + " clear)");
-                    _shown = true;
-                    if (first) Entrance(frame, null, null, true);
+                    Alone(lrt, first, settle, "the line would run into the team panel (" + want.ToString("0") + " units wanted, " + w.ToString("0") + " clear)");
                     return;
                 }
                 var bar = lrt.Find("Bar").TryCast<RectTransform>(); Ui.Stretch(bar, tip / 2, 0, tip / 2, 0);
@@ -566,24 +660,60 @@ namespace YazsCompanion
                 lrt.anchoredPosition = new Vector2(x0 + vr.xMin - vr.center.x, (vr.yMax - bottomY) - vr.center.y);
                 lrt.sizeDelta = new Vector2(w, h * k);
                 lrt.gameObject.SetActive(true); lrt.SetAsLastSibling();
-                LineRect = new R4(x0, spot.Top, x0 + w, bottomY);
-                if (first)
-                    Plugin.Logger.LogInfo(Tag + "drawn " + where + (x0 > b.X0 ? ", growing left" : "") + (w < want - 0.5f ? ", cut short by the team panel" : "") + (brief ? ", short form" : "") + " - " + w.ToString("0") + " x " + (h * k).ToString("0") + " units, font " + (Font * sk).ToString("0.#") + " (x" + sk.ToString("0.00") + "), " + (spot.Band >= 0 ? "band " + spot.Band.ToString("0") + " units between the cards' lowest line and the button" : "the cards reach below the button's top"));
-                _shown = true;
-                Entrance(frame, lrt, text, first);
-                WhyUi.Relayout();
+                var rect = new R4(x0, spot.Top, x0 + w, bottomY);
+                bool appear = !_lineOn, moved = !appear && !Same(rect, LineRect);
+                LineRect = rect;
+                string what = where + (x0 > b.X0 ? ", growing left" : "") + (w < want - 0.5f ? ", cut short by the team panel" : "") + (brief ? ", short form" : "") + " - " + w.ToString("0") + " x " + (h * k).ToString("0") + " units, font " + (Font * sk).ToString("0.#") + " (x" + sk.ToString("0.00") + "), " + (spot.Band >= 0 ? "band " + spot.Band.ToString("0") + " units between the cards' lowest line and the button" : "the cards reach below the button's top");
+                if (first) Plugin.Logger.LogInfo(Tag + "drawn " + what + Pv());
+                else if (settle && (moved || appear) && !_settleSaid) { _settleSaid = true; Plugin.Logger.LogInfo(Tag + "the line " + (appear ? "came" : "moved") + " as the screen settled - now " + what + Pv()); }
+                _shown = true; _lineOn = true;
+                if (appear) EnterLine(lrt, text, true);
+                else if (drawn != _drawn) EnterLine(lrt, text, false);            // new words on a shown line (a re-judge): typed on again
+                _drawn = drawn;
+                if (appear || moved) WhyUi.Relayout();
             }
             catch (Exception e) { Plugin.Logger.LogWarning(Tag + "not drawn - " + e.Message); }
         }
 
-        static string ButtonWord() { var a = _call != null ? _call.Action : HintAction.Reroll; return a == HintAction.Skip ? "Skip" : a == HintAction.Banish ? "Banish" : "Reroll"; }
+        // the frame alone on the button: no room for the line (or it would run into the team panel)
+        static void Alone(RectTransform lrt, bool first, bool settle, string why)
+        {
+            bool had = _lineOn;
+            if (lrt != null) lrt.gameObject.SetActive(false);
+            _lineOn = false; _drawn = null;
+            if (!LineRect.Empty) { LineRect = new R4(); WhyUi.Relayout(); }
+            if (first) Plugin.Logger.LogInfo(Tag + "drawn as the frame alone - " + why + Pv());
+            else if (settle && had && !_settleSaid) { _settleSaid = true; Plugin.Logger.LogInfo(Tag + "the line went as the screen settled - the frame alone: " + why + Pv()); }
+            _shown = true;
+        }
 
+        static bool Same(R4 a, R4 b) { return Mathf.Abs(a.X0 - b.X0) <= 1f && Mathf.Abs(a.Y0 - b.Y0) <= 1f && Mathf.Abs(a.X1 - b.X1) <= 1f && Mathf.Abs(a.Y1 - b.Y1) <= 1f; }
+        static string Pv() { return _preview != null ? " (the walk's preview)" : ""; }
+
+        static string ButtonWord() { var a = _action; return a == HintAction.Skip ? "Skip" : a == HintAction.Banish ? "Banish" : "Reroll"; }
+
+        // the frame on the button (the card frame's, a size smaller), made gold; FrameNow tints it - 0.16.1 (C-3): gold when it is the screen's
+        // one gold frame, grey for BANISH
         static RectTransform Frame(RectTransform button)
         {
             var t = button.Find(FrameName); var f = t == null ? null : t.TryCast<RectTransform>();
             if (f == null) { f = Ui.Frame(button, FrameName, 2f, 4f, Theme.Gold, 24f); OutOfLayout(f); }
             f.gameObject.SetActive(true); f.SetAsLastSibling();
             return f;
+        }
+
+        // the frame's edges and corner diamonds in one colour (one button's frame may serve REROLL, then BANISH - another verdict)
+        static void Tint(RectTransform f, Color color)
+        {
+            try
+            {
+                for (int i = 0; i < f.childCount; i++)
+                {
+                    var img = f.GetChild(i).GetComponent<Image>();
+                    if (img != null && img.color != color) img.color = color;
+                }
+            }
+            catch { }
         }
 
         static RectTransform BuildLine(RectTransform view, RectTransform button)
@@ -657,21 +787,28 @@ namespace YazsCompanion
             return CardTextSize.Follow(Font * screenH / h, h, factor);
         }
 
-        // on appear: the frame settles onto the button, the line unfolds from its left tip, types on, and the tip pings once;
-        // a new verdict on a shown hint (after a reroll) only types its words on again
-        static void Entrance(RectTransform frame, RectTransform line, TextMeshProUGUI text, bool full)
+        // on appear (0.16.1, C-3: with the cards): the frame settles onto the button as the best card's frame would have (0.12 s in)
+        static void EnterFrame(RectTransform frame)
+        {
+            try
+            {
+                Fx.Cancel("reroll:frame");
+                CanvasGroup g = null;
+                try { g = frame.GetComponent<CanvasGroup>(); if (g == null) { g = frame.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); g.blocksRaycasts = false; g.interactable = false; } } catch { }
+                Fx.Run("reroll:frame", 0.12f, 0.45f, k => { float sc = 1f + 0.08f * (1f - Fx.OutCubic(k)); frame.localScale = new Vector3(sc, sc, 1f); if (g != null) g.alpha = Fx.Smooth(k * 1.6f); });
+            }
+            catch { }
+        }
+
+        // the line unfolds from its left tip, types on, and the tip pings once - the only part of the hint that moves in; new words on a
+        // shown line (a re-judge, a reroll's new cards) are only typed on again
+        static void EnterLine(RectTransform line, TextMeshProUGUI text, bool full)
         {
             try
             {
                 if (full)
                 {
-                    Fx.Cancel("reroll:");
-                    if (frame != null)
-                    {
-                        CanvasGroup g = null;
-                        try { g = frame.GetComponent<CanvasGroup>(); if (g == null) { g = frame.gameObject.AddComponent(Il2CppType.Of<CanvasGroup>()).TryCast<CanvasGroup>(); g.blocksRaycasts = false; g.interactable = false; } } catch { }
-                        Fx.Run("reroll:frame", 0.05f, 0.45f, k => { float sc = 1f + 0.08f * (1f - Fx.OutCubic(k)); frame.localScale = new Vector3(sc, sc, 1f); if (g != null) g.alpha = Fx.Smooth(k * 1.6f); });
-                    }
+                    Fx.Cancel("reroll:line"); Fx.Cancel("reroll:ping");
                     if (line != null)
                         Fx.Run("reroll:line", 0.15f, 0.4f, k => { line.localScale = new Vector3(Mathf.Max(0.0001f, Fx.OutBack(k)), 1f, 1f); }, () =>
                         {
@@ -683,6 +820,93 @@ namespace YazsCompanion
                 if (text != null) Fx.Type("reroll:type", text, full ? 0.3f : 0.05f, 70f);
             }
             catch { }
+        }
+
+        // ---------------------------------------------------------------- the pause walk's preview (0.16.1, C-3)
+        // For the pause walk ([Debug] PreviewPause) only - the walk's level-ups are strong, so no real hint would show the new looks: once a
+        // session, on its first offer of two cards or more, 2 s in (the 'offer' and 'why' shots taken) and before the hover tour, a REROLL and
+        // then a SKIP hint are drawn as a real one draws them - the verdict comes from ScreenCall.Decide on these cards with their scores
+        // lowered (under every floor for REROLL; all AVOID, rerolls off, for SKIP), so the words are the real ones - with a 'hint_reroll' /
+        // 'hint_skip' shot 1.5 s into each (the frame, the 'RECOMMENDED:' line typed on, the best card's 'IF YOU KEEP', the WHY beside them);
+        // then the screen's own verdict again (the frame back on the best card). Logged as '[menu] pause walk: hint preview ...' lines and the
+        // drawing lines marked '(the walk's preview)' - never a '[squad] action hint: ... SHOWN' line (advice_audit counts those).
+        static ScreenCall _preview;                      // the forced verdict on screen (null: none)
+        static int _pvStep = -1;                         // -1 not started this session, 1 REROLL drawn, 2 SKIP drawn, 3 ending, 0 done
+        static float _pvAt; static IntPtr _pvSel;
+        const float PreviewShot = 1.5f;                  // the line unfolded (0.55 s) and typed on (0.3 s + up to 0.9 s) after it is placed
+
+        /// <summary>From the pause walk, before the hover tour: true while the preview holds the offer (the walk asks again shortly and
+        /// takes no pick meanwhile).</summary>
+        internal static bool DebugPreviewDue(float now)
+        {
+            if (_pvStep == 0) return false;
+            try
+            {
+                if (_pvStep > 0 && (_sel == null || _selPtr != _pvSel))
+                {
+                    Plugin.Logger.LogInfo("[menu] pause walk: hint preview cut short - the offer closed");
+                    _pvStep = 0; _preview = null; return false;
+                }
+                if (_pvStep < 0)
+                {
+                    if (_sel == null || _cards == null || _cards.Count < 2 || now < _offerAt + 2f) return false;
+                    _pvSel = _selPtr;
+                    Plugin.Logger.LogInfo("[menu] pause walk: hint preview - a REROLL and a SKIP hint drawn in turn on this " + _screen + " offer as real hints draw them (the cards' own verdict: "
+                        + (_call != null && _call.Show ? ScreenCall.Name(_call.Action) : "none") + "), a 'hint_reroll' / 'hint_skip' shot " + PreviewShot.ToString("0.0", CultureInfo.InvariantCulture) + " s into each");
+                    if (!Preview(HintAction.Reroll)) { End("no REROLL to draw"); return false; }
+                    _pvStep = 1; _pvAt = now + PreviewShot; return true;
+                }
+                if (now < _pvAt) return true;
+                if (_pvStep == 1)
+                {
+                    Shots.Later(0.05f, "hint_reroll", true);
+                    Said("REROLL");
+                    if (Preview(HintAction.Skip)) { _pvStep = 2; _pvAt = now + PreviewShot; return true; }
+                    Plugin.Logger.LogInfo("[menu] pause walk: hint preview - no SKIP on this screen (its Skip button not shown)");
+                    _pvStep = 3; _pvAt = now + 0.3f; return true;
+                }
+                if (_pvStep == 2) { Shots.Later(0.05f, "hint_skip", true); Said("SKIP"); _pvStep = 3; _pvAt = now + 0.3f; return true; }
+                End(null);
+                return false;
+            }
+            catch (Exception e) { Plugin.Logger.LogWarning("[menu] pause walk: hint preview failed: " + e.Message); _pvStep = 0; _preview = null; return false; }
+        }
+
+        // a forced verdict of <a> on the cards on screen: ScreenCall.Decide on them with their scores lowered, drawn as Apply draws any verdict
+        static bool Preview(HintAction a)
+        {
+            if (a == HintAction.Skip) { Button sk = ButtonOf(HintAction.Skip); bool up = false; try { up = sk != null && sk.gameObject.activeInHierarchy; } catch { } if (!up) return false; }
+            var x = new ScreenCallIn
+            {
+                Screen = _screen == Screen.SOS ? "LevelUp" : _screen.ToString(), Progress = 0.1, Health = 1, Survival = 1, Cash = 0.3,
+                Reroll = a == HintAction.Reroll, Skip = a == HintAction.Skip, Banish = false,
+                CanReroll = true, Rerolls = 5, RerollsText = "5 (the walk's preview)", CanSkip = true, SkipCash = 300, SkipHeal = 100,
+            };
+            foreach (var c in _cards)
+                if (c != null) x.Cards.Add(new HintCard { Name = c.Name, Kind = c.Kind, Rank = c.Rank, Head = "", Score = a == HintAction.Reroll ? 1.2 + 0.1 * Math.Max(0, 5 - c.Rank) : 0.5 - 0.01 * c.Rank });     // REROLL: the best 1.6, under every floor (2.0 - 3.5)
+            var call = ScreenCall.Decide(x);
+            if (!call.Show || call.Action != a) return false;
+            _preview = call;
+            Apply(call);
+            return true;
+        }
+
+        // what the preview drew, for the walk's log
+        static void Said(string what)
+        {
+            Plugin.Logger.LogInfo("[menu] pause walk: hint preview " + what + " - " + (_framed ? "the frame on the " + ButtonWord() + " button" : "no frame (the button not shown)") + ", "
+                + (_lineOn ? "the line " + (_drawn == _short && _short != _text ? "under it (short form)" : "over it") : "no line (the frame alone)")
+                + (_keptCard != null ? ", #1 " + _keptCard.Name + " gave up its frame" : ", the best card kept its frame"));
+        }
+
+        // the preview over: the screen's own verdict again, without a log line of its own (it was logged when it was judged)
+        static void End(string why)
+        {
+            _preview = null; _pvStep = 3;                    // still the preview's for RestoreCard's line
+            if (_call != null && _call.Show) Apply(_call); else Hide();
+            _pvStep = 0;
+            Plugin.Logger.LogInfo("[menu] pause walk: hint preview done" + (why != null ? " (" + why + ")" : "") + " - the screen's own verdict again (" + (_call != null && _call.Show ? ScreenCall.Name(_call.Action) : "none")
+                + "), the gold frame " + (_framed && ScreenCall.TakesFrame(_action) ? "on the " + ButtonWord() + " button" : "on the best card"));
         }
 
         // ---------------------------------------------------------------- the game's banishes, logged (0.14.0)

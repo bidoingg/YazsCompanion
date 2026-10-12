@@ -24,6 +24,10 @@
 // tries two 15 px lines before it leaves a reason out, and falls back to the short "goes first" when an item still drops (C16-14); the
 // band's stretch must hold its first item at 15 px (FirstNeed -> WhyBandIn.NeedW), else it takes the band's widest - beside the hint's line
 // under its button, which says its short words there (C16-15).
+// 0.16.1: (C161-02, DK-C12) the text's size is the cards' reason line AT REST (Badge.ReasonPxAtRest, CardTextSize.RestPx: no hover input) -
+// one size for every card of a screen (live 10-10: 21.6 px on the card the WHY first spoke for, its hover grown by then, 20.5 px on the
+// next); (C16-10b, the user's B3-Q2) a side panel is linked to its card by a gold jewel on the card's top edge matching the panel's inner end
+// diamond (Link; ', diamond link' in the [why] line) - the band under the cards needs none.
 // [General] ShowWhy switches it (with ShowBadges).
 using System;
 using System.Collections.Generic;
@@ -345,7 +349,7 @@ namespace YazsCompanion
         public static void Close() { Hide(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _on = null; _placeAt = -1f; _hideAt = -1f; }
 
         /// <summary>The HUD went away with the scene.</summary>
-        public static void Forget() { _shown = false; _block = null; _text = null; _group = null; _sel = null; _selPtr = IntPtr.Zero; _cards = null; _on = null; _selected = IntPtr.Zero; _placeAt = -1f; _hideAt = -1f; }
+        public static void Forget() { _shown = false; _block = null; _text = null; _group = null; _sel = null; _selPtr = IntPtr.Zero; _cards = null; _on = null; _selected = IntPtr.Zero; _placeAt = -1f; _hideAt = -1f; _link = null; _linkOn = IntPtr.Zero; }
 
         /// <summary>From the GameMaster.Update post-fix: two float compares a frame.</summary>
         public static void Tick()
@@ -427,6 +431,7 @@ namespace YazsCompanion
 
                 // 0.15.0 (C15-12): on a screen wider than 16:9 whose wings WideMenus opened, a panel in the wing beside the card
                 if (SidePanel(c, view, block, buttons, obstacles, reasonPx, unitPx)) return;
+                Unlink();                                                     // 0.16.1 (C16-10b): the band stands under its card - no link marker
 
                 // the text: the cards' own size (their reason line) within 15 - 22 px; a "Card text size" picked in the menu moves the
                 // 22 px ceiling as much as it moves the reason lines against their Auto (0.15.0, C15-06: CardTextSize.WhyPx)
@@ -564,8 +569,89 @@ namespace YazsCompanion
             float width = ScreenBand.BlockWidth(widest, chrome, font, side.Width), height = ScreenBand.BlockHeight(lines.Count + head.Count, font);
             float left = side.Left ? side.Room.X1 - width : side.Room.X0, top = side.Room.Y1 - height;      // beside the card, its bottom on the reason line
             Draw(view, left, top, width, height, font, 1f - ScreenBand.TipFromTop(font) / height, sb.ToString());
+            Link(c, ScreenBand.LinkTip(side), tip, unitPx);                         // 0.16.1 (C16-10b): the jewel on the card and on the panel's inner end (Log says it)
             Log(c, block, drawn, side.At, lines.Count, font * unitPx, items.Count, width, height, left, top, "wings " + wing.ToString("0") + " units a side: " + side.Wings, side.Pos, side.Of, head.Count);
             return true;
+        }
+
+        // ---------------------------------------------------------------- the link marker (0.16.1, C16-10b)
+        // The user's B3-Q2 of 10-10 (option (d) of the product critique's C-6): the side panel keeps its wing - for the third card of four about
+        // 1000 px from its card (live 10-10 11:53:51: card 3 of 4 in the left wing) - and a gold diamond links the two, so the eye goes from the
+        // panel to its card: a jewel (a gold diamond, a plate-dark one inside it, a gold core: ScreenBand.LinkRing / LinkCore) on the selected
+        // card's top edge, and the same jewel as the panel's end diamond that faces the cards, on the header's line (ScreenBand.LinkTip: the
+        // right end of a left-wing panel). The other end stays plain, as the band's ends do; the band under the cards (16:9, 16:10, WideMenus
+        // off) stands under its card and has none. The card's jewel is a child of the card root (it rises with the hover and goes with the
+        // screen) and as large on screen as the panel's end diamond (ScreenBand.LinkSize over the card's pixels per unit, Badge.CardUnitPx).
+        // Not a frame: the screen's one gold frame (ScreenCall.GoldFrame) is untouched.
+        static RectTransform _link; static IntPtr _linkOn;
+
+        // true when the jewel stands on the card and on the panel's end
+        static bool Link(Card c, int side, float tip, float unitPx)
+        {
+            try
+            {
+                if (side < 0 || c == null || c.Button == null || _block == null) { Unlink(); return false; }
+                var root = c.Button.transform.TryCast<RectTransform>();
+                if (root == null) { Unlink(); return false; }
+                var p = Ptr(c.Button);
+                if (_link != null && _linkOn != p) { try { _link.gameObject.SetActive(false); } catch { } _link = null; }
+                for (int i = 0; i < 2; i++) { var t = _block.Find(i == 0 ? "TipL" : "TipR"); Jewel(t == null ? null : t.TryCast<RectTransform>(), i == side); }
+                var found = root.Find(Badge.LinkName); var j = found == null ? null : found.TryCast<RectTransform>();
+                float size = ScreenBand.LinkSize(tip, unitPx, Badge.CardUnitPx, CardFont);
+                if (j == null) j = Ui.Diamond(root, Badge.LinkName, 0.5f, 1f, size, Theme.Gold);
+                j.anchorMin = j.anchorMax = new Vector2(0.5f, 1f); j.anchoredPosition = Vector2.zero; j.sizeDelta = new Vector2(size * 0.7071f, size * 0.7071f);
+                Jewel(j, true);
+                j.gameObject.SetActive(true); j.SetAsLastSibling();
+                _link = j; _linkOn = p;
+                if (!_linkSaid)
+                {
+                    _linkSaid = true;
+                    Plugin.Logger.LogInfo("[why] link marker: a gold jewel on the selected card's top edge and as the panel's " + (side == 1 ? "right" : "left") + " end diamond, "
+                        + (tip * unitPx).ToString("0.#", CultureInfo.InvariantCulture) + " px on both (" + size.ToString("0", CultureInfo.InvariantCulture) + " card units) - said once a session");
+                }
+                return true;
+            }
+            catch (Exception e) { Warn("the link marker", e); Unlink(); return false; }
+        }
+        static bool _linkSaid;
+
+        // no link: the card's jewel goes, the panel's ends are plain diamonds again
+        static void Unlink()
+        {
+            try { if (_link != null) _link.gameObject.SetActive(false); } catch { }
+            _link = null; _linkOn = IntPtr.Zero;
+            try
+            {
+                if (_block == null) return;
+                for (int i = 0; i < 2; i++) { var t = _block.Find(i == 0 ? "TipL" : "TipR"); Jewel(t == null ? null : t.TryCast<RectTransform>(), false); }
+            }
+            catch { }
+        }
+
+        // a diamond (Ui.Diamond: a square turned 45 degrees) as the jewel - a plate-dark diamond and a gold core inside it (squares centred in
+        // the turned square: diamonds too) - or plain again
+        static void Jewel(RectTransform d, bool on)
+        {
+            if (d == null) return;
+            var ring = d.Find("Ring"); var core = d.Find("Core");
+            if (!on)
+            {
+                if (ring != null) ring.gameObject.SetActive(false);
+                if (core != null) core.gameObject.SetActive(false);
+                return;
+            }
+            var r = ring != null ? ring.TryCast<RectTransform>() : Ui.Image(d, "Ring", Theme.Plate);
+            var k = core != null ? core.TryCast<RectTransform>() : Ui.Image(d, "Core", Theme.Gold);
+            Share(r, ScreenBand.LinkRing); Share(k, ScreenBand.LinkCore);
+            r.gameObject.SetActive(true); k.gameObject.SetActive(true);
+            k.SetAsLastSibling();
+        }
+
+        static void Share(RectTransform rt, float share)
+        {
+            float m = (1f - share) / 2f;
+            rt.anchorMin = new Vector2(m, m); rt.anchorMax = new Vector2(1f - m, 1f - m); rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero; rt.anchoredPosition = Vector2.zero;
         }
 
         // the wings were open but held no panel: said once an offer
@@ -606,16 +692,18 @@ namespace YazsCompanion
         // what was drawn, once per card and offer; where (every band or wing measured) with the offer's first. 0.16.0: the side panel's card
         // of the row (", card 2 of 3") and a header of more than one row (", header in 2 rows") - C16-10; the band's short "goes first" - C16-14;
         // the band's widest stretch taken because the selected card's own could not hold the first item (", the widest stretch") - C16-15
+        // 0.16.1 (C16-10b): ', diamond link' after the card's place when the link marker stands on this card and its panel (Link ran first)
         static void Log(Card c, WhyBlock block, List<string> drawn, string at, int lines, float px, int total, float width, float height, float left, float top, string where,
             int pos, int of, int headRows, bool shortForm = false, bool widest = false)
         {
             if (!_said.Add(Ptr(c.Button))) return;
+            bool link = _link != null && _linkOn == Ptr(c.Button);
             bool geo = !_geoSaid; _geoSaid = true;
             LastSaid = Ptr(c.Button); LastSaidAt = Time.realtimeSinceStartup;
             if (geo) Shots.Later(0.4f, "why");      // 10-07 review (C-m7): the offer's first WHY as drawn ([Debug] Screenshots)
             Plugin.Logger.LogInfo("[why] " + _screen + " " + _clock + ": #" + c.Rank + " " + c.Name + " " + c.Score.ToString("0.00", CultureInfo.InvariantCulture) + " - " + block.Lead
                 + " '" + string.Join("' | '", drawn) + "' (" + at + ", " + LinesSaid(at, lines) + ", " + px.ToString("0.#", CultureInfo.InvariantCulture) + " px, "
-                + drawn.Count + " of " + total + " shown" + (of > 0 ? ", card " + pos + " of " + of : "") + (headRows > 1 ? ", header in " + headRows + " rows" : "")
+                + drawn.Count + " of " + total + " shown" + (of > 0 ? ", card " + pos + " of " + of : "") + (link ? ", diamond link" : "") + (headRows > 1 ? ", header in " + headRows + " rows" : "")
                 + (shortForm ? ", the short \"goes first\"" : "") + (widest ? ", the widest stretch" : "")
                 + (geo ? "; " + width.ToString("0") + " x " + height.ToString("0") + " units at " + left.ToString("0") + "," + top.ToString("0") + "; " + where : "") + ")");
         }
@@ -647,17 +735,15 @@ namespace YazsCompanion
             return CardTextSize.Factor(setting, CardTextSize.ReasonPx1(w, h), CardTextSize.CanvasUnits(w, h));
         }
 
-        // the cards' reason line in pixels (the band's preferred size): the drawn line's font and scale, else the card's own 40 x 0.77
+        // the cards' reason line in pixels (the band's and the panel's preferred size). 0.16.1 (C161-02, DK-C12): its size AT REST, as Badge
+        // measured the screen's cards (Badge.ReasonPxAtRest: CardTextSize.RestPx - the font as sized, not as a long line shrank, on the card's
+        // resting chain) - the same for every card of the screen. Up to 0.16.0 it read the drawn line's lossyScale, which the card's hover
+        // animation grows about 7 %: live 10-10 21.6 px on the first card the WHY spoke for (0.6 s in, grown) and 20.5 px on the next ones.
+        // Not measured (no card badged yet): the card's own 40 units x 0.77 in the view
         static float ReasonPx(Card c, float unitPx)
         {
-            try
-            {
-                var root = c.Button == null ? null : c.Button.transform;
-                var t = root == null ? null : root.Find("YazsReason"); var tmp = t == null ? null : t.GetComponent<TextMeshProUGUI>();
-                var view = _sel.transform;
-                if (tmp != null && view.lossyScale.y > 0) return Mathf.Max(tmp.fontSize, Badge.ReasonFontNow) * (tmp.transform.lossyScale.y / view.lossyScale.y) * unitPx;      // 0.15.0: as sized, not as a long line shrank (Badge.Fit)
-            }
-            catch { }
+            float rest = Badge.ReasonPxAtRest;
+            if (rest > 0f) return rest;
             return CardFont * CardScale * unitPx;
         }
 
@@ -746,6 +832,7 @@ namespace YazsCompanion
             _placeAt = -1f;
             Fx.Cancel("why:in");
             try { if (_block != null) _block.gameObject.SetActive(false); } catch { }
+            Unlink();                                   // 0.16.1 (C16-10b): the card's jewel goes with the panel
             _shown = false;
         }
 

@@ -72,6 +72,38 @@ rule or a tier. One file per round of cases (`Checks.cs`, `AdviceFixCases.cs`, `
     `Menu.Walk016.cs` is linked into the bench with `YAZS_BENCH` defined, which leaves its game side out) and the results
     flow's step-2 hooks.
   - `LogCheck.cs` L11 - L15: the `items` check and the proof report of `--check-log`.
+- **0.16.1's sections**:
+  - `SeenLiveCases.cs` (full run and `--no-data`'s pure part): SL1 the economy word of every item book row that gains or
+    costs `economy` (16 rows: luck, XP, level-ups, XP and training points; the 10-10 11:57:59 chest replayed: Power of
+    Friendship says `More luck`, never XP), SL2 the estimate cue (`(unrated)` where a tier would stand, the WHY's first
+    reason, never on a guide-tiered item; on a PC card 319 of 319, on the Deck's #1 card 194 of 319), SL3 AVOID only with
+    a cost (a weak item that costs nothing at 1.00; Glass Cannon without the Energy Shield keeps its AVOID), SL4 the
+    all-AVOID SKIP's words (`would hurt` / `weak`).
+  - `QuestWordsCases.cs` (Q6a, a `partial` of QuestCases): the 16 counted quests' words, steps, keys and rows (40
+    characters at most, every row of the game's 53 events x the rank masks), the gates 0.17.0's counted rules build on,
+    the sources; QuestCases Q5 re-anchored to the quest box's words.
+  - `GeometryCases.cs`, section "0.16.1": G15 one gold frame in 44 hint states (11 states x badges on / off x the button
+    shown or not; BANISH keeps the card's gold) and the line's width with the `RECOMMENDED: ` head (under the button at
+    1280 x 800 unchanged, 518 units), G16 the room of `IF YOU KEEP` in the ribbon's slot, G17 the WHY's size at rest
+    (20.52 px on the PC, 16.0 on the Deck; `CardTextSize.RestPx` has no hover or lossyScale input), G18 the link jewel on
+    the four-card level-up (the panel's end that faces the cards, clear of the other cards, 22.2 px on both), G13 the
+    military card's plate `Content/Rarity`; S source checks for each.
+  - `itembook_expected.txt` rewritten (`--write-itembook`) for the cue and the 1.00 floor: 20 scores from under 1 to
+    1.00, the other changes words only.
+  - `DeckRoundCases.cs` (full run and `--no-data`'s pure part; the 10-11 Steam Deck run's card words, the Deck's room from
+    `CardTextSize` at 1280 x 800: 42 on #1, 36 beside 2ND - 4TH, 34 beside AVOID): DR2 the Liberate line's short form (72
+    Liberate lines fit), DR3 the item book's short forms (`Briefly`), a cut that never ends on a word like "every" or
+    "under a" (`Wording.EndsDangling`), every item note at every room from 30 to 50, DR5 the military training and Research
+    Pod cards kept whole in the names table (`Names.Table.cs`, the table's pure half, linked into the bench), DR7 the
+    magazine items' own words before `your guns use magazines`.
+  - `PcRoundCases.cs` (full run and `--no-data`, all pure; the 10-11 PC session's two faults, made-up runs only): XH1 -
+    XH8 Extermination's time left from its waves - wave 3 of 20 (~43 level-ups to come, recruit value 1, an S-tier recruit
+    over Liberate, the rescue reroll hint judging again, the game's goal moving nothing), the last waves (Liberate over a
+    weak recruit from wave 18, `Too late` on wave 20), the guards (wave 1: the prior alone; waves not read: the knowledge
+    goal), ModeAware off, 2,304 contexts of the other modes against a copy of 0.16.0's formulas (progress, time left,
+    clock words, level-ups, recruit value, reach), the `[ctx]` line, the pace prior 3.9, the sources (the SOS scores the
+    section rebuilds are Ranker's); BO1 one `Boosted by` reason for a recruit's team passive (0.16.0 said it twice), and
+    none under an evolution whose own line is `Evolution - boosted by ...` (as 0.16.0).
 
 Since 0.15.0 every line the bench prints is watched: its last line reads `bench: all as wanted` (exit 0) or how many lines
 are not as wanted (exit 1, or 3 when a section counted them; 2 when the game data is missing). `--strict` is the release
@@ -94,7 +126,8 @@ new file). Two tools read a log:
   tree before the version bump). After the checks
   come INFO sections, which are not checks: the proofs the log holds, each kind as `seen N, first at HH:MM:SS: <source or
   line>` or `not in this log`. The real-session proofs are `first-input`, `yard`, `equip` (with how EQUIP ADVICE / UNDO
-  was pressed: `touch`, `mouse` or `key`) and `ribbon`. The quest proof is `quest-story`. The walk proofs are
+  was pressed: `touch`, `mouse`, `key` or, 0.16.1, `pad`), `equip-order` (0.16.1: an EQUIP whose done line says the
+  slots read in the advice's order) and `ribbon`. The quest proof is `quest-story`. The walk proofs are
   `side-panel`, `results` and `recruit-tour`. `--expect kind,kind` turns those kinds into checks: a kind not in the log
   fails, and so does `equip` when no line says how it was pressed (exit 1). An unknown kind exits 2 with the list.
   Without `--expect` the exit codes are 0.15.0's.
@@ -249,6 +282,14 @@ In `BepInEx\plugins\YazsCompanion\companion.log` (the README's *Logs* says where
   followed (QuestSteer On, the run fits it, not failed); at full health and with no such quest it is the 0.15.0 line. A
   revive card's first fit reason is then `a second life: the squad is at N% health` or `a second life: the quest asks to
   survive the run`.
+  Extermination (0.16.1): its `[ctx]` line reads `Extermination d1, wave 3/20, early (..., ~45 level-ups to come, ~38 s a
+  wave, game goal 55 s, survive quest)` - after `level-ups to come` and ahead of the health tail, the wave length the
+  time left used (`RunContext.WaveSeconds`: a 42 s prior counted as four waves, blended with the run's own seconds per
+  finished wave; the prior alone at wave 1) and the game's `TimeRequiredForSuccess` (to a tenth), which no number reads
+  in that mode any more - the time left is the waves still to play, the one named counted whole, times the wave length,
+  with `[Advice] ModeAware` on or off. With the wave or the wave count not read: `..., waves not read: knowledge goal 1200
+  s, game goal 55 s)`, and the time left is (1 - progress) x the mode's knowledge goal (`badgeModes`). Every other mode's
+  line is as before.
   The ranking (0.16.0): once a session per rarity and stat, `[rank] Rare stat cards: weight x2.50 for Ability Cooldown
   (the card's own +0.25 vs Common +0.1)` (an Endless card: `[rank] Endless stat cards: weight x0.25 for Ability Size
   (...)`; `(the card's values not read: <exception> - the fallback)` when the game's lists could not be read, `;
@@ -266,6 +307,12 @@ In `BepInEx\plugins\YazsCompanion\companion.log` (the README's *Logs* says where
   units at 15 px)`, or `; no stretch holds the first item (N units at 15 px)` when no piece of any band could (then the
   band is laid out as before 0.16.0); near the 15 px floor `; 2 lines at 15 px[ with the tight pad (0.25 of the font)] -
   the preferred size is within 2 px of it`.
+  0.16.1: the px of every `[why]` line of a screen is the same (the card at rest; a 21.6 beside 20.5 is the old reading);
+  a side panel's line adds `, diamond link` after `card N of M` when the link jewel stands on the card and the panel's
+  end, and once a session `[why] link marker: a gold jewel on the selected card's top edge and as the panel's right end
+  diamond, 22.2 px on both (43 card units) ...`. An item card's `[card]` reasons may end `weak here, but it costs nothing
+  (no AVOID)` (held at 1.00), and an estimate-rated item's WHY starts `Unrated by the guides - the Companion's estimate
+  from its text`.
   The card frame (0.16.0), once per card class and outcome, at the 0.5 s re-measure: `[badge] plate: UIPowerupButtonSkill
   AddonDescription <w>x<h> units, y .. (the frame's bottom edge ..) - edge cut <a1>..<b0>` (or `- no overlap, edge
   whole`, `... not shown - the frame is drawn whole`, `... leaves no room either side of it on the edge ..., edge whole`).
@@ -314,6 +361,13 @@ floor 2.50 - held back: Jewel of Life is a second life (...)`), `| revive guard:
 Chest 06:31: drawn under the Reroll button (the band over it is 63 units), short form - 484 x 74 units, font 48 (x1.20),
 ...`; `, short form` is absent when the words have no shorter form (BANISH, the rescue screen's quest form `the quest
 needs <class>`). The line's `| '<words>'` tail keeps the long words (advice_audit.py reads them).
+0.16.1 (one gold frame per screen): a REROLL or SKIP hint that takes the frame says so once per offer and verdict,
+`[badge] LevelUp 02:31: REROLL advised - the gold frame on the Reroll button; #1 <card> gave it up: 'IF YOU KEEP' over
+its line '<words>'`, and `[badge] ...: the gold frame back on #1 <card> (the hint went)` when the screen stays without it;
+the `drawn over ...` width includes the `RECOMMENDED: ` head (about 235 units more than 0.16.0's); `[squad] action hint:
+the line moved as the screen settled - now ...` (`came` / `went`, once an offer) when the second measure at 0.6 s changed
+it - on most hinted screens that would mean the game's buttons come up after the cards. The all-AVOID SKIP's tail reads
+`| every card is under 1 (AVOID; none costs the squad anything: weak)` when its words are the weak ones.
 
 **The run setup screen** (`[loadout] ...`; replay them offline with `ItemBench --replay-loadout <companion.log>`, which
 recomputes every logged advice and checks every drawn set against it). Per session `[loadout] inventory 27 badges, hash
@@ -329,7 +383,22 @@ feature off for the session with one line. At load: `[loadout] hooks: ...`, `[lo
 readable`. 0.16.0: the EQUIP ADVICE plate's start line names how it was pressed: `[loadout] equip: EQUIP ADVICE (advice
 #1) pressed by touch - remove Tough, add Gunner = 2 clicks ...` or `UNDO pressed by mouse - ...` (`touch` / `mouse` is the
 mod menu's own test, Input.touchCount; `key` is `[Advice] LoadoutEquipKey`); at 1280 x 800 the drawn line says `swap row
-joined to row 1 (form 2: the ranks left to the markers; ...)` and `marker 80 u (number 15 px)`.
+joined to row 1 (form 2: the ranks left to the markers; ...)` and `marker 80 u (number 15 px)`. 0.16.1: the plan leaves
+the slots in the advice's order (LoadoutView.OrderedPlan: keep the longest prefix of the wanted order the equipped badges
+already hold, remove the rest, append; the fewest presses under the game's append / compacting-remove rules, at most 8;
+only when the set changes - a matching set in another order keeps an empty plan), the UNDO puts the old row back
+(UndoPlan, from the selection the game shows when the run ends), the pad's Y (Rewired `TabToggle`, refused while one of
+the seven views that read it is live) and A on the plate (a Button in the screen's Automatic navigation) press it as
+`pad`; the start line ends `selection before 1,0,18,20 -> 0,16,18,20 (slots #1 #2 #3 #4); the pad's Y (TabToggle)`, the
+done line `= slots #1 #2 #3 #4, the advice's order` (or `NOT the advice's order`; an UNDO's: `= the row before the
+EQUIP`), and `[loadout] equip: the button has the screen's focus (pad mode: the d-pad reached it)` once a visit.
+Review 2 (EquipInput, pure, EquipOrderCases EO11): only the pad's focus counts (the d-pad's, or the arrow keys' - Enter /
+Space then press as `key`). A click or a tap selects the plate too (Selectable.OnPointerDown; 0.16.0's plate had no select
+handler, so the input module cleared the selection on the same tap): LoadoutEquip.Track gives that selection up within 2
+frames (`a click selected the button - given up again, as in 0.16.0 (cleared)` once a visit), so a later A / Enter / Space
+does not press the plate the click pressed. TabToggle from the keyboard (the game maps T onto it on the PC) is refused
+(`a press by key not taken - the game's TabToggle key is not the button's ...`): the keyboard's key is `LoadoutEquipKey`
+alone (C5).
 
 **The test walks** (0.16.0, debug only): `[menu] pause walk: PreviewPauseRecruit <Auto|Class> - one hero joins 3 s into
 the run`, then `[menu] pause walk: recruit <Class> joined at 3.0 s (Unlock Character <Class> Powerup, OnApply(false)) -
@@ -396,6 +465,13 @@ In `BepInEx\config\bidoi.yazs.companion.cfg`, all off by default.
   ground, the nearest X m from the squad's centre, the pickup ring Y m (0 inside it)) - the first level-up granted ...`,
   1.5 s later `[menu] pause walk: level-up granted - level 1 -> 2, ...` (or, when the level did not rise,
   `ExperienceProgress.LevelUp()` direct once: the screen without the level counter).
+  0.16.1: before the hover tour, the first offer with two cards or more gets the hint preview (`RerollHint.DebugPreviewDue`,
+  every PreviewPause walk, once a session, 2 s in): a REROLL and then a SKIP hint, drawn as real ones are from
+  `ScreenCall.Decide` on the cards with lowered scores (the frame on the button, the best card's grey `IF YOU KEEP`), a
+  shot each (`hint_reroll`, `hint_skip`), about 3.5 s with the run clock standing, no `[squad] ... SHOWN` line (advice_audit
+  counts those): `[menu] pause walk: hint preview - ...`, `... hint preview REROLL - the frame on the Reroll button, the line
+  over it, #1 <card> gave up its frame`, the same for SKIP, then `... hint preview done - the screen's own verdict again
+  (none), the gold frame on the best card`.
 - `[Debug] PreviewYard = true` opens the Training Yard from the main menu about 6 s after launch
   (`UIViewMainMenu.OnClickUpgrades()`), walks the nine tabs with the game's own tab change (`ChangeTabIdx(1)`),
   saves `yard1_general` .. `yard9_mechanic` and `yard10_highlight` (the cursor moved onto a node), and on the Medic tab

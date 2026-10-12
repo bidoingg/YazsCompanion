@@ -32,7 +32,10 @@
 // leave the advice unchanged. 0.15.0 (C15-09): the counted ones - CustomGameplayEvent (eventId, targetCount: the story quests),
 // KillBossRushBoss, EventCount (targetEvent, targetCount), KillEnemyFilter (requireBoss, rankMask, targetCount) - are logged with
 // their id and the runtime's own count (_count; _isBossKilled), a change of a count once, and the story kinds feed the readout's
-// info-only QUEST row (QuestStory in QuestRules.cs; [General] QuestProgress). Every game member is read through a small NoInlining accessor inside a try, as in
+// info-only QUEST row (QuestStory in QuestRules.cs; [General] QuestProgress). 0.16.1 (C16-04a): every counted kind has a row, in the game's
+// own words ('Broken Vials 3 of 5', 'Liberate Survivors 1 of 3'; QuestStory.Decode takes the quest's name for the Boss Rush boss's), a long
+// count rebuilding the readout once per tenth of the way (StoryHash); EventCount RerollItemChecOncePerView and SOSLiberate get rules of their
+// own in 0.17.0 (C16-04b / c, on QuestStory's gates). Every game member is read through a small NoInlining accessor inside a try, as in
 // LoadoutState: a member a game patch took away costs that one reading, not the run.
 using System;
 using System.Collections.Generic;
@@ -375,9 +378,9 @@ namespace YazsCompanion
                 string id = null; int n = 1;
                 try { id = EventIdOf(ce); } catch { }
                 try { n = TargetCountOf(ce); } catch { }
-                c = QuestStory.Decode("CustomGameplayEvent", n, eventId: id);
+                c = QuestStory.Decode("CustomGameplayEvent", n, eventId: id, quest: story.Quest);
             }
-            else if (o.TryCast<GameHubQuestObjectiveKillBossRushBoss>() != null) c = QuestStory.Decode("KillBossRushBoss", 1);
+            else if (o.TryCast<GameHubQuestObjectiveKillBossRushBoss>() != null) c = QuestStory.Decode("KillBossRushBoss", 1, quest: story.Quest);
             else
             {
                 var ec = o.TryCast<GameHubQuestObjectiveEventCount>();
@@ -386,7 +389,7 @@ namespace YazsCompanion
                     string ev = null; int n = 1;
                     try { ev = TargetEventOf(ec); } catch { }
                     try { n = TargetCountOf(ec); } catch { }
-                    c = QuestStory.Decode("EventCount", n, targetEvent: ev);
+                    c = QuestStory.Decode("EventCount", n, targetEvent: ev, quest: story.Quest);
                 }
                 else
                 {
@@ -397,7 +400,7 @@ namespace YazsCompanion
                         try { n = TargetCountOf(kf); } catch { }
                         try { boss = RequireBossOf(kf); } catch { }
                         try { mask = RankMaskOf(kf); } catch { }
-                        c = QuestStory.Decode("KillEnemyFilter", n, requireBoss: boss, rankMask: mask);
+                        c = QuestStory.Decode("KillEnemyFilter", n, requireBoss: boss, rankMask: mask, quest: story.Quest);
                     }
                 }
             }
@@ -537,7 +540,7 @@ namespace YazsCompanion
                 sb.Append(' ').Append(fit).Append(';');
                 sb.Append(" | team rule: ").Append(team.Rules ? team.Words : team.HasRule ? team.Words + ", not followed (" + (team.AnyOf ? "objectives match Any" : team.Failed ? "failed already" : team.NotThisRun != null ? "this run does not fit the quest" : team.Muted) + ")" : "none");
                 if (rules.List.Count > 0) sb.Append(" | rules for the cards: ").Append(rules.List.Count);
-                if (story.Counts.Count > 0) sb.Append(" | counted: ").Append(story.Counts.Count).Append(story.Counts.Any(c => c.Story) ? " (story progress on the readout)" : "");
+                if (story.Counts.Count > 0) sb.Append(" | counted: ").Append(story.Counts.Count).Append(" (progress on the readout)");
             }
             catch (Exception e) { sb.Append(" - not read: ").Append(e.GetType().Name).Append(' ').Append(e.Message); }
             if (story.Counts.Count == 0) _story = null;
@@ -606,6 +609,7 @@ namespace YazsCompanion
             var story = _story;
             if (team == null || story == null || story.Counts.Count == 0) return null;
             story.Failed = team.Failed; story.NotThisRun = team.NotThisRun;
+            story.Steer = Steer(); story.AnyOf = team.AnyOf;        // 0.16.1 (C16-04a): the gates the counted rules share (the rows show either way)
             try
             {
                 GameHubQuestBase q = null; try { q = Active(); } catch { }
@@ -622,8 +626,10 @@ namespace YazsCompanion
             return story;
         }
 
-        /// <summary>For the readout's cheap fingerprint (G.QuickKey, every two seconds): the story objectives' counts as they stand, so a
-        /// story step rebuilds the QUEST row. The runtimes found by the last Story(); 0 = nothing to count. Never throws.</summary>
+        /// <summary>For the readout's cheap fingerprint (G.QuickKey, every two seconds): the counted objectives' counts as they stand, so a
+        /// step rebuilds the QUEST row. 0.16.1 (C16-04a): every counted kind (each has a row now), by its step - a count of more than ten
+        /// rebuilds once per tenth of the way (Collect Cash 30: at most 11 rebuilds a run, not one per cash pickup; a rebuild costs 4 - 5 ms on
+        /// the PC); met from the count, no IsFulfilled call here. The runtimes found by the last Story(); 0 = nothing to count. Never throws.</summary>
         public static long StoryHash()
         {
             try
@@ -632,9 +638,10 @@ namespace YazsCompanion
                 long h = 17;
                 foreach (var d in _counts)
                 {
-                    if (!d.Count.Story || d.Runtime == null) continue;
+                    if (d.Runtime == null) continue;
                     int n = -1; try { n = CountOf(d.Count.Kind, d.Runtime); } catch { }
-                    unchecked { h = h * 31 + n + 2; }
+                    int k = n < 0 ? -7 : n / Math.Max(1, d.Count.Step);          // -7: 'unread' stays apart from a count of 0 under integer division
+                    unchecked { h = h * 31 + k + 2; h = h * 31 + (n >= d.Count.Need ? 1 : 0); }
                 }
                 return h;
             }

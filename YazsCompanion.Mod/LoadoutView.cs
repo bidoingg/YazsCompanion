@@ -1,7 +1,9 @@
 // What the run setup screen shows for one advice (0.13.0), as data: a mark per badge (the truth table of SPEC 2.1), the
 // slot mirror, the swaps (equipped out <-> advised in) with the keep margin, the summary rows under CHOSEN BADGES, the
 // WHY line per badge - and the EQUIP plan: the clicks that would turn the equipped set into the advised one (removes
-// first, then adds; never a forced or a locked badge; never past the slots) with its UNDO. LoadoutUi.cs draws it,
+// first, then adds; never a forced or a locked badge; never past the slots) with its UNDO. Since 0.16.1 the plan also
+// leaves the slots in the advice's order (slot i = badge #i: OrderedPlan, the fewest presses under the game's list rules)
+// and the UNDO puts back the old row, not only its set. LoadoutUi.cs draws it,
 // LoadoutEquip.cs (the optional one-click button, off by default) presses the game's own badge button along the plan.
 //
 // The advice itself (Loadout.Recommend) ignores the equipped set; the keep margin lives here: a swap is shown only when
@@ -91,8 +93,71 @@ namespace YazsCompanion
             if (!SameSet(live, Expected)) Stopped = "press " + Done + " did not take (the selection is " + string.Join(",", live ?? new int[0]) + ")";
         }
 
-        /// <summary>The run that takes back the presses made so far (offered until the screen closes).</summary>
-        public EquipRun Undo() { return new EquipRun(Expected, LoadoutView.UndoOf(Steps.Take(Done).ToList()), Forced, Unlocked, Slots); }
+        /// <summary>The run that puts back the row this run started from (offered until the screen closes): the same badges in the same
+        /// slots (0.16.1; up to 0.16.0 the set only). From <paramref name="live"/> - the selection the game shows when the run ended, a
+        /// click by hand that stopped it included - or, unreadable, from what the presses made (<see cref="Expected"/>).</summary>
+        public EquipRun Undo(IList<int> live = null)
+        {
+            var from = live != null ? live.ToList() : Expected;
+            return new EquipRun(from, LoadoutView.UndoPlan(from, Start, Forced, Unlocked, Slots), Forced, Unlocked, Slots);
+        }
+    }
+
+    /// <summary>What a frame's input does to the EQUIP ADVICE plate: a press (its source for the log) or a press refused (why).</summary>
+    internal sealed class EquipPress
+    {
+        public string Source = "", How = "", Refused = "", RefusedBy = "";
+        public bool Go { get { return Source.Length > 0; } }
+        public override string ToString() { return Go ? Source + (How.Length > 0 ? " (" + How + ")" : "") : Refused.Length > 0 ? "refused " + RefusedBy + ": " + Refused : "none"; }
+    }
+
+    /// <summary>0.16.1 (review 2): how the EQUIP ADVICE plate is pressed, as data - LoadoutEquip.Frame reads the input, this decides.
+    /// The plate's focus counts only when the d-pad (or the arrow keys the game maps onto the same axes) brought it: a click or a tap
+    /// selects the plate as well (Unity's Selectable.OnPointerDown selects any Selectable whose navigation is not None; 0.16.0's plate
+    /// had no select handler, so the input module cleared the selection on the same tap), and that selection is given up again at once,
+    /// so a later A / Enter / Space never presses the plate a click pressed (EQUIP, then UNDO). TabToggle (the pad's Y) counts from the
+    /// pad only: the game maps a keyboard key onto it as well (T on the PC's map), and the keyboard presses the plate by
+    /// [Advice] LoadoutEquipKey alone (C5: none by default). Pure: the bench's EquipOrderCases EO11 runs it.</summary>
+    internal static class EquipInput
+    {
+        /// <summary>Frames after a left-button / touch event (down, held or up) the tick saw in which a selection of the plate is the
+        /// click's: the input module may run before or after the screen's Update within a frame, so the click's frame and the next.</summary>
+        public const int ClickFrames = 2;
+
+        /// <summary>One frame of the plate's focus. <paramref name="selected"/> = the plate holds the event system's selection now;
+        /// <paramref name="wasSelected"/> / <paramref name="wasPad"/> = last frame's answer; <paramref name="sinceMouse"/> = frames since
+        /// the last left-button event the tick saw; <paramref name="seenLast"/> = the tick ran on the frame before too (the fallback tick
+        /// every 0.25 s sees no click: a new focus it finds is not counted). <paramref name="pad"/> = the focus is the pad's (the ring
+        /// shows, A / Submit press); <paramref name="release"/> = a click's selection: give it up.</summary>
+        public static void Focus(bool selected, bool wasSelected, bool wasPad, int sinceMouse, bool seenLast, out bool pad, out bool release)
+        {
+            pad = false; release = false;
+            if (!selected) return;
+            if (sinceMouse >= 0 && sinceMouse <= ClickFrames) { release = true; return; }      // a click or a tap selected it (or landed on it while it had the focus)
+            if (wasSelected) { pad = wasPad; return; }                                           // the focus it had: a click's stays a click's until it leaves
+            pad = seenLast;                                                                     // a new focus with no click near it: the d-pad's or the arrow keys'
+        }
+
+        /// <summary>What starts a press this frame, first match wins: a click on the plate (its pointer, 'touch' or 'mouse'); the cfg key;
+        /// the pad's Y (TabToggle - refused when a keyboard key is down: that is the key the game maps onto it, not one of the plate's);
+        /// A / Submit while the pad's focus is on the plate and not on a click frame (the game's UISubmit fires on the left button too) -
+        /// 'key' for Enter / Space after the arrow keys.</summary>
+        public static EquipPress Decide(bool onPlate, string pointer, bool click, bool cfgKey, bool tabToggle, bool submit, bool keyboard, bool padFocus)
+        {
+            if (onPlate) return new EquipPress { Source = string.IsNullOrEmpty(pointer) ? "mouse" : pointer };
+            if (cfgKey) return new EquipPress { Source = "key" };
+            if (tabToggle)
+            {
+                if (keyboard) return new EquipPress { RefusedBy = "key", Refused = "the game's TabToggle key is not the button's (the keyboard presses it by [Advice] LoadoutEquipKey alone, none by default)" };
+                return new EquipPress { Source = "pad", How = "the pad's Y (TabToggle)" };
+            }
+            if (submit && padFocus && !click)
+            {
+                string source = keyboard ? "key" : "pad";
+                return new EquipPress { Source = source, How = (source == "pad" ? "A" : "Submit") + " on the focused button" };
+            }
+            return new EquipPress();
+        }
     }
 
     internal sealed class SummaryItem { public string Text = ""; public bool Equipped; }
@@ -225,8 +290,12 @@ namespace YazsCompanion
             foreach (var s in v.Swaps) v.Target.Add(s.Value);
             foreach (var id in v.Free) v.Target.Add(id);
             Func<int, bool> unlocked = id => { var r = a.RowOf(id); return r != null && r.Unlocked; };
-            v.Plan.AddRange(EquipPlan(v.Equipped, v.Target, v.Forced, unlocked, v.SlotCount));
-            v.Undo.AddRange(UndoOf(v.Plan));
+            // 0.16.1 (the 10-11 Deck report: "it doesn't seem to select in the right order, especially if I already have 1 or 2
+            // equipped"): the presses leave slot i holding badge #i - the ordered plan, taken only when the set changes (a set that
+            // matches in another order keeps an empty plan: no button, decision D1) and only when it reaches the same set
+            var plain = EquipPlan(v.Equipped, v.Target, v.Forced, unlocked, v.SlotCount);
+            v.Plan.AddRange(plain.Count == 0 ? plain : OrderedOr(v.Equipped, WantedOrder(v), v.Forced, unlocked, v.SlotCount, plain));
+            v.Undo.AddRange(UndoPlan(Apply(v.Equipped, v.Plan, v.Forced, unlocked, v.SlotCount), v.Equipped, v.Forced, unlocked, v.SlotCount));
 
             // marks
             var ranked = a.All.Where(r => r.Unlocked && r.Rated).ToList();
@@ -428,7 +497,99 @@ namespace YazsCompanion
             return plan;
         }
 
-        /// <summary>The inverse of a plan: the badges it added come out (last first), then the ones it removed go back in (in order).</summary>
+        // ---- 0.16.1: the slot order. The game's list rules (UIViewRunSetup.OnClickBadge / RefreshSelectedBadgeButtons, machine code
+        // of 1.0.2): slot i shows the selection's entry i, an add APPENDS, a remove COMPACTS (the later slots shift left), a forced
+        // badge never moves. Slot order changes nothing in play (ApplySelectedBadges is a plain loop): it is what the player reads.
+
+        /// <summary>The number a badge of this view carries on screen: an advised badge its rank, a kept-close equipped badge the rank of
+        /// the advised badge it stands in for; 0 = none (a forced badge, an unmarked one).</summary>
+        public int RankOf(int id)
+        {
+            if (Forced.Contains(id) || Advice == null) return 0;
+            var p = Advice.PickOf(id);
+            if (p != null && !p.Forced) return p.Rank;
+            foreach (var kv in Kept) if (kv.Key == id) { var q = Advice.PickOf(kv.Value); return q != null ? q.Rank : 0; }
+            return 0;
+        }
+
+        /// <summary>The order the slots should read after an EQUIP: every badge of <see cref="Target"/> that is not forced, by the number
+        /// it carries (<see cref="RankOf"/>); the unmarked ones (a short advice) after them, in their current order (decision D3).
+        /// Forced badges stay where the game keeps them.</summary>
+        public static List<int> WantedOrder(LoadoutView v)
+        {
+            var rest = v.Target.Where(id => !v.Forced.Contains(id)).Distinct().ToList();
+            return rest.Select((id, i) => new { id, i, r = v.RankOf(id) }).OrderBy(x => x.r > 0 ? 0 : 1).ThenBy(x => x.r).ThenBy(x => x.i).Select(x => x.id).ToList();
+        }
+
+        /// <summary>The fewest presses from <paramref name="equipped"/> to "the forced badges where they are + <paramref name="order"/>"
+        /// under the game's list rules: keep the longest prefix of the order that the equipped non-forced badges already hold in that
+        /// order (greedy = optimal: only that prefix can stay, the rest must be appended), remove every other non-forced badge (in the
+        /// equipped order), then append the rest of the order. Removes first, so every prefix of the plan is a valid selection; never
+        /// a forced badge, never a locked one (skipped, as <see cref="EquipPlan"/> does), never past the slots.</summary>
+        public static List<EquipStep> OrderedPlan(IList<int> equipped, IList<int> order, ICollection<int> forced, Func<int, bool> unlocked, int slots)
+        {
+            var cur = (equipped ?? new int[0]).Distinct().ToList();
+            forced = forced ?? new int[0];
+            var want = (order ?? new int[0]).Where(id => !forced.Contains(id)).Distinct().ToList();
+            var free = cur.Where(id => !forced.Contains(id)).ToList();
+            int k = 0;
+            foreach (var id in free) if (k < want.Count && id == want[k]) k++;
+            var keep = new HashSet<int>(want.Take(k));
+            var plan = free.Where(id => !keep.Contains(id)).Select(id => new EquipStep { Id = id, Add = false }).ToList();
+            int n = cur.Count - plan.Count;
+            foreach (var id in want.Skip(k))
+            {
+                if (unlocked != null && !unlocked(id)) continue;
+                if (n >= slots) break;
+                plan.Add(new EquipStep { Id = id, Add = true }); n++;
+            }
+            return plan;
+        }
+
+        /// <summary>The ordered plan when it reaches the same set as <paramref name="fallback"/> (the plain plan), else the plain plan: an
+        /// equipped badge that could not be put back (no row, not unlocked) is never taken out for the sake of the order.</summary>
+        public static List<EquipStep> OrderedOr(IList<int> equipped, IList<int> order, ICollection<int> forced, Func<int, bool> unlocked, int slots, IList<EquipStep> fallback)
+        {
+            var plan = OrderedPlan(equipped, order, forced, unlocked, slots);
+            var a = Apply(equipped, plan, forced, unlocked, slots); var b = Apply(equipped, fallback, forced, unlocked, slots);
+            return new HashSet<int>(a).SetEquals(b) ? plan : fallback.ToList();
+        }
+
+        /// <summary>The UNDO: from the selection <paramref name="from"/> back to the row <paramref name="before"/> - the same badges in the
+        /// same slots (a forced badge stays where the game keeps it), the fewest presses (<see cref="OrderedPlan"/>; the plain set
+        /// plan when the order cannot be had). Up to 0.16.0 it put back the set only, in another order 780 times in 1,100.</summary>
+        public static List<EquipStep> UndoPlan(IList<int> from, IList<int> before, ICollection<int> forced, Func<int, bool> unlocked, int slots)
+        {
+            forced = forced ?? new int[0];
+            var row = (before ?? new int[0]).Distinct().ToList();
+            return OrderedOr(from, row.Where(id => !forced.Contains(id)).ToList(), forced, unlocked, slots, EquipPlan(from, row, forced, unlocked, slots));
+        }
+
+        /// <summary>The numbers a selection shows, slot by slot: "#1 #2 #3 #4"; Q = a forced badge, - = a badge with no number.</summary>
+        public string SlotsText(IEnumerable<int> selection)
+        {
+            var l = (selection ?? new int[0]).Select(id => Forced.Contains(id) ? "Q" : RankOf(id) > 0 ? "#" + RankOf(id) : "-").ToList();
+            return l.Count == 0 ? "empty" : string.Join(" ", l);
+        }
+
+        /// <summary>The selection reads in the advice's order: its numbered badges rising slot by slot, the unmarked ones after them
+        /// (forced badges anywhere).</summary>
+        public bool InOrder(IEnumerable<int> selection)
+        {
+            int last = 0; bool unmarked = false;
+            foreach (var id in selection ?? new int[0])
+            {
+                if (Forced.Contains(id)) continue;
+                int r = RankOf(id);
+                if (r == 0) { unmarked = true; continue; }
+                if (unmarked || r <= last) return false;
+                last = r;
+            }
+            return true;
+        }
+
+        /// <summary>The inverse of a plan: the badges it added come out (last first), then the ones it removed go back in (in order).
+        /// Since 0.16.1 the UNDO is <see cref="UndoPlan"/> (the row, not only the set); kept for the bench's comparison.</summary>
         public static List<EquipStep> UndoOf(IList<EquipStep> plan)
         {
             var undo = new List<EquipStep>();

@@ -537,10 +537,17 @@ namespace YazsCompanion
     // 14 class quests) and kills of a rank (KillEnemyFilter, 2). Up to 0.14.0 they were logged 'advice unchanged' and nothing more: the
     // user had "Genesis" (Main_06) active for two sessions without a word from the mod. Now the '[quest]' line names each one's id and
     // count ('1. CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only'), a change of a count is logged once
-    // ('[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only'), and the story kinds get an
-    // info-only QUEST row on the PLAN readout ('QUEST  story objective 3 of 5', dim; [General] QuestProgress). This widens the PLAN rule
-    // "the QUEST row shows only while a rule changes the advice" for story progress on purpose (roadmap 10-06, Companion item 9). No card
-    // moves for any of them. Pure: Quest.cs reads the fields and the runtimes' counts, the bench replays the decoding.
+    // ('[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only'), and the counts get an
+    // info-only QUEST row on the PLAN readout (dim; [General] QuestProgress). This widens the PLAN rule "the QUEST row shows only while a
+    // rule changes the advice" for progress on purpose (roadmap 10-06, Companion item 9). No card moves for any of them. Pure: Quest.cs
+    // reads the fields and the runtimes' counts, the bench replays the decoding.
+    // 0.16.1 (C16-04a; the user's Q38: the game's own words): EVERY counted kind has a row, in the words of the game's quest box - its
+    // short labels, I2 terms Quests/ObjShort_* of game 1.0.2: "Broken Vials 3 of 5" where 0.15.0 said "story objective 3 of 5" (live 10-10:
+    // "QUEST  story objective 0 of 5" under Genesis), "Defeat Tower", "Liberate Survivors 1 of 3", "Open Item Chests 4 of 7", "Collect
+    // Cash 12 of 30", "Defeat Elite Bosses 0 of 3" - dim, info only, the story counts first, two at most (Rows). A count of more than ten
+    // steps rebuilds the readout once per tenth of the way (Step: Quest.StoryHash and Key), not at every cash pickup. The gates (Steer,
+    // AnyOf, Follows, Moves, OpenEvent) are what the counted rules of 0.17.0 build on (C16-04b reroll, C16-04c Liberate); the log's
+    // '[quest]' words keep the ids (the advice audit keys an open part by them).
 
     /// <summary>What a counted objective counts.</summary>
     internal enum CountKind { Story, BossRushBoss, Event, Kills }
@@ -553,37 +560,126 @@ namespace YazsCompanion
         public int Need = 1;                    // targetCount (the Boss Rush boss: 1)
         public double Have = double.NaN;        // the runtime's own count (_count; the boss: 1 once killed); NaN = not read
         public bool? Done;                      // the runtime's IsFulfilled (null: not read)
-        /// <summary>A story objective: the readout shows it.</summary>
+        // 0.16.1 (C16-04a): the game's own short words for it on its quest box ("Broken Vials", "Liberate Survivors"; empty: none known -
+        // RowText's fallback words), and the step of a readout rebuild (a tenth of a count of more than ten, else every count)
+        public string Label = "";
+        public int Step = 1;
+        /// <summary>A story objective (the story events, the Boss Rush boss): first on the readout.</summary>
         public bool Story { get { return Kind == CountKind.Story || Kind == CountKind.BossRushBoss; } }
         public bool Met { get { return Done == true || (!double.IsNaN(Have) && Have >= Need); } }
     }
 
-    /// <summary>The active quest's counted objectives (QuestCount), their progress, the row and the log words.</summary>
+    /// <summary>The active quest's counted objectives (QuestCount), their progress, the rows and the log words.</summary>
     internal sealed class QuestStory
     {
         public string Quest = "";
         public readonly List<QuestCount> Counts = new List<QuestCount>();
         public bool Failed;                     // the game counts the quest as failed
         public string NotThisRun;               // QuestTeam's gate: why this run cannot complete the quest (null: it can)
+        // 0.16.1 (C16-04a): the gates the counted rules share (as QuestRules': [Advice] QuestSteer, objectives that match Any); they never hide
+        // a row - the rows are info only, as in 0.15.0
+        public QuestSteer Steer = QuestSteer.On;
+        public bool AnyOf;
+
+        /// <summary>0.16.1 (C16-04a): the quest is followed at all - not switched off, not 'any one of', not failed, and this run can complete it.</summary>
+        public bool Follows { get { return Steer != QuestSteer.Off && !AnyOf && !Failed && NotThisRun == null; } }
+        /// <summary>... and a rule of it may move the cards ([Advice] QuestSteer On).</summary>
+        public bool Moves { get { return Follows && Steer == QuestSteer.On; } }
+
+        /// <summary>0.16.1 (C16-04a): the first event count of <paramref name="id"/> (a GameEvents name) that is read and still open, whatever the
+        /// gates; null: none, unread or met.</summary>
+        public QuestCount OpenEvent(string id)
+        {
+            foreach (var c in Counts) if (c.Kind == CountKind.Event && string.Equals(c.Id, id, StringComparison.Ordinal) && !double.IsNaN(c.Have) && !c.Met) return c;
+            return null;
+        }
 
         static readonly CultureInfo IC = CultureInfo.InvariantCulture;
         static string N(double v) { return double.IsNaN(v) ? "?" : Math.Round(v).ToString("0", IC); }
         static string Bare(string cls) { cls = (cls ?? "").Trim(); return cls.StartsWith("GameHubQuestObjective", StringComparison.Ordinal) ? cls.Substring("GameHubQuestObjective".Length) : cls; }
 
+        // ---- 0.16.1 (C16-04a): the game's own short words (I2 English, Quests/ObjShort_*, game 1.0.2; research\roadmap_1007\scratch\c16_quests\
+        // loc_quests.json + quest_setup_hud.json). The game's words only: the repository is public
+        static readonly Dictionary<string, string> EventLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { "RerollItemChecOncePerView", "Rerolled Item Chests" },            // ObjShort_RerollChests (the game's own spelling of the event)
+            { "SOSLiberate", "Liberate Survivors" },                            // ObjShort_Liberate
+            { "ChestOpened", "Open Item Chests" },                              // ObjShort_Chests
+            { "MoneyCollected", "Collect Cash" },                               // ObjShort_CollectCash
+            { "HashtagEventFinished", "Complete a Research Pod Event" },        // ObjShort_CompleteResearchPod
+            { "SOSReacted", "SOS Signals" },                                    // ObjShort_SOSSignals
+            { "PowerupMilitaryPointCollected", "Military Training Points" },    // ObjShort_MilitaryPoints
+            { "EliteKilled", "Defeat Elites" },                                 // ObjShort_DefeatElites
+            { "PowerupKillingFrenzyCollected", "Pick up Killing Frenzy" },      // ObjShort_PickKillingSpree
+            { "BossKilled", "Defeat Bosses" },                                  // ObjShort_DefeatBosses
+        };
+        static readonly Dictionary<string, string> StoryLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "main_story_objective_q2", "Encrypted Signals" }, { "main_story_objective_q4", "Burned Notes" }, { "main_story_objective_q6", "Broken Vials" },
+            { "main_story_objective_q9", "GPS Data Packets" }, { "main_story_objective_q13", "Experiment Data Entries" },
+        };
+        static readonly Dictionary<string, string> BossLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "GameHubQuest_Main_05", "Defeat Tower" }, { "GameHubQuest_Main_08", "Defeat the Devourer" }, { "GameHubQuest_Main_11", "Defeat Hermit" },
+            { "GameHubQuest_Main_14", "Defeat Chariot" }, { "GameHubQuest_Main_15", "Defeat the Alpha Infected" }, { "GameHubQuest_Main_R1", "Defeat Omega Variant" },
+        };
+        static string Lookup(Dictionary<string, string> table, string key) { string v; return key != null && table.TryGetValue(key, out v) ? v : null; }
+
+        /// <summary>0.16.1 (C16-04a): a game name in words, for an event the table does not know (a newer game build's): a space before an upper-case
+        /// letter after a lower-case one or a digit, or before the last capital of a run followed by a lower-case letter - "HPValueChanged" -&gt;
+        /// "HP Value Changed", "SOSReacted" -&gt; "SOS Reacted". (Ranker.Humanize is not compiled into the bench.)</summary>
+        public static string Words(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new System.Text.StringBuilder(s.Length + 8);
+            for (int i = 0; i < s.Length; i++)
+            {
+                char ch = s[i];
+                if (i > 0 && char.IsUpper(ch))
+                {
+                    char prev = s[i - 1];
+                    bool lowerNext = i + 1 < s.Length && char.IsLower(s[i + 1]);
+                    if (char.IsLower(prev) || char.IsDigit(prev) || (char.IsUpper(prev) && lowerNext)) sb.Append(' ');
+                }
+                sb.Append(ch);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>0.16.1 (C16-04a): how many counts make one readout rebuild - a tenth of a count of more than ten (Collect Cash 30: 3), else 1.</summary>
+        public static int StepOf(int need) { return Math.Max(1, (int)Math.Ceiling(need / 10.0)); }
+
         /// <summary>A counted objective from its class name (with or without the GameHubQuestObjective prefix) and its raw fields; null:
         /// another class. <paramref name="targetEvent"/> = EventCount's GameEvents name; <paramref name="rankMask"/> = KillEnemyFilter's
-        /// GameHubQuestEnemyRankMask (1 Regular, 2 Elite, 4 SuperElite, 8 ArenaBoss).</summary>
-        public static QuestCount Decode(string cls, int targetCount, string eventId = null, string targetEvent = null, bool requireBoss = false, int rankMask = 15)
+        /// GameHubQuestEnemyRankMask (1 Regular, 2 Elite, 4 SuperElite, 8 ArenaBoss). 0.16.1 (C16-04a): <paramref name="quest"/> = the
+        /// quest's asset name (the Boss Rush boss's words are the quest's), and the game's words for each (Label) with the rebuild Step.</summary>
+        public static QuestCount Decode(string cls, int targetCount, string eventId = null, string targetEvent = null, bool requireBoss = false, int rankMask = 15, string quest = null)
         {
             int need = Math.Max(1, targetCount);
+            string q = (quest ?? "").Replace("(Clone)", "").Trim();
+            QuestCount c;
             switch (Bare(cls))
             {
-                case "CustomGameplayEvent": return new QuestCount { Kind = CountKind.Story, Id = string.IsNullOrEmpty(eventId) ? "?" : eventId.Trim(), Need = need };
-                case "KillBossRushBoss": return new QuestCount { Kind = CountKind.BossRushBoss, Id = "the Boss Rush boss", Need = 1 };
-                case "EventCount": return new QuestCount { Kind = CountKind.Event, Id = string.IsNullOrEmpty(targetEvent) ? "?" : targetEvent.Trim(), Need = need };
-                case "KillEnemyFilter": return new QuestCount { Kind = CountKind.Kills, Id = Ranks(rankMask) + (requireBoss ? ", bosses only" : ""), Need = need };
+                case "CustomGameplayEvent":
+                    c = new QuestCount { Kind = CountKind.Story, Id = string.IsNullOrEmpty(eventId) ? "?" : eventId.Trim(), Need = need };
+                    c.Label = Lookup(StoryLabels, c.Id) ?? "";
+                    break;
+                case "KillBossRushBoss":
+                    c = new QuestCount { Kind = CountKind.BossRushBoss, Id = "the Boss Rush boss", Need = 1 };
+                    c.Label = Lookup(BossLabels, q) ?? "";
+                    break;
+                case "EventCount":
+                    c = new QuestCount { Kind = CountKind.Event, Id = string.IsNullOrEmpty(targetEvent) ? "?" : targetEvent.Trim(), Need = need, Step = StepOf(need) };
+                    c.Label = Lookup(EventLabels, c.Id) ?? (c.Id == "?" ? "" : Words(c.Id));
+                    break;
+                case "KillEnemyFilter":
+                    c = new QuestCount { Kind = CountKind.Kills, Id = Ranks(rankMask) + (requireBoss ? ", bosses only" : ""), Need = need, Step = StepOf(need) };
+                    int m = rankMask & 15;
+                    c.Label = requireBoss && m == 4 ? "Defeat Elite Bosses" : !requireBoss && m == 2 ? "Defeat Elites" : "";      // ObjShort_DefeatSuperElite / DefeatElites
+                    break;
                 default: return null;
             }
+            return c;
         }
 
         /// <summary>KillEnemyFilter's rank mask in words: "rank SuperElite", "rank Elite / SuperElite", "any rank".</summary>
@@ -612,48 +708,84 @@ namespace YazsCompanion
             }
         }
 
-        /// <summary>The readout's info-only QUEST row ("story objective 3 of 5", "story objective: the Boss Rush boss"); null: no story
-        /// objective, or the quest cannot complete this run (failed, or the run does not fit its conditions).</summary>
-        public string Row()
+        /// <summary>The readout's first info-only QUEST row ("Broken Vials 3 of 5"); null: nothing counted, or the quest cannot complete
+        /// this run (failed, or the run does not fit its conditions).</summary>
+        public string Row() { return Rows(1).FirstOrDefault(); }
+
+        /// <summary>0.16.1 (C16-04a): up to <paramref name="max"/> rows: the story counts first, then the others, the open ones before the met
+        /// ones, the objectives' order inside each; none when the quest is failed or this run cannot complete it. QuestSteer and Any do not
+        /// hide them (info only).</summary>
+        public List<string> Rows(int max)
         {
-            if (Failed || NotThisRun != null) return null;
-            QuestCount pick = null;
-            foreach (var c in Counts) if (c.Story && (pick == null || (pick.Met && !c.Met))) pick = c;        // the first open one, else the first
-            return pick == null ? null : RowText(pick);
+            var rows = new List<string>();
+            if (Failed || NotThisRun != null || max <= 0) return rows;
+            var order = Counts.Select((c, i) => new { c, i }).OrderBy(x => x.c.Story ? 0 : 1).ThenBy(x => x.c.Met ? 1 : 0).ThenBy(x => x.i);
+            foreach (var x in order)
+            {
+                if (rows.Count >= max) break;
+                string t = RowText(x.c);
+                if (!string.IsNullOrEmpty(t)) rows.Add(t);
+            }
+            return rows;
         }
 
+        /// <summary>One counted objective's row, in the game's words, 40 characters at most: "Broken Vials 3 of 5", "Broken Vials (needs 5)" (the count
+        /// unread), "Broken Vials, done", "Defeat Tower"; without the game's words (a QuestCount built without Decode, an unknown id) the
+        /// fallback "story objective 2 of 4", "the Boss Rush boss", "Hashtag Event Activated 0 of 1", "Kills of rank Elite 1 of 3".</summary>
         public static string RowText(QuestCount c)
         {
-            if (c == null || !c.Story) return null;
-            if (c.Kind == CountKind.BossRushBoss) return c.Met ? "story objective: Boss Rush boss killed" : "story objective: the Boss Rush boss";
-            if (double.IsNaN(c.Have)) return c.Met ? "story objective done" : "story objective (needs " + c.Need + ")";
-            return "story objective " + N(Math.Min(c.Have, c.Need)) + " of " + c.Need + (c.Met ? ", done" : "");
+            if (c == null) return null;
+            string lab = c.Label;
+            if (string.IsNullOrEmpty(lab))
+                lab = c.Kind == CountKind.Story ? "story objective" : c.Kind == CountKind.BossRushBoss ? "the Boss Rush boss" : c.Kind == CountKind.Event ? Words(c.Id) : "Kills of " + c.Id;
+            string tail;
+            if (c.Kind == CountKind.BossRushBoss) tail = c.Met ? ", done" : "";
+            else if (double.IsNaN(c.Have)) tail = c.Met ? ", done" : " (needs " + c.Need.ToString(IC) + ")";
+            else tail = c.Met ? ", done" : " " + N(Math.Min(c.Have, c.Need)) + " of " + c.Need.ToString(IC);
+            if (lab.Length + tail.Length > RowRoom)
+            {   // the label gives way, at its last space that leaves room (a hard cut when there is none), no ellipsis
+                int room = Math.Max(1, RowRoom - tail.Length);
+                int sp = lab.LastIndexOf(' ', Math.Min(room, lab.Length - 1));
+                lab = sp > 0 ? lab.Substring(0, sp).TrimEnd(',', ' ') : lab.Substring(0, Math.Min(room, lab.Length));
+            }
+            return (lab + tail).Replace("<", "");
         }
+        /// <summary>A QUEST row's characters at most.</summary>
+        public const int RowRoom = 40;
 
         /// <summary>One counted objective in the log's "[quest] Q -> ..." words: open "story objective main_story_objective_q6: 3 of 5 -
-        /// progress only", met "story objective main_story_objective_q6 met" (the advice audit's time-to-met reads the " met").</summary>
-        public static string SaidOne(QuestCount c)
+        /// progress only", met "story objective main_story_objective_q6 met" (the advice audit's time-to-met reads the " met"). 0.16.1
+        /// (C16-04a): with its quest (<paramref name="st"/>) an open count may end with a rule's note instead of 'progress only' - none yet
+        /// (C16-04b / c fill Note); the words before ': ' keep the ids.</summary>
+        public static string SaidOne(QuestCount c, QuestStory st = null)
         {
             string what = c.Kind == CountKind.Story ? "story objective " + c.Id : c.Kind == CountKind.BossRushBoss ? "kill " + c.Id : c.Kind == CountKind.Event ? "event " + c.Id : "kills of " + c.Id;
             if (c.Met) return what + " met";
             string count = c.Kind == CountKind.BossRushBoss ? (double.IsNaN(c.Have) ? "not read" : "not yet") : N(c.Have) + " of " + c.Need;
-            return what + ": " + count + " - progress only";
+            string note = st != null ? st.Note(c) : null;
+            return what + ": " + count + " - " + (note ?? "progress only");
         }
+
+        /// <summary>0.16.1 (C16-04a): what a rule of this quest does with an open count, for its log words (null: progress only - every count
+        /// today; the counted rules of 0.17.0, C16-04b / c, answer here).</summary>
+        string Note(QuestCount c) { return null; }
 
         /// <summary>The counted objectives as they stand, for the log line.</summary>
         public string Said()
         {
-            var parts = Counts.Select(SaidOne).ToList();
+            var parts = Counts.Select(c => SaidOne(c, this)).ToList();
             string gate = Failed ? " - not followed (the game counts the quest as failed)" : NotThisRun != null ? " - not followed (" + NotThisRun + ")" : "";
             return (parts.Count == 0 ? "nothing counted" : string.Join("; ", parts)) + gate;
         }
 
-        /// <summary>A change worth a log line and a readout rebuild: a count, a met objective, the gate.</summary>
+        /// <summary>A change worth a log line and a readout rebuild: a count by its step (0.16.1, C16-04a: Collect Cash 30 every third cash pickup,
+        /// not every one), a met objective, the gates.</summary>
         public string Key()
         {
             var sb = new System.Text.StringBuilder();
-            sb.Append(Failed ? 'f' : '-').Append(NotThisRun == null ? '-' : 'n');
-            foreach (var c in Counts) sb.Append('|').Append((int)c.Kind).Append(c.Met ? 'm' : '-').Append(N(c.Have));
+            sb.Append(Failed ? 'f' : '-').Append(NotThisRun == null ? '-' : 'n').Append((int)Steer).Append(AnyOf ? 'a' : '-');
+            foreach (var c in Counts)
+                sb.Append('|').Append((int)c.Kind).Append(c.Met ? 'm' : '-').Append(double.IsNaN(c.Have) ? "?" : Math.Floor(c.Have / Math.Max(1, c.Step)).ToString("0", IC));
             return sb.ToString();
         }
     }

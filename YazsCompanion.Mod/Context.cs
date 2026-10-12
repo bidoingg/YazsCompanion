@@ -7,12 +7,14 @@
 // In the open-ended modes nothing ever stops paying back.
 //
 // Pure C# (no game types): filled from the live game in GameState.cs, and by hand in the offline bench.
-// Mode facts come from the game's own data: TimeRequiredForSuccess is the goal of a timed mode, and the cards'
-// mode masks show what the developers consider pointless where (no max health, armor, regeneration or dodge
-// cards in One Hit; no XP, luck or pickup range cards in Extermination) - the game already withholds those, so
-// the mode only has to steer what is left: the horizon, boss damage, crowd control, how much survival weighs.
+// Mode facts come from the game's own data: TimeRequiredForSuccess is the goal of a timed mode (not Extermination's:
+// its waves set the horizon, 0.16.1), and the cards' mode masks show what the developers consider pointless where
+// (no max health, armor, regeneration or dodge cards in One Hit; no XP, luck or pickup range cards in Extermination)
+// - the game already withholds those, so the mode only has to steer what is left: the horizon, boss damage, crowd
+// control, how much survival weighs.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace YazsCompanion
 {
@@ -65,6 +67,12 @@ namespace YazsCompanion
         /// <summary>Seconds of play the open-ended modes are judged over: far enough that everything still pays back.</summary>
         const double OpenHorizon = 600;
 
+        /// <summary>0.16.1 (COMPANION-LOG-03, PC round 10-11): the seconds an Extermination wave is taken to last until the run has finished
+        /// some of its own - the first Extermination run in any log (10-11, 20 waves in 14:03) averaged 42.</summary>
+        public const double WavePrior = 42;
+        /// <summary>0.16.1: the prior counts as this many finished waves, as LevelPace counts the mode's pace as four level-ups seen.</summary>
+        public const int WavePriorWeight = 4;
+
         public ModeKind Kind
         {
             get
@@ -86,11 +94,14 @@ namespace YazsCompanion
         {
             get
             {
+                // 0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination by its waves on every path. With [Advice] ModeAware off it read
+                // Seconds / TimeRequiredForSuccess, which is not that run's length (Progress 1 about a minute in); waves not read: the
+                // clock against the mode's knowledge goal (1200 s, as before)
+                if (Kind == ModeKind.Waves) return WavesRead ? Clamp01((double)Wave / Waves) : Clamp01(Seconds / KnownGoal);
                 if (!Aware) return Goal > 0 ? Clamp01(Seconds / Goal) : Clamp01(Seconds / 1200.0);
                 switch (Kind)
                 {
                     case ModeKind.Open: return 0.15;
-                    case ModeKind.Waves: return Waves > 0 ? Clamp01((double)Wave / Waves) : Clamp01(Seconds / 1200.0);
                     default: return Goal > 0 ? Clamp01(Seconds / Goal) : Clamp01(Seconds / 1200.0);
                 }
             }
@@ -101,10 +112,58 @@ namespace YazsCompanion
         {
             get
             {
+                // 0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination from its waves on every path, never the game's goal (WavesLeft)
+                if (Kind == ModeKind.Waves) return WavesLeft;
                 if (Aware && Kind == ModeKind.Open) return OpenHorizon;
                 double goal = Goal > 0 ? Goal : 1200.0;
-                if (Aware && Kind == ModeKind.Waves && Waves > 0) return Math.Max(0, (1 - Progress) * goal);
                 return Math.Max(0, goal - Seconds);
+            }
+        }
+
+        /// <summary>0.16.1: the wave and the wave count were both read (GameState: CompletedWaveCount + 1, the mode's wave list).</summary>
+        bool WavesRead { get { return Waves > 0 && Wave > 0; } }
+
+        /// <summary>0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination's seconds left - the waves still to play, the one named counted
+        /// whole (its level-up screens come as a wave ends, so the wave the game names has just begun), times <see cref="WaveSeconds"/>;
+        /// waves not read: (1 - Progress) x the mode's knowledge goal. Up to 0.16.0 (since 0.10.0) it was (1 - Wave / Waves) x the game's
+        /// TimeRequiredForSuccess, which is not the run's length there: on 10-11 the [ctx] line said '~3 level-ups to come' at wave 2/20
+        /// and '~2' at wave 3 while 49 came, Liberate led both rescues ('Too late for a recruit to grow (wave 3/20)'; an S-tier recruit
+        /// at wave 6; both recruits taken against it) and 105 card texts said 'too late' or 'little time left'. Under ModeAware off too
+        /// (it read goal - Seconds).</summary>
+        double WavesLeft
+        {
+            get
+            {
+                if (!WavesRead) return Math.Max(0, (1 - Progress) * KnownGoal);
+                return Math.Max(0, Waves - Wave + 1) * WaveSeconds;
+            }
+        }
+
+        /// <summary>0.16.1 (COMPANION-LOG-03, PC round 10-11): the seconds a wave of this Extermination run lasts - <see cref="WavePrior"/>
+        /// counted as <see cref="WavePriorWeight"/> waves, blended with the run's own Seconds / (Wave - 1) by the waves it has finished
+        /// (as LevelPace.Blend); at wave 1 the prior alone (no wave finished to divide by). 0 outside Extermination or with the waves
+        /// not read.</summary>
+        public double WaveSeconds
+        {
+            get
+            {
+                if (Kind != ModeKind.Waves || !WavesRead) return 0;
+                int done = Math.Min(Wave, Waves + 1) - 1;          // the game's CompletedWaveCount
+                if (done <= 0 || Seconds <= 0) return WavePrior;
+                double own = Seconds / done;
+                return (WavePrior * WavePriorWeight + own * done) / (WavePriorWeight + done);
+            }
+        }
+
+        /// <summary>0.16.1: the mode's goal in knowledge.json (badgeModes; Extermination 1200 s) - Extermination's horizon while its waves are
+        /// not read; 1200 when the knowledge has none.</summary>
+        double KnownGoal
+        {
+            get
+            {
+                var k = Knowledge.Current; BadgeMode m;
+                if (k != null && k.BadgeModes.TryGetValue(Mode ?? "", out m) && m != null && m.Goal > 0) return m.Goal;
+                return 1200.0;
             }
         }
 
@@ -221,8 +280,9 @@ namespace YazsCompanion
         {
             get
             {
-                if (Kind == ModeKind.Waves && Waves > 0) return "wave " + Wave + "/" + Waves;
-                if (Kind == ModeKind.Open || Goal <= 0) return "open-ended";
+                if (Kind == ModeKind.Waves && WavesRead) return "wave " + Wave + "/" + Waves;
+                // 0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination with its waves not read counts down its knowledge goal, whatever the game's goal says
+                if (Kind == ModeKind.Open || (Goal <= 0 && Kind != ModeKind.Waves)) return "open-ended";
                 int left = (int)Math.Round(Remaining);
                 return (left / 60) + ":" + (left % 60).ToString("00") + " left";
             }
@@ -231,7 +291,19 @@ namespace YazsCompanion
         public override string ToString()
         {
             return Mode + " d" + Difficulty + ", " + ClockText + ", " + Phase + " (economy x" + Economy.ToString("0.00") + ", survival x" + Survival.ToString("0.00")
-                + ", boss x" + Boss.ToString("0.00") + ", ~" + ExpectedLevelUps.ToString("0") + " level-ups to come" + HealthTail() + ")";
+                + ", boss x" + Boss.ToString("0.00") + ", ~" + ExpectedLevelUps.ToString("0") + " level-ups to come" + WavesTail() + HealthTail() + ")";
+        }
+
+        /// <summary>0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination's horizon on the [ctx] line, ahead of its health tail - ', ~38 s a
+        /// wave, game goal 55 s': the wave length <see cref="Remaining"/> used and the game's TimeRequiredForSuccess, which no number reads
+        /// there any more (whether it is one value or a per-wave timer is not known: each offer's line shows it); waves not read: ', waves
+        /// not read: knowledge goal 1200 s, game goal 55 s'. "" in every other mode (the line as 0.16.0 wrote it).</summary>
+        string WavesTail()
+        {
+            if (Kind != ModeKind.Waves) return "";
+            string game = ", game goal " + Goal.ToString("0.#", CultureInfo.InvariantCulture) + " s";
+            return WavesRead ? ", ~" + WaveSeconds.ToString("0", CultureInfo.InvariantCulture) + " s a wave" + game
+                : ", waves not read: knowledge goal " + KnownGoal.ToString("0", CultureInfo.InvariantCulture) + " s" + game;
         }
 
         /// <summary>0.16.0 (C16-12): the [ctx] line's tail inside the parenthesis - ', health N%' under full health (N floored: a squad under
@@ -273,9 +345,11 @@ namespace YazsCompanion
         /// fast start): Normal 2.9 (14 runs, 478 level-ups in 161.8 min after 1:00 = 2.95; the 7 runs of 15 min or more: 373 in 129.9 min
         /// = 2.87 - e.g. 10-04 20:14 60 in 19.9 min, 10-03 12:02 60 in 19.5, 09-19 16:53 52 in 19.8); Hardcore 4.7 (4 runs: 10-04 09:36,
         /// 10-05 18:00, 10-06 20:33, 09-22 23:13 - 141 in 29.9 min = 4.72); Endless 3.2 (4 runs: 09-19 13:36, 09-20 19:34, 09-22 23:29,
-        /// 10-04 16:04 - 206 in 65.4 min = 3.15, 3.26 over whole runs); BossRush 4.6 (one run, 10-04 19:52: 44 in 9.5 min = 4.62). A mode
-        /// with no measured run (Extermination, OneHit, Infinite): Normal's. mod\tools\advice_audit.py prints the pace per mode; its table
-        /// counts every run, the scripted ones too (Normal 4.31 a minute over 335 runs).</summary>
+        /// 10-04 16:04 - 206 in 65.4 min = 3.15, 3.26 over whole runs); BossRush 4.6 (one run, 10-04 19:52: 44 in 9.5 min = 4.62);
+        /// 0.16.1 (COMPANION-LOG-03, PC round 10-11) Extermination 3.9 (one run, 10-11 19:44, 20 waves: 51 in 13.1 min = 3.91 by the audit;
+        /// they come two to four at a time as each wave ends; up to 0.16.0 it borrowed Normal's 2.9, a quarter short in the minutes the
+        /// prior leads). A mode with no measured run (OneHit, Infinite): Normal's. mod\tools\advice_audit.py prints the pace per
+        /// mode; its table counts every run, the scripted ones too (Normal 4.31 a minute over 335 runs).</summary>
         public static double Prior(string mode)
         {
             switch (mode)
@@ -283,6 +357,7 @@ namespace YazsCompanion
                 case "Hardcore": return 4.7;
                 case "Endless": return 3.2;
                 case "BossRush": return 4.6;
+                case "Extermination": return 3.9;
                 default: return 2.9;
             }
         }

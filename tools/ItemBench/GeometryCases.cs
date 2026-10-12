@@ -69,6 +69,18 @@
 //       1837 (was 640 at 247), 1348 at 1517 with the short words; #1 1028 / 1348; a first item no piece holds: the band as before; the
 //       PC unchanged; stacking the WHY over the line does not fit the 153-unit band; no WHY block over the line in any B2 / B3 case.
 //   S   WhyUi measures the first item at 15 px before the preferred size and passes NeedW; Seg and the passes need max(MinWidth, NeedW).
+// 0.16.1 (lane c-visual; the user's decisions of 10-10 B2-Q3 and B3-Q2, the live PC session of 10-10 11:42):
+//   G15 C-3 one gold frame per screen: every hint state (no hint, the live REROLL chest of 11:57:59, no reroll left, hints off, SKIP x3, BANISH,
+//       the revive guard, the rescue screen's REROLL and its silence) x badges on / off x the button shown / not, drawn as Badge.Show / Yield and
+//       RerollHint.FrameNow draw: exactly one gold frame with the badges on (at most one off); BANISH keeps the card's, its button grey; the
+//       line's head 'RECOMMENDED: REROLL' over the button, the short line under it as 0.16.0 drew it (DK-C04's room unchanged).
+//   G16 the best card's 'IF YOU KEEP' ribbon: the lead fits the ribbon as RECOMMENDED does, the card's own line under it keeps its room (inline in
+//       the 2ND form the lead cut half the Deck's lines at the floor - the first sweep of this lane).
+//   G17 C161-02: the WHY's size at rest (CardTextSize.RestPx, no lossyScale / hover input): 20.5 px on the PC, 16.0 on the Deck, one size per screen.
+//   G18 C16-10b: the link marker - the panel's end facing the cards (LinkTip) for every card of the four-card level-up, the card's jewel clear of
+//       the other cards and its panel, as large on screen as the panel's end diamond, none for the band.
+//   G13 (0.16.1) the military card's 'Content/Rarity' plate cut; the item card's full-card highlight no plate.
+//   S   the sources (Badge.Yield / Restore, RerollHint.FrameNow / Apply / Tick, the walk's hint preview, WhyUi.ReasonPx / Link, PlateOf).
 // The glyph widths are a model of the card font (average widths per glyph class, calibrated on the live band lines of 10-06 -
 // 910 units at 19:16:59.704, 781 at 19:18:44.438 - trailing spaces left out as TMP leaves them).
 // Generic names only (the repository is public).
@@ -141,6 +153,13 @@ namespace YazsCompanion.Bench
             DeckBand();
             HintBand();
             Sources016();
+            Console.WriteLine("\n=== 0.16.1 (lane c-visual): one gold frame per screen (C-3), the best card's IF YOU KEEP ribbon, the WHY's size at rest (C161-02), the link marker (C16-10b), more plates (C16-11g)");
+            GoldFrames();
+            KeepLines();
+            RestSize();
+            LinkMarker();
+            MorePlates();
+            Sources0161();
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
         }
@@ -1345,6 +1364,240 @@ namespace YazsCompanion.Bench
             longN = shown(block.Items); shortN = longN;
             if (longN < block.Items.Count && !block.SideItems.SequenceEqual(block.Items)) shortN = shown(block.SideItems);
             return shortN > longN;
+        }
+
+        // ================================================================ 0.16.1 (lane c-visual)
+        // ---------------------------------------------------------------- G15: one gold frame per screen (C-3 + DK-C07, the user's B2-Q3)
+        static HintCard Hc(string name, double score, int rank, string kind = "item") { return new HintCard { Name = name, Score = score, Rank = rank, Kind = kind }; }
+        static ScreenCallIn Hin(string screen, double progress, int rerolls, double health, params HintCard[] cards)
+        {
+            var x = new ScreenCallIn { Screen = screen, Progress = progress, CanReroll = rerolls > 0, Rerolls = rerolls, RerollsText = rerolls + " (bench)", CanSkip = true, SkipCash = 675, SkipHeal = 292,
+                Health = health, Survival = 0.93, Cash = 0.3 };
+            x.Cards.AddRange(cards);
+            return x;
+        }
+
+        // the frames a selection screen draws for a verdict, as the two code paths draw them: the best card's gold frame (Badge.Show draws it on
+        // rank 1 while the badges are on; RerollHint.Keep has it given up - Badge.Yield - only when FrameNow's frame is gold and the badges are
+        // on) and the button's (FrameNow: drawn for a shown hint whose button is up, gold when ScreenCall.GoldFrame says Button, else grey)
+        static void Frames(bool badges, ScreenCall call, bool button, out int gold, out int grey)
+        {
+            bool buttonFrame = call.Show && button;
+            bool buttonGold = buttonFrame && ScreenCall.GoldFrame(badges, true, call.Action, true) == FrameOn.Button;
+            bool kept = buttonGold && badges;
+            bool cardGold = badges && !kept;
+            gold = (cardGold ? 1 : 0) + (buttonGold ? 1 : 0);
+            grey = buttonFrame && !buttonGold ? 1 : 0;
+        }
+
+        static void GoldFrames()
+        {
+            Func<string, double, Recruit> r = (n, s) => new Recruit { Name = n, Score = s, Class = n.Length };
+            var live = Hin("Chest", 0.126, 7, 0.93, Hc("Power of Friendship", 1.80, 1), Hc("Pocket Watch", 1.50, 2), Hc("Skip Rope", 1.41, 3), Hc("Barrel Roll", 1.29, 4));
+            var noReroll = Hin("Chest", 0.126, 0, 0.93, Hc("Power of Friendship", 1.80, 1), Hc("Pocket Watch", 1.50, 2), Hc("Skip Rope", 1.41, 3), Hc("Barrel Roll", 1.29, 4));
+            var off = Hin("Chest", 0.126, 7, 0.93, Hc("Power of Friendship", 1.80, 1), Hc("Pocket Watch", 1.50, 2)); off.Reroll = false; off.Skip = false;
+            var noItems = Hin("Chest", 0.3, 2, 1, Hc("Ammo Belt", 0.2, 1)); noItems.NoItems = "take no items";
+            var hurt = Hin("LevelUp", 0.6, 0, 0.5, Hc("Grenade Trail", 1.3, 1, "ability"), Hc("Handgun", 1.2, 2, "weapon"), Hc("Medical Drone", 1.1, 3, "ability")); hurt.Survival = 1.4;
+            var banish = Hin("LevelUp", 0.4, 0, 1, Hc("Medical Drone", 4.0, 1, "ability"), new HintCard { Name = "Grenade Trail", Score = 0.5, Rank = 2, Kind = "ability", Skipped = true, Build = "Bench Build" });
+            banish.Banish = true; banish.CanBanish = true; banish.Banishes = 1;
+            var guard = Hin("Chest", 0.326, 7, 0.55, Hc("Frozen Heart", 2.45, 1), Hc("Last Unicorn", 2.30, 2), Hc("Pickup Pick", 2.27, 3), new HintCard { Name = "Jewel of Life", Score = 1.27, Rank = 4, Kind = "item", Revive = true });
+            guard.SurviveQuest = true;
+            var states = new List<Tuple<string, ScreenCall>>
+            {
+                Tuple.Create("a strong chest (best 3.82)", ScreenCall.Decide(Hin("Chest", 0.3, 5, 1, Hc("Ammo Belt", 3.82, 1), Hc("Pocket Watch", 2.1, 2), Hc("Skip Rope", 1.5, 3)))),
+                Tuple.Create("the live REROLL chest 02:31 (10-10 11:57:59)", ScreenCall.Decide(live)),
+                Tuple.Create("that chest with no reroll left", ScreenCall.Decide(noReroll)),
+                Tuple.Create("that chest, the hints off", ScreenCall.Decide(off)),
+                Tuple.Create("every card AVOID, no reroll (level-up)", ScreenCall.Decide(Hin("LevelUp", 0.6, 0, 1, Hc("Grenade Trail", 0.8, 1, "ability"), Hc("Handgun", 0.6, 2, "weapon"), Hc("Medical Drone", 0.5, 3, "ability")))),
+                Tuple.Create("a quest that wants no item", ScreenCall.Decide(noItems)),
+                Tuple.Create("weak cards, the squad at half health", ScreenCall.Decide(hurt)),
+                Tuple.Create("BANISH on, a card the build skips", ScreenCall.Decide(banish)),
+                Tuple.Create("the revive guard (a survive quest)", ScreenCall.Decide(guard)),
+                Tuple.Create("the rescue screen's REROLL", ScreenCall.FromRescue(RerollCall.Decide(new[] { r("Ranger", 3.66) }, 1.0, new[] { r("Huntress", 6.08), r("SWAT", 5.9) }, true, "4", 1.0), "REROLL  -  words", "REROLL  -  short")),
+                Tuple.Create("the rescue screen, nobody better", ScreenCall.FromRescue(RerollCall.Decide(new[] { r("Ranger", 6.0) }, 1.0, new[] { r("Huntress", 6.08) }, true, "4", 1.0), null)),
+            };
+            var bad = new List<string>(); var said = new List<string>(); int n = 0;
+            foreach (var s in states)
+            {
+                said.Add(s.Item1 + ": " + (s.Item2.Show ? ScreenCall.Name(s.Item2.Action) : "none"));
+                foreach (bool badges in new[] { true, false })
+                    foreach (bool button in new[] { true, false })
+                    {
+                        int gold, grey; Frames(badges, s.Item2, button, out gold, out grey); n++;
+                        if (badges ? gold != 1 : gold > 1) bad.Add(s.Item1 + (badges ? "" : " (badges off)") + (button ? "" : " (no button)") + ": " + gold + " gold frames");
+                    }
+            }
+            Check("G15", "C-3: one gold frame per screen in every hint state - the best card's or the hint's button's, never both (at most one with the badges off), " + n + " states x badges x button",
+                bad.Count == 0, string.Join("; ", said) + (bad.Count > 0 ? " | BAD " + string.Join("; ", bad) : ""));
+            int g, gr;
+            Func<int, ScreenCall> st = i => states[i].Item2;
+            bool reroll = st(1).Show && st(1).Action == HintAction.Reroll && st(9).Show && st(9).Action == HintAction.Reroll;
+            bool skips = new[] { 4, 5, 6 }.All(i => st(i).Show && st(i).Action == HintAction.Skip);
+            bool silent = new[] { 0, 2, 3, 8, 10 }.All(i => !st(i).Show);
+            Frames(true, st(1), true, out g, out gr); bool liveMoves = g == 1 && gr == 0 && ScreenCall.GoldFrame(true, true, HintAction.Reroll, true) == FrameOn.Button;
+            Frames(true, st(1), false, out g, out gr); bool noButtonKeeps = g == 1 && ScreenCall.GoldFrame(true, true, HintAction.Reroll, false) == FrameOn.Card;
+            Frames(true, st(7), true, out g, out gr); bool banishGrey = st(7).Show && st(7).Action == HintAction.Banish && g == 1 && gr == 1 && ScreenCall.GoldFrame(true, true, HintAction.Banish, true) == FrameOn.Card;
+            Check("G15", "the verdicts as wanted (REROLL on the live chest and the rescue screen; SKIP x3; silent x5); REROLL / SKIP take the frame to their button (GoldFrame Button), a button not shown leaves it on the card, BANISH keeps the card's gold frame and frames its button grey",
+                reroll && skips && silent && liveMoves && noButtonKeeps && banishGrey && ScreenCall.TakesFrame(HintAction.Skip) && !ScreenCall.TakesFrame(HintAction.Banish) && !ScreenCall.TakesFrame(HintAction.None)
+                && ScreenCall.GoldFrame(false, false, HintAction.None, false) == FrameOn.None, string.Join("; ", said));
+
+            // the line's head: 'RECOMMENDED: REROLL' over the button (the ribbon the card gave up); under it (the 1280 x 800 row) the action alone - the
+            // short line exactly 0.16.0's, so the WHY band keeps C16-15's room (DK-C04); BANISH its name alone
+            bool heads = ScreenCall.HeadWord(HintAction.Reroll, false) == "RECOMMENDED: REROLL" && ScreenCall.HeadWord(HintAction.Skip, false) == "RECOMMENDED: SKIP"
+                && ScreenCall.HeadWord(HintAction.Banish, false) == "BANISH" && new[] { HintAction.Reroll, HintAction.Skip, HintAction.Banish }.All(a => ScreenCall.HeadWord(a, true) == ScreenCall.Name(a));
+            Func<string, float, float> line = (t, font) => Tmp(t, font) + 36f * font / 40f + 2f * 26f * font / 40f + 4f;      // RerollHint.Place: the text, a tip, two pads, 4
+            string words = st(1).Words, shortW = st(1).Short;
+            float was = line("<b>REROLL</b>  -  " + words, 40f), now = line("<b>" + ScreenCall.HeadWord(HintAction.Reroll, false) + "</b>  -  " + words, 40f);
+            float deckWas = line("<b>REROLL</b>  -  " + shortW, 48f), deckNow = line("<b>" + ScreenCall.HeadWord(HintAction.Reroll, true) + "</b>  -  " + shortW, 48f);
+            Check("G15", "the line's head: 'RECOMMENDED: REROLL' / 'RECOMMENDED: SKIP' over the button, the action alone under it and for BANISH; the live chest's line over its Reroll button " + F(was, "0") + " -> " + F(now, "0")
+                + " units (the glyph model; live 801 at 11:57:59.933), inside the line's 1800; under the button at 1280 x 800 '" + shortW + "' " + F(deckWas, "0") + " -> " + F(deckNow, "0") + " units - unchanged (C16-15 / DK-C04)",
+                heads && now > was && now <= 1800f && Math.Abs(deckNow - deckWas) < Eps && words != null && shortW != null, "'" + words + "' / '" + shortW + "'");
+        }
+
+        // ---------------------------------------------------------------- G16: the best card's 'IF YOU KEEP' ribbon (C-3)
+        // Badge.Yield keeps the ribbon in its slot, grey, reading ScreenCall.KeepLead, and the card's own line under it in grey: the words keep the
+        // room Ranker gave them (G10's sweep holds them). Inline in the 2ND form the lead cost 14 characters - this bench's first sweep cut 268 of
+        // 540 lines on the Deck (x1.56, 42 a line: the room's floor of 30 beside it) and 9 even at 1600 x 900, so the lead went to the ribbon.
+        static void KeepLines()
+        {
+            const float RibbonFont = 42f, RibbonW = 480f, RibbonTip = 40f, Spacing = 4f;          // Badge's ribbon at s = 1 (its text 4 units apart a glyph)
+            float rec = Tmp("<b>" + ScreenCall.Recommended + "</b>", RibbonFont) + Spacing * (ScreenCall.Recommended.Length - 1);
+            float keep = Tmp("<b>" + ScreenCall.KeepLead + "</b>", RibbonFont) + Spacing * (ScreenCall.KeepLead.Length - 1);
+            float room = RibbonW - 2f * RibbonTip;
+            Check("G16", "C-3: the kept card's ribbon reads '" + ScreenCall.KeepLead + "' - " + F(keep, "0") + " units against RECOMMENDED's " + F(rec, "0") + ", inside the ribbon's " + F(room, "0") + " between its tips at every size (the ribbon grows with the text, at most x1.3)",
+                ScreenCall.KeepLead == "IF YOU KEEP" && keep <= rec + 0.01f && keep <= room && ScreenCall.KeepLead.Length <= ScreenCall.Recommended.Length);
+            // the line under it keeps the card's own words and room: the live chest's #1 (11:57:59) as drawn on the PC's reason rect
+            string liveLine = "Halves some hits, more in a big team";
+            float rectPc = Math.Min(CardTextSize.ReasonW, CardTextSize.ReasonMaxW), wLive = Tmp(liveLine, CardTextSize.ReasonUnits);
+            var dk = new Shot(1280, 800, 0); int deck = CardTextSize.LineChars(dk.S, dk.Px1);
+            Check("G16", "the line under the grey ribbon is the card's own, at its own room (" + Wording.RoomBeside(0, CardTextSize.LineChars(1f, CardTextSize.ReasonPx1(3440, 1440))) + " on the PC, " + Wording.RoomBeside(0, deck)
+                + " on the Deck, as Ranker sized it): the live chest's #1 '" + liveLine + "' " + F(wLive, "0") + " units in the PC's " + F(rectPc, "0"),
+                wLive <= rectPc && Wording.Rails(liveLine).Count == 0 && Wording.RoomBeside(0, deck) >= 42);
+        }
+
+        // ---------------------------------------------------------------- G17: the WHY's size at rest (C161-02, DK-C12)
+        static void RestSize()
+        {
+            float pc = CardTextSize.RestPx(CardTextSize.ReasonUnits, CardTextSize.CardChain, 1440f, 2160f);
+            var dk = new Shot(1280, 800, 0);
+            float deck = CardTextSize.RestPx(CardTextSize.ReasonUnits * dk.S, CardTextSize.CardChain, 800f, 2400f);
+            Check("G17", "C161-02: the reason line at rest is 20.5 px at 3440 x 1440 (the live '[badge] scale s=1.00 px=20.5', 11:51:15.702) and 16.0 px on the Deck at its x" + F(dk.S) + " - for every card of a screen: the hovered card's 21.6 px of 11:51:16.389 (its hover grown, read off lossyScale) is gone",
+                Math.Abs(pc - 20.52f) < 0.01f && Math.Abs(pc - CardTextSize.ReasonPx1(3440, 1440)) < 0.01f && Math.Abs(deck - 16.0f) < 0.05f && Math.Abs(deck - dk.Px) < 0.01f,
+                F(pc, "0.00") + " px / " + F(deck, "0.00") + " px");
+            var ps = typeof(CardTextSize).GetMethod("RestPx").GetParameters().Select(p => p.Name).ToList();
+            Check("G17", "the size model has no lossyScale (no hover) input: CardTextSize.RestPx(" + string.Join(", ", ps) + ") - the font, the card's RESTING chain, the canvas's pixels and units; a missing input gives 0 (the WHY's model then)",
+                ps.Count == 4 && ps.SequenceEqual(new[] { "fontUnits", "restChain", "pixels", "canvasUnits" }) && !ps.Any(p => p.IndexOf("lossy", StringComparison.OrdinalIgnoreCase) >= 0 || p.IndexOf("hover", StringComparison.OrdinalIgnoreCase) >= 0)
+                && CardTextSize.RestPx(40f, 0f, 1440f, 2160f) == 0f && CardTextSize.RestPx(40f, 0.77f, 1440f, 0f) == 0f && CardTextSize.RestPx(float.NaN, 0.77f, 1440f, 2160f) == 0f);
+            // one size for the cards of a screen: what the WHY takes per card (Badge.ReasonPxAtRest, the screen's) against what 0.16.0 read (the
+            // line's lossyScale: the hovered card at its full hover, the next one the frame it was hovered)
+            var four = Screen(3440, 1440, 5161, 4, false);
+            var old = new List<string>(); var now = new HashSet<string>();
+            for (int i = 0; i < 4; i++)
+            {
+                float grown = i == 0 ? HoverK : 1f;                                          // the offer's first WHY waited 0.6 s: its card grown
+                old.Add(F(pc * grown, "0.0"));
+                now.Add(F(CardTextSize.RestPx(CardTextSize.ReasonUnits, CardTextSize.CardChain, 1440f, 2160f), "0.0"));
+            }
+            Check("G17", "the four cards of the 10-06 level-up: one WHY size (" + string.Join(", ", now) + " px) where 0.16.0 read " + string.Join(" / ", old) + " px (live 10-10: 21.6 on card 1, 20.5 on the next)",
+                now.Count == 1 && old.Distinct().Count() == 2 && four.Rest.Length == 4);
+        }
+
+        // ---------------------------------------------------------------- G18: the link marker (C16-10b, the user's B3-Q2: option (d))
+        static void LinkMarker()
+        {
+            var pc = Screen(3440, 1440, 5161, 4, false);
+            var tips = new List<int>(); var where = new List<string>(); var bad = new List<string>();
+            for (int i = 0; i < 4; i++)
+            {
+                float px; var x = SideOf(pc, i, 0, true, out px); var d = Lay(x, px, "WHY", LevelUp, false, "Medical Drone");
+                int tip = ScreenBand.LinkTip(d.Side); tips.Add(tip); where.Add(d.Side.At.Replace("side wing ", "") + " -> " + (tip == 1 ? "right end" : tip == 0 ? "left end" : "none"));
+                // the card's jewel: centred on the selected card's top edge (grown by the hover), the panel's end diamond's size; clear of the
+                // other cards and of the panel, inside the canvas
+                var c = x.Cards[i]; float js = TipU(x.FontUnits), cx = (c.X0 + c.X1) / 2f;
+                var jewel = new R4(cx - js / 2f, c.Y0 - js / 2f, cx + js / 2f, c.Y0 + js / 2f);
+                for (int k = 0; k < 4; k++) if (k != i && jewel.Overlaps(x.Cards[k])) bad.Add("card " + (i + 1) + "'s jewel over card " + (k + 1));
+                if (jewel.Overlaps(d.Outer)) bad.Add("card " + (i + 1) + "'s jewel over its panel");
+                if (jewel.X0 < x.Canvas.X0 || jewel.X1 > x.Canvas.X1 || jewel.Y0 < x.Canvas.Y0) bad.Add("card " + (i + 1) + "'s jewel outside the canvas");
+                // the panel's linked end faces the cards: a left-wing panel's right end is the nearer to its card
+                float endX = tip == 1 ? d.Outer.X1 : d.Outer.X0, farX = tip == 1 ? d.Outer.X0 : d.Outer.X1;
+                if (Math.Abs(endX - cx) > Math.Abs(farX - cx)) bad.Add("card " + (i + 1) + ": the linked end is the panel's far one");
+            }
+            Check("G18", "C16-10b: the four-card level-up at 3440 x 1440 - the wings as before (left left left right: the user kept the placement) and the link on the panel's end facing the cards (" + string.Join(", ", where) + "); each card's jewel on its top edge clear of the other cards and of its panel",
+                string.Join(" ", tips) == "1 1 1 0" && bad.Count == 0, string.Join("; ", bad));
+            float bpx; var band = ScreenBand.Side(SideOf(Screen(1920, 1080, 0, 4, false), 1, 0, true, out bpx));
+            Check("G18", "no link where the WHY is the band under the cards (16:9: no wings; a null side): LinkTip -1", ScreenBand.LinkTip(band) == -1 && ScreenBand.LinkTip(null) == -1 && ScreenBand.LinkTip(new WhySide()) == -1, band.At + " | " + band.Wings);
+            // as large on the card as on the panel: the panel's end diamond (TipU at the panel's font) in view units -> pixels -> card units at rest
+            float unitPx = 1440f / 2160f, font = 20.52f / unitPx, tipU = TipU(font), cardUnitPx = CardTextSize.RestPx(CardTextSize.ReasonUnits, CardTextSize.CardChain, 1440f, 2160f) / CardTextSize.ReasonUnits;
+            float size = ScreenBand.LinkSize(tipU, unitPx, cardUnitPx, 40f);
+            Check("G18", "the card's jewel is as large on screen as the panel's end diamond: " + F(tipU, "0.0") + " view units = " + F(tipU * unitPx, "0.0") + " px = " + F(size, "0.0") + " card units at rest; not measured: the fallback 40 units",
+                Math.Abs(size * cardUnitPx - tipU * unitPx) < 0.01f && ScreenBand.LinkSize(tipU, unitPx, 0f, 40f) == 40f && ScreenBand.LinkSize(0f, unitPx, cardUnitPx, 40f) == 40f
+                && ScreenBand.LinkCore < ScreenBand.LinkRing && ScreenBand.LinkRing < 1f && ScreenBand.LinkCore > 0f);
+        }
+
+        // ---------------------------------------------------------------- G13b: more plates (C16-11g's list, the live dumps of 10-10)
+        static void MorePlates()
+        {
+            const float RX0 = -416f, RX1 = 416f, RY0 = -731f, Inset = 5f, Thick = 6f, Gap = 10f;
+            float a1, b0, h1, h0;
+            // the military card's 'Content/Rarity' as the 11:59:05.094 dump measured it: 400 x 150 at x -201 .. 199, y -782 .. -632
+            string mil = ScreenBand.PlateCut(RX0, RX1, RY0, Inset, Thick, -201f, 199f, -782f, -632f, Gap, out a1, out b0);
+            string line = ScreenBand.PlateLine("UIPowerupButtonMilitary", "Rarity", mil, RX0, RX1, RY0, Inset, Thick, -201f, 199f, -782f, -632f, a1, b0);
+            // the game's full-card highlight the item card's dump named (11:53:49.342: SelectionHighlight 833 x 1462): never a plate - 'wide'
+            string sh = ScreenBand.PlateCut(RX0, RX1, RY0, Inset, Thick, -417f, 416f, -731f, 731f, Gap, out h1, out h0);
+            Check("G13", "0.16.1: the military card's plate 'Content/Rarity' (the live dump of 11:59:05.094: 400 x 150 astride the edge) cuts the frame's edge " + F(a1, "0") + " .. " + F(b0, "0")
+                + " ('" + line + "'); the full-card highlight the item card's dump named is no plate (the edge whole, and the dump leaves a rect half the card high out)",
+                mil == "cut" && Math.Abs(a1 - -211f) < Eps && Math.Abs(b0 - 209f) < Eps && line == "[badge] plate: UIPowerupButtonMilitary Rarity 400x150 units, y -782..-632 (the frame's bottom edge -726..-720) - edge cut -211..209"
+                && sh == "wide", mil + " / " + sh);
+        }
+
+        // ---------------------------------------------------------------- S: the sources of 0.16.1 (lane c-visual)
+        static string Body(string src, string head)
+        {
+            if (src == null) return "";
+            int at = src.IndexOf(head, StringComparison.Ordinal); if (at < 0) return "";
+            int end = src.IndexOf("\n        }", at, StringComparison.Ordinal);
+            return end < 0 ? src.Substring(at) : src.Substring(at, end - at);
+        }
+
+        static void Sources0161()
+        {
+            string badge = Src("Badge.cs"), hint = Src("RerollHint.cs"), why = Src("WhyUi.cs"), menu = Src("Menu.cs"), band = Src("ScreenBand.cs");
+            string yield = Body(badge, "public static string Yield(Card c)"), show = Body(badge, "public static void Show(Card c)"), look = Body(badge, "static void RibbonLook(RectTransform ribbon, bool kept)");
+            Check("S", "C-3 Badge: Show still frames rank 1 only and draws its ribbon, its gold look set again on every card; Yield cancels the frame's and the ribbon's entrance (never drawn) and the plate's second measure, hides the frame, keeps the ribbon whole in grey ('IF YOU KEEP', dim rule and tips) and the card's own line in grey, fitted; Restore badges the card again (Show)",
+                show.Contains("bool best = c.Rank == 1;") && show.Contains("frame.gameObject.SetActive(best);") && show.Contains("if (ribbon != null) { RibbonLook(ribbon, false); ribbon.gameObject.SetActive(best); }")
+                && yield.Contains("Fx.Cancel(\"badge:\" + p + \":\");") && yield.Contains("Fx.Cancel(CutKey + p);") && yield.Contains("var f = root.Find(FrameName); if (f != null) f.gameObject.SetActive(false);")
+                && yield.Contains("RibbonLook(ribbon, true); ribbon.localScale = Vector3.one;") && yield.Contains("string words = Text(c);") && yield.Contains("reason.text = words;") && yield.Contains("reason.color = Theme.Grey;")
+                && look.Contains("kept ? ScreenCall.KeepLead : ScreenCall.Recommended") && look.Contains("kept ? Theme.Grey : Theme.GoldText") && look.Contains("kept ? KeepEdge : Theme.Gold")
+                && badge.Contains("public static bool Restore(Card c)") && Body(badge, "public static bool Restore(Card c)").Contains("Show(c);"));
+            string frameNow = Body(hint, "static void FrameNow()"), apply = Body(hint, "static void Apply(ScreenCall call)"), keep = Body(hint, "static void Keep()"), tick = Body(hint, "public static void Tick()");
+            Check("S", "C-3 RerollHint: the frame with the cards - Apply draws it at once (FrameNow), gold by ScreenCall.GoldFrame (else grey), the best card's given up only then (Keep -> Badge.Yield) with the badges on; the line placed the next frame (no PlaceDelay, Tick waits a frame), measured again at SettleAfter; a close leaves the card as it is (Hide(false)), another verdict gives it back",
+                frameNow.Contains("bool gold = ScreenCall.GoldFrame(Badges, true, _action, true) == FrameOn.Button;") && frameNow.Contains("Tint(frame, gold ? Theme.Gold : Theme.Grey);") && frameNow.Contains("if (gold && Badges) Keep();")
+                && apply.Contains("FrameNow();") && apply.Contains("_placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : 0f); _placeFrame = Time.frameCount;") && apply.Contains("_settleAt = settle;")
+                && keep.Contains("string words = Badge.Yield(best);") && tick.Contains("Time.frameCount > _placeFrame") && !hint.Contains("PlaceDelay);") && hint.Contains("SettleAfter = 0.6f")
+                && hint.Contains("public static void Close() { Hide(false);") && Body(hint, "static void Hide(bool restore)").Contains("if (restore) RestoreCard(); else _keptCard = null;")
+                && Body(hint, "static void Decide(string when, bool always)").Contains("if (_preview != null) return;"));
+            Check("S", "C-3 the line's head: RerollHint.Head takes ScreenCall.HeadWord(a, brief), every screen's words get the head of their form (LineOf), the rescue screen's LineText too (its short form 'REROLL' as in 0.16.0)",
+                hint.Contains("ScreenCall.HeadWord(a, brief)") && hint.Contains("return Head(call.Action, brief) + Wording.Safe(Names.Text(brief ? call.Short ?? call.Words : call.Words));") && hint.Contains("string head = Head(HintAction.Reroll, brief);")
+                && hint.Contains("string text = LineOf(call, false);") && hint.Contains("string brief = LineOf(call, true);"));
+            string pv = Body(hint, "internal static bool DebugPreviewDue(float now)") + Body(hint, "static bool Preview(HintAction a)") + Body(hint, "static void Said(string what)") + Body(hint, "static void End(string why)");
+            int m1 = menu == null ? -1 : menu.IndexOf("RerollHint.DebugPreviewDue(now)", StringComparison.Ordinal), m2 = menu == null ? -1 : menu.IndexOf("Advisor.DebugTourDue(now)", StringComparison.Ordinal);
+            int m3 = menu == null ? -1 : menu.IndexOf("RerollHint.DebugPreviewDue(now)", m1 + 1, StringComparison.Ordinal), m4 = menu == null || m2 < 0 ? -1 : menu.IndexOf("Advisor.DebugTourDue(now)", m2 + 1, StringComparison.Ordinal);
+            Check("S", "the walk's hint preview: the pause walk asks RerollHint.DebugPreviewDue before the hover tour in both of its offer loops; the preview's verdicts come from ScreenCall.Decide, its shots are 'hint_reroll' / 'hint_skip', and it writes no '[squad] ... SHOWN' line",
+                m1 > 0 && m2 > m1 && m3 > m2 && m4 > m3 && pv.Contains("var call = ScreenCall.Decide(x);") && pv.Contains("\"hint_reroll\"") && pv.Contains("\"hint_skip\"") && !pv.Contains("SHOWN") && !pv.Contains("LogScreen(") && !pv.Contains("Log(_rescue"));
+            string reasonPx = Body(why, "static float ReasonPx(Card c, float unitPx)"), scale = Body(badge, "static float Scale(RectTransform root)");
+            Check("S", "C161-02: WhyUi.ReasonPx reads no lossyScale - the screen's rest size Badge.ReasonPxAtRest (Show: _px1 x s); Badge.Scale's px1 is CardTextSize.RestPx on the parents' chain x the resting 0.95 (the root's own scale never read)",
+                reasonPx.Length > 0 && !reasonPx.Contains("lossyScale") && reasonPx.Contains("float rest = Badge.ReasonPxAtRest;") && show.Contains("ReasonPxAtRest = _px1 > 0 ? _px1 * s : 0f;")
+                && scale.Contains("px1 = CardTextSize.RestPx(ReasonFont, chain, pixels, h);") && !scale.Contains("root.localScale") && !scale.Contains("root.lossyScale"));
+            string side = Body(why, "static bool SidePanel(");
+            Check("S", "C16-10b: SidePanel links the panel to its card (Link with ScreenBand.LinkTip) before its [why] line, which says ', diamond link'; the band path and Hide unlink; the jewel is a child of the card root named as Badge.Hide knows it",
+                side.Contains("Link(c, ScreenBand.LinkTip(side), tip, unitPx);") && side.IndexOf("Link(c, ScreenBand.LinkTip(side)", StringComparison.Ordinal) < side.IndexOf("Log(c, block, drawn, side.At", StringComparison.Ordinal)
+                && Body(why, "static void Place()").Contains("Unlink();") && Body(why, "static void Hide()").Contains("Unlink();")
+                && why.Contains("(link ? \", diamond link\" : \"\")") && why.Contains("Ui.Diamond(root, Badge.LinkName, 0.5f, 1f, size, Theme.Gold)") && badge.Contains("internal const string LinkName = \"YazsLink\";")
+                && badge.Contains("new[] { FrameName, RibbonName, ReasonName, LinkName }") && band.Contains("public static int LinkTip(WhySide s)"));
+            string plateOf = Body(badge, "static RectTransform PlateOf(UIPowerupButtonBase b)");
+            Check("S", "C16-11g's list: PlateOf keeps the skill and rescue cards' className parent and finds any other class's plate by its path ('Content/Rarity', then 'Content/AddonDescription'); the edge dump names a rect half the card high apart",
+                plateOf.Contains("if (skill != null) label = skill.className;") && plateOf.Contains("if (label == null) return PlateByPath(b);") && badge.Contains("PlatePaths = { \"Content/Rarity\", \"Content/AddonDescription\" }")
+                && badge.Contains("if (y1 - y0 >= rr.height * 0.5f) { whole.Add("));
         }
 
         // ---------------------------------------------------------------- S: the sources of 0.16.0's C16-11g and C16-14

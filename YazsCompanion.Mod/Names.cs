@@ -22,7 +22,7 @@ using CT = GamePlayer.CharacterType;
 
 namespace YazsCompanion
 {
-    internal static class Names
+    internal static partial class Names                 // 0.16.1: partial - the swap table's pure half is Names.Table.cs (the bench links it)
     {
         static int _version = int.MinValue;       // Extensions.NamesVersion the caches below belong to
         static bool _on;                          // some mod lends names
@@ -197,6 +197,11 @@ namespace YazsCompanion
                     if (refs != null)
                     {
                         try { foreach (var p in G.Each(refs.skillPowerups)) visit(p); } catch { }
+                        // 0.16.1 (R-05 of the 10-11 Steam Deck round): the military training cards (the game's stat powerups, Endless's too)
+                        // are named in the WHY ("Just ahead of Master Blaster"): their names join the table whole, no mod asked for them (the
+                        // cards show the game's), so a name lent for a weapon inside one ("Blaster") leaves it as the game wrote it
+                        try { foreach (var p in G.Each(refs.statPowerups)) Keep(p == null ? null : G.Name(p), all); } catch { }
+                        try { foreach (var p in G.Each(refs.statPowerupsInfinite)) Keep(p == null ? null : G.Name(p), all); } catch { }
                         try
                         {
                             foreach (var it in G.Each(refs.items))
@@ -211,6 +216,7 @@ namespace YazsCompanion
                         catch { }
                     }
                 }
+                Keep(PodHeads(), all);         // 0.16.1 (R-05): the Research Pod cards ("#Kinetic +10"), whole
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[names] " + e.Message); }
 
@@ -222,28 +228,7 @@ namespace YazsCompanion
             Plugin.Logger.LogInfo("[names] display names lent: " + renamed.Count + " of " + all.Count + " names (" + asked + " powerups and items asked)");
         }
 
-        /// <summary>The swap table and its pattern from what was renamed and every name the game has (pure: the offline
-        /// check drives it). A longer game name that holds a renamed one as a word stays whole - "Grenade Trail" is not
-        /// touched when only a "Grenade" was renamed - because the pattern tries the longest name first.</summary>
-        internal static void Compose(Dictionary<string, string> renamed, IEnumerable<string> all, out Dictionary<string, string> table, out Regex rx)
-        {
-            table = new Dictionary<string, string>(renamed, StringComparer.Ordinal); rx = null;
-            if (renamed.Count == 0) return;
-            foreach (var g in all)
-            {
-                if (table.ContainsKey(g)) continue;
-                foreach (var r in renamed.Keys) if (g.Length > r.Length && HasWord(g, r)) { table[g] = g; break; }
-            }
-            var keys = table.Keys.OrderByDescending(k => k.Length).ThenBy(k => k, StringComparer.Ordinal).Select(Regex.Escape);
-            rx = new Regex("(?<![\\p{L}\\p{N}_])(?:" + string.Join("|", keys) + ")(?![\\p{L}\\p{N}_])", RegexOptions.CultureInvariant);
-        }
-
-        /// <summary>One text through a composed table (pure, as Compose).</summary>
-        internal static string Swap(string s, Dictionary<string, string> table, Regex rx)
-        {
-            if (rx == null || string.IsNullOrEmpty(s)) return s;
-            return rx.Replace(s, m => { string d; return table.TryGetValue(m.Value, out d) ? d : m.Value; });
-        }
+        // Compose and Swap, the pure half of the table: Names.Table.cs (0.16.1)
 
         static void Note(string game, string shown, bool evolution, Dictionary<string, string> renamed, Dictionary<string, string> loose, HashSet<string> all)
         {
@@ -260,17 +245,6 @@ namespace YazsCompanion
         }
 
         static string Short(string evolution) { int i = evolution.IndexOf(':'); return i >= 0 ? evolution.Substring(i + 1).Trim() : evolution; }
-
-        static bool HasWord(string text, string word)
-        {
-            for (int i = text.IndexOf(word, StringComparison.Ordinal); i >= 0; i = text.IndexOf(word, i + 1, StringComparison.Ordinal))
-            {
-                int end = i + word.Length;
-                if ((i == 0 || !IsWordChar(text[i - 1])) && (end >= text.Length || !IsWordChar(text[end]))) return true;
-            }
-            return false;
-        }
-        static bool IsWordChar(char c) { return char.IsLetterOrDigit(c) || c == '_'; }
 
         static string Norm(string s)
         {

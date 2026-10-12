@@ -13,6 +13,15 @@
 // about half the damage = 0.5. No untiered Value exceeds 1.0 (B) - the user's Q02 is not answered yet, so its default stands (cap
 // at B); the needs that compute a worth from the run (luck, empty slots, pickup range, speed) use the same 0.03 per 1 % and may go
 // higher, and so does the revive need (C16-12: a second life ranks at least like an A tier, ItemRules.ReviveFloor).
+// 0.16.1 (C-1, the user's decision B2-Q2 of 10-10: mark them, the cap stays B): a Value is the Companion's estimate, never a guide's -
+// the card says "(unrated)" where a guide-tiered item says its tier, and the WHY's first reason says whose rating it is
+// (Wording.EstimateCue / EstimateWhy).
+// 0.16.1 (C161-01): "economy" is one tag for XP, luck, level-ups and training points; each row that gains or costs it names what it
+// really gives (.Economy("luck")), so the WHY's run-clock clause says "More luck - pays off all run" for Power of Friendship (+10 Luck,
+// no XP) instead of the tag's generic "More XP and luck" (live 10-10 11:57:59). The bench holds every such row to the game's own text.
+// 0.16.1 (the 10-11 Steam Deck round): a Say longer than a narrow card's 36 characters has a shorter form (.Briefly(...), R-03 - the
+// bench's DR3 sweep holds every row to it), and Magazine Clip and Last Round say what they do (R-07): the clip rule's note puts the
+// item's own words before its condition ("doubles every magazine - your guns use magazines").
 using System;
 using System.Collections.Generic;
 
@@ -46,6 +55,21 @@ namespace YazsCompanion
             Asset = asset; ManaKeep = keep; ManaWhy = why; ManaLead = lead != null && lead.Length > 0 ? lead : null;
             return this;
         }
+
+        // 0.16.1 (C161-01): what the row's "economy" gain (or cost) is, in the game's words for it: "luck", "XP", "level-ups", "XP and
+        // training points" - the noun of the WHY's run-clock clause ("More luck - pays off all run"). Null on a row without that tag
+        public string Econ;
+
+        /// <summary>0.16.1 (C161-01): names what this row's "economy" tag stands for (see <see cref="Econ"/>).</summary>
+        internal BookEntry Economy(string econ) { Econ = econ; return this; }
+
+        // 0.16.1 (R-03 of the 10-11 Steam Deck round): the card's words in fewer characters - Say's, or those of the guide note
+        // knowledge.json has for the item (Homing Pigeon, Gaslighter) - for a card that cannot hold them (36 beside the Deck's "2ND"):
+        // 'Throws an Explosive grenade every' was Great Nade's Say cut to that room. Null: they fit there
+        public string Brief;
+
+        /// <summary>0.16.1 (R-03): the shorter words of this row (see <see cref="Brief"/>).</summary>
+        internal BookEntry Briefly(string brief) { Brief = brief; return this; }
     }
 
     /// <summary>An effect two held items have on each other that is neither a pair nor a clash (the texts call it out).</summary>
@@ -61,35 +85,35 @@ namespace YazsCompanion
         public static readonly BookEntry[] All =
         {
             // ---- name -------------------------- value  gains                                   costs              need              clock     say
-            E("99'th Balloon",                      0.8,  "economy",                                null,              null,             "economy,grows",  "XP each second until a hit pops it"),
+            E("99'th Balloon",                      0.8,  "economy",                                null,              null,             "economy,grows",  "XP each second until a hit pops it").Economy("XP"),
             E("A Cookie",                           0.3,  "healing",                                null,              "skip",           null,     "+20% healing; skips heal too"),
-            E("Access Keycard",                     1.0,  "survival, armor, economy:0.5, cash:0.3", null,              null,             null,     "HP, armor and XP per Parca item"),
+            E("Access Keycard",                     1.0,  "survival, armor, economy:0.5, cash:0.3", null,              null,             null,     "HP, armor and XP per Parca item").Economy("XP"),
             E("Accumulator",                        3.0,  "pickups:0.5, control:0.5",               null,              "own:Electric",   null,     "magnets hit every enemy on screen"),
             E("ACME Anvil",                         0.4,  "~slow",                                  null,              null,             null,     "slows are twice as strong"),
             E("Acoustic Guitar",                    1.0,  "abilities",                              null,              null,             null,     null),
             E("An Apple",                           0.3,  "healing, survival:0.5",                  null,              null,             null,     "more Healthpaks, +20% healing"),
             E("Annoying Trumpet",                   0.2,  "control:0.3",                            null,              "own:Explosive",  null,     "an Explosive blast when you are hit"),
-            E("Ban Hammer",                         0.6,  "upgrade quality:0.5, economy:0.5",       null,              null,             "economy","a free banish on every screen, +10 luck"),
+            E("Ban Hammer",                         0.6,  "upgrade quality:0.5, economy:0.5",       null,              null,             "economy","a free banish on every screen, +10 luck").Economy("luck"),
             E("Barrel Roll",                        0.2,  "control:0.3",                            null,              "own:Explosive",  null,     "an Explosive blast when you dodge"),
             E("Battery Leakage",                    0.0,  "electric, chemical",                     null,              null,             null,     "Electric damage toxifies, +2 tags"),
-            E("Bells & Whistles",                   0.2,  "upgrade quality:0.5",                    null,              "lockdown",       "economy","better military cards under a lockdown"),
+            E("Bells & Whistles",                   0.2,  "upgrade quality:0.5",                    null,              "lockdown",       "economy","better military cards under a lockdown").Briefly("better military cards in a lockdown"),
             E("Biofuel Energy",                     0.0,  "chemical, electric",                     null,              null,             null,     "Chemical damage electrifies, +2 tags"),
-            E("Black Box",                          2.0,  "economy, cash:0.3",                      null,              null,             "economy,grows",  "a level-up for every chest"),
+            E("Black Box",                          2.0,  "economy, cash:0.3",                      null,              null,             "economy,grows",  "a level-up for every chest").Economy("level-ups"),
             E("Bleeding Edge",                      1.0,  "slashing",                               null,              null,             null,     "bleeding ticks twice as fast"),
             E("Bloody Axe",                         1.0,  "slashing",                               null,              null,             null,     "bleeding lasts twice as long"),
-            E("Boiling Pot",                        1.0,  null,                                     null,              "status3",        null,     "a third status effect blows enemies up"),
+            E("Boiling Pot",                        1.0,  null,                                     null,              "status3",        null,     "a third status effect blows enemies up").Briefly("3 status effects blow an enemy up"),
             E("Boxing Gloves",                      1.0,  "elites/bosses",                          null,              null,             null,     null),
-            E("Brave Toaster",                     -1.5,  "status effects",                         null,              null,             null,     "status effects may spread a random one"),
+            E("Brave Toaster",                     -1.5,  "status effects",                         null,              null,             null,     "status effects may spread a random one").Briefly("a status effect may add another"),
             E("Broken Glass",                       0.6,  "~slow",                                  null,              null,             null,     "+25% damage to slowed enemies"),
-            E("Buckshot Roulette",                  0.8,  "weapons",                                null,              "clip:0.5",       null,     "quicker cooldowns, 20% instant reloads"),
+            E("Buckshot Roulette",                  0.8,  "weapons",                                null,              "clip:0.5",       null,     "quicker cooldowns, 20% instant reloads").Briefly("quicker cooldowns and reloads"),
             E("Bulletproof Vest",                   0.6,  "armor, survival:0.5",                    null,              null,             null,     "+30 armor, half damage from shots"),
             E("Burger",                             0.2,  "healing:1.5",                            "survival:0.5",    null,             null,     "triples healing, a fifth less max HP"),
-            E("Camping Set",                        0.3,  "weapons:0.5, abilities:0.5",             null,              null,             null,     "up to +50% damage while standing still"),
+            E("Camping Set",                        0.3,  "weapons:0.5, abilities:0.5",             null,              null,             null,     "up to +50% damage while standing still").Briefly("up to +50% damage standing still"),
             E("Chick Magnet",                       2.0,  "abilities, pickups",                     null,              null,             null,     null)
                 .ManaPotionHeld("Item_ChickMagnet", 0.5, "its cooldown bonus does nothing with Mana Potion",        // C16-01a: its 45 s +30% ability cooldown reduction after a magnet
                     "its cooldown bonus does nothing with Mana Potion", "Mana Potion cancels its cooldown part", "cooldown part off (Mana Potion)"),
             E("Chocolate Box",                      0.5,  "critical",                               null,              null,             null,     "crit chance from your max HP"),
-            E("Coffee Cup",                         0.5,  "weapons, elites/bosses:0.5",             null,              null,             null,     "elite kills reload and speed up weapons"),
+            E("Coffee Cup",                         0.5,  "weapons, elites/bosses:0.5",             null,              null,             null,     "elite kills reload and speed up weapons").Briefly("elite kills reload your weapons"),
             E("Combat Knife",                       0.7,  null,                                     null,              "basic",          null,     "+30% damage to basic enemies"),
             E("Compass",                            0.3,  "abilities, move",                        null,              "move:abilities", null,     "+10 speed; speed adds ability power"),
             E("Congratulation Letter",              0.8,  "upgrade quality",                        null,              null,             "economy","military cards at least Rare"),
@@ -101,43 +125,43 @@ namespace YazsCompanion
             E("Duct Tape",                          0.8,  "line",                                   null,              null,             null,     null),
             E("Easter Egg",                        -1.5,  "upgrade quality:0.3",                    null,              null,             null,     null),
             E("Electric Personality",               2.0,  "pickups, upgrade quality:0.5",           null,              null,             "economy",null),
-            E("Emerald Gem",                        1.0,  "economy, cash:0.5, dodge:0.3",           null,              "gems",           null,     "dodge, cash and XP per tag type at 3+"),
+            E("Emerald Gem",                        1.0,  "economy, cash:0.5, dodge:0.3",           null,              "gems",           null,     "dodge, cash and XP per tag type at 3+").Economy("XP").Briefly("dodge, cash, XP per tag type at 3+"),
             E("Empty Chest",                        0.6,  null,                                     null,              "slots:damage",   null,     "+10% damage per empty item slot"),
             E("Expired Sushi",                      0.0,  "slashing, kinetic",                      null,              null,             null,     "Slashing damage injures, +2 tags"),
             E("Explosive Surprise",                 1.0,  "explosive",                              null,              null,             null,     "twice the implosion chance"),
             E("Farming Tools",                      0.2,  "cash",                                   null,              "squad",          "cash",   "+10% cash, class points per survivor"),
             E("Fire Extinguisher",                  0.0,  "fire, ice",                              null,              null,             null,     "Fire damage freezes, +2 tags"),
             E("Fishing Pole",                       2.0,  "weapons:0.3, abilities:0.3, survival:0.3", null,            null,             null,     "half hazard damage, then +50% damage"),
-            E("Frozen Heart",                       1.0,  "survival, armor",                        null,              null,             "grows",  "max HP and armor each time you are hit"),
+            E("Frozen Heart",                       1.0,  "survival, armor",                        null,              null,             "grows",  "max HP and armor each time you are hit").Briefly("max HP and armor when you are hit"),
             E("Frying Pan",                         0.5,  "control, weapons:0.5",                   null,              null,             null,     "weapon hits can stun"),
-            E("Gaslighter",                         2.0,  "~status effects",                        null,              null,             null,     null),
+            E("Gaslighter",                         2.0,  "~status effects",                        null,              null,             null,     null).Briefly("+20% damage per status effect"),
             E("Giant Enemy Crab",                   2.0,  "critical",                               null,              null,             null,     null),
             E("Glass Cannon",                      -1.5,  null,                                     null,              "shield",         null,     null),
             E("Glass of Milk",                      0.3,  "survival",                               null,              null,             "grows",  "max HP grows with your kills"),
-            E("Gold Medal",                         0.4,  "upgrade quality",                        "economy:0.6",     null,             "economy","more military cards, 10% slower levels"),
+            E("Gold Medal",                         0.4,  "upgrade quality",                        "economy:0.6",     null,             "economy","more military cards, 10% slower levels").Economy("XP"),
             E("Golden Key",                         0.5,  "upgrade quality",                        null,              null,             "economy","chests may offer a second set"),
-            E("Great Nade",                         1.0,  null,                                     null,              "own:Explosive",  null,     "throws an Explosive grenade every 10s"),
+            E("Great Nade",                         1.0,  null,                                     null,              "own:Explosive",  null,     "throws an Explosive grenade every 10s").Briefly("an Explosive grenade every 10s"),
             E("Health Potion",                      0.4,  "healing, survival:0.5",                  null,              null,             null,     "Healthpaks heal three times as much"),
             E("Heavy Metal",                        1.0,  "pickups",                                null,              null,             "economy","twice as many magnets"),
-            E("Hijacked Signal",                    1.0,  "economy, cash:0.3",                      null,              null,             "economy,grows",  "Liberate gives two level-ups"),
+            E("Hijacked Signal",                    1.0,  "economy, cash:0.3",                      null,              null,             "economy,grows",  "Liberate gives two level-ups").Economy("level-ups"),
             E("Hit Tracks",                         0.3,  "move, survival:0.3",                     null,              null,             null,     "+20 speed, slows on you halved"),
-            E("Homing Pigeon",                      2.0,  "critical, abilities",                    null,              null,             null,     null),
+            E("Homing Pigeon",                      2.0,  "critical, abilities",                    null,              null,             null,     null).Briefly("abilities crit full-health enemies"),
             E("Hyperactivity",                      1.0,  "weapons, abilities, move",               null,              null,             null,     "+50% attack speed and cooldowns")
                 .ManaPotionHeld("Item_Hyperactivity", 0.75, "its ability cooldown part is off (Mana Potion)",     // C16-01a: only the ability half of its +50% Cooldown Reduction
                     "its ability cooldown part is off (Mana Potion)", "Mana Potion cancels part of it"),
             E("Icon of Cinder",                     1.0,  "fire",                                   null,              null,             null,     "burning enemies may explode"),
             E("Icon of Pestilence",                 1.0,  "chemical",                               null,              null,             null,     "toxified enemies leave toxic clouds"),
-            E("Icon of Stillness",                  1.0,  "ice",                                    null,              null,             null,     "frozen enemies freeze their neighbours"),
+            E("Icon of Stillness",                  1.0,  "ice",                                    null,              null,             null,     "frozen enemies freeze their neighbours").Briefly("frozen enemies freeze those nearby"),
             E("Icon of Tempest",                    1.0,  "electric",                               null,              null,             null,     "Electrify spreads to nearby enemies"),
             E("Jacob's Ladder",                     1.0,  "electric",                               null,              null,             null,     "Electrify lasts twice as long"),
             E("Jade Amulet",                        0.6,  "weapons:0.5, abilities:0.5",             null,              "luck",           null,     "damage bonus equal to your luck"),
-            E("Jailbroken Phone",                   1.0,  "~taunt, economy:0.5",                    null,              "power:Taunt",    null,     "taunts become fears, richer XP gems"),
-            E("Jewel of Death",                    -1.0,  "economy",                                "survival",        null,             null,     "halves max HP, +44% XP"),
+            E("Jailbroken Phone",                   1.0,  "~taunt, economy:0.5",                    null,              "power:Taunt",    null,     "taunts become fears, richer XP gems").Economy("XP"),
+            E("Jewel of Death",                    -1.0,  "economy",                                "survival",        null,             null,     "halves max HP, +44% XP").Economy("XP"),
             E("Jewel of Life",                      1.0,  "survival:1.5",                           null,              "revive",         null,     "one revive, then halves max HP"),
-            E("Last Round",                         2.0,  "critical, weapons",                      null,              "clip",           null,     null),
-            E("Last Unicorn",                       0.4,  "survival:0.3, economy:0.3",              null,              null,             null,     "luck, HP and damage per animal item"),
+            E("Last Round",                         2.0,  "critical, weapons",                      null,              "clip",           null,     "the last bullet crits"),
+            E("Last Unicorn",                       0.4,  "survival:0.3, economy:0.3",              null,              null,             null,     "luck, HP and damage per animal item").Economy("luck"),
             E("Life Savings",                       0.2,  "survival",                               "cash",            null,             "grows",  "cash heals you instead of paying out"),
-            E("Magazine Clip",                      2.0,  "weapons",                                null,              "clip",           null,     null),
+            E("Magazine Clip",                      2.0,  "weapons",                                null,              "clip",           null,     "doubles every magazine"),
             E("Magical Hat",                        1.0,  "fire, ice, electric, chemical",          null,              "tags:hat",       null,     null),
             E("Mana Potion",                        2.0,  "abilities",                              null,              null,             null,     null),
             E("MedKit",                             0.6,  "survival, healing:0.5",                  null,              "hurt",           null,     "a full heal now, +100 max HP"),
@@ -148,24 +172,24 @@ namespace YazsCompanion
             E("Nail Bat",                           0.0,  "kinetic, slashing",                      null,              null,             null,     "Kinetic damage bleeds, +2 tags"),
             E("Nine Inch Nails",                    1.0,  "kinetic",                                null,              null,             null,     "Injured lasts twice as long"),
             E("Nuclear Fusion",                     1.0,  null,                                     null,              "hurt",           null,     "clears the screen, then swaps for free"),
-            E("Nuts & Bolts",                       0.4,  "abilities",                              null,              null,             null,     "abilities may halve their next cooldown"),
+            E("Nuts & Bolts",                       0.4,  "abilities",                              null,              null,             null,     "abilities may halve their next cooldown").Briefly("abilities may halve a cooldown"),
             E("Omnigeode",                          1.0,  null,                                     null,              "tags:omni",      null,     "+1 tag to every damage type"),
             E("One For All",                        1.0,  null,                                     null,              null,             null,     null),
-            E("Pawn Shop Receipt",                  1.0,  "weapons:0.5, abilities:0.5, economy:0.3",null,              null,             null,     "damage and luck for each item you equip"),
+            E("Pawn Shop Receipt",                  1.0,  "weapons:0.5, abilities:0.5, economy:0.3",null,              null,             null,     "damage and luck for each item you equip").Economy("luck").Briefly("damage and luck per item equipped"),
             E("Pickup Pick",                        1.0,  "pickups",                                null,              null,             "economy","each timed power-up brings another"),
             E("Pills",                              0.8,  "weapons:0.3, abilities:0.3",             null,              "healthy",        null,     "full-health Healthpaks: +100% damage"),
             E("Plague's Visage",                    1.0,  "chemical",                               null,              null,             null,     "Toxify lasts twice as long"),
-            E("Plot Armor",                         1.0,  "survival:1.5",                           null,              "revive",         null,     "survives a killing blow once a minute"),
+            E("Plot Armor",                         1.0,  "survival:1.5",                           null,              "revive",         null,     "survives a killing blow once a minute").Briefly("survives a killing blow every 60s"),
             E("Pocket Watch",                       0.5,  null,                                     null,              null,             null,     "timed power-ups last twice as long"),
             E("Positive Attitude",                  0.5,  "abilities:0.5, weapons:0.5",             null,              null,             null,     "a hit resets a cooldown and reloads"),
             E("Potato",                             0.0,  null,                                     null,              null,             null,     "the game hides what it does"),
             E("Power Generator",                    2.0,  "~critical, weapons, abilities",          null,              null,             null,     null),
             E("Power Glove",                        1.0,  "kinetic, slashing, explosive",           "fire, ice, electric", null,         null,     null),
-            E("Power of Friendship",                0.4,  "survival:0.5, economy:0.3",              null,              "squad",          null,     "halves some hits, more in a big team"),
+            E("Power of Friendship",                0.4,  "survival:0.5, economy:0.3",              null,              "squad",          null,     "halves some hits, more in a big team").Economy("luck"),
             E("Quick Buck",                         0.2,  "cash, move:0.5",                         null,              null,             "cash",   "cash pickups give a burst of speed"),
             E("Quicksilver Bullets",                0.5,  "weapons",                                null,              null,             null,     "+30% weapon attack speed"),
             E("Ragged Patch",                       2.0,  "upgrade quality",                        null,              null,             "economy",null),
-            E("Reserve Bench",                      0.6,  "economy",                                null,              "skip",           "economy,grows",  "a level-up per chest or training skip"),
+            E("Reserve Bench",                      0.6,  "economy",                                null,              "skip",           "economy,grows",  "a level-up per chest or training skip").Economy("level-ups").Briefly("level-up per chest or training skip"),
             E("Retaliation",                        0.6,  "armor, weapons:0.5",                     null,              null,             null,     "+20 armor, faster weapons when hit"),
             E("Ring Of Power",                      1.0,  "weapons:0.5, abilities:0.5",             null,              null,             "grows",  "+10% damage per SOS answered, up to 40%"),
             E("Rock And Roll",                      0.8,  "upgrade quality",                        null,              null,             "economy","a free reroll on every screen"),
@@ -176,7 +200,7 @@ namespace YazsCompanion
             E("Scouter",                            2.0,  "critical, weapons",                      null,              null,             null,     null),
             E("Silencer",                           3.0,  "weapons",                                null,              "short",          null,     null),
             E("Silver Padlock",                     0.2,  "upgrade quality:0.5",                    null,              "lockdown",       "economy","extra item choices under a lockdown"),
-            E("Skip Rope",                          0.3,  "economy:0.5",                            null,              "skip",           "economy","skips build XP and military points"),
+            E("Skip Rope",                          0.3,  "economy:0.5",                            null,              "skip",           "economy","skips build XP and military points").Economy("XP and training points"),
             E("Slingshot",                          1.0,  "kinetic, critical",                      null,              null,             null,     "crits against Injured enemies"),
             E("Smooth Moves",                       0.6,  "dodge, survival:0.5",                    null,              null,             null,     "+10% dodge, often dodges shots"),
             E("Solar Panel",                        1.0,  "~critical, abilities",                   null,              null,             null,     "weapon crits cut ability cooldowns"),
@@ -185,8 +209,8 @@ namespace YazsCompanion
             E("Stretcher",                          1.0,  "healing:0.5, survival",                  "dodge:0.5",       null,             null,     "regeneration while you keep moving"),
             E("Sugar Rush",                         0.2,  null,                                     null,              "boss",           null,     "a boss kill starts a Killing Frenzy"),
             E("Suspicious Pendrive",                0.4,  "control:0.3",                            null,              "own:Explosive",  null,     "a big blast when you open a chest"),
-            E("T-Pose Doll",                        0.6,  "weapons:0.5, abilities:0.5",             null,              null,             null,     "up to +50% damage while you avoid hits"),
-            E("Teddy Bear",                         0.6,  "upgrade quality, economy:0.5",           null,              null,             "economy","rerolls and banishes may cost nothing"),
+            E("T-Pose Doll",                        0.6,  "weapons:0.5, abilities:0.5",             null,              null,             null,     "up to +50% damage while you avoid hits").Briefly("up to +50% damage while unhurt"),
+            E("Teddy Bear",                         0.6,  "upgrade quality, economy:0.5",           null,              null,             "economy","rerolls and banishes may cost nothing").Economy("luck").Briefly("rerolls and banishes may be free"),
             E("The Bomb",                           1.0,  "explosive",                              null,              null,             null,     "bigger explosions"),
             E("The Word",                           1.0,  "control",                                null,              null,             null,     "stops the horde 3s in every 20s"),
             E("Toilet Paper",                       0.2,  "chemical:0.5, move",                     null,              "move:Chemical",  null,     "+20 speed; speed adds Chemical damage"),
@@ -197,7 +221,7 @@ namespace YazsCompanion
             E("Walkie Talkie",                      0.4,  "abilities",                              null,              "squad",          null,     "ability area and duration per level"),
             E("Warm Ice Cream",                     0.0,  "ice, fire",                              null,              null,             null,     "Ice damage burns, +2 tags"),
             E("Well Prepped",                       1.0,  null,                                     null,              null,             "economy","one more item slot, kept after a swap"),
-            E("Wooden Stick",                       2.0,  "economy",                                null,              "slots:xp",       "economy,grows",  null),
+            E("Wooden Stick",                       2.0,  "economy",                                null,              "slots:xp",       "economy,grows",  null).Economy("XP"),
             E("Wrench",                             0.3,  "abilities",                              null,              "pickup",         null,     "ability area from pickup range"),
             E("Zugzwang Hypergaster XD",            0.0,  null,                                     null,              "tags:zug",       null,     "+5 to low damage tags, -2 to high ones"),
         };

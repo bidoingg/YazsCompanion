@@ -5,6 +5,176 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.1 (2026-10-11) - seen live
+
+Fixes from the first PC session with 0.16.0 (10-10, 3440 x 1440): a chest line that named the wrong gain and a WHY whose
+text size changed from card to card, plus the answers given on 10-10 - mark the items no guide rates, AVOID only where a
+card costs something, one gold frame per screen, a link between the 21:9 WHY panel and its card, and the quest rows in
+the game's own words. The 10-11 PC session ran it; see the end of this entry for what it showed.
+
+### The chest cards' words
+
+- **What an item gives, named right**: an item scored for the run's economy said "XP and luck" whatever it gave. Live at
+  11:57:59 on 10-10 Power of Friendship (+10 Luck, no XP) read `More XP and luck - pays off all run (17:29 left)`; it now
+  reads `More luck - pays off all run`. The 16 items with an economy gain or cost name their own: luck (Power of
+  Friendship, Ban Hammer, Teddy Bear, Last Unicorn, Pawn Shop Receipt), XP (99'th Balloon, Access Keycard, Emerald Gem,
+  Jailbroken Phone, Jewel of Death, Wooden Stick, Gold Medal's cost), level-ups (Black Box, Hijacked Signal, Reserve
+  Bench), XP and training points (Skip Rope); an item a newer game build adds reads it from its own text.
+- **Items no guide rates are marked**: where a guide-rated item says its tier (`B-tier - ...`), an item rated by the
+  Companion's own estimate says `... (unrated)` - `Halves some hits, more in a big team (unrated)` -, and its WHY starts
+  with `Unrated by the guides - the Companion's estimate from its text`. On a narrow card (the Steam Deck's) the cue gives
+  way to the item's words, as a guide tier does; the WHY says it every time. The cap stays: no unrated item ranks above a
+  guide B pick. The mark moves no card.
+- **AVOID only where a card costs something**: an item under 1 that takes nothing from the squad (it is only weak for
+  it) stays at 1.00, grey, without AVOID; a guide C tier then reads `C-tier in the guides`. Up to 0.16.0 Brave Toaster read
+  `AVOID   Stronger status effects - suits Huntress` on a Huntress squad. AVOID stays where the item costs the squad
+  something: a damage type or a stat it uses, health, a clash with a held item (`Clashes with your Devil's Deal`), a
+  10-tag effect switched off, Glass Cannon without an Energy Shield, the cooldown reduction Mana Potion switches off, a
+  conversion that stops a held item's status, the empty slot of Wooden Stick or Empty Chest. On the item book's reference
+  squads 20 scores moved, every one from under 1 to 1.00; no other score changed. Ability and stat cards are as they were
+  (a stat card that does nothing still reads AVOID).
+- The SKIP hint of a screen whose every card is under 1 says `every card here would hurt this squad` only when each card
+  costs something, else `every card here is weak for this squad - take the skip bonus` (`every card is weak` under the
+  button).
+- From the 10-11 Steam Deck run: the Liberate card reads `Level-up and cash, no recruit` where its long line ended in
+  "..."; an item line too long for a narrow card takes a short form (`An Explosive grenade every 10s`, not `Throws an
+  Explosive grenade every`) and a cut line never ends on a word like "every" or "under a"; a name another mod lends for a
+  weapon no longer changes a military card's name (`Master Blaster`); Magazine Clip says what it does: `Doubles every
+  magazine - your guns use magazines`, not `The squad reloads magazines`.
+
+### One gold frame per screen
+
+Up to 0.16.0 a REROLL or SKIP hint framed its button in gold while the best card kept its own gold frame and RECOMMENDED
+ribbon - two gold frames saying opposite things -, and the hint came 0.6 s after the cards (on the 10-07 Deck round 1 of
+4 hints was followed; on 10-10 the framed card was taken 8 s after a REROLL hint).
+
+- When the hint says REROLL or SKIP, the gold frame goes to that button, and the line over it reads `RECOMMENDED: REROLL  -
+  the best card here is weak for this squad`. The best card gives its frame up: its ribbon turns grey and reads `IF YOU
+  KEEP`, over the card's own line, grey too. When the hint goes and the screen stays, the card's frame and ribbon come
+  back.
+- The frame comes with the cards; the line follows a frame later and is measured again once the screen has flown in
+  (0.6 s).
+- Under its button (1280 x 800, the short words) the line reads as in 0.16.0 (`REROLL  -  a weak offer (2 left)`), so the
+  WHY band keeps its room.
+- BANISH (off by default) keeps the gold frame on the best card, which stays the pick; the Banish button's frame is grey
+  now.
+- The gold frame's bottom line stops either side of the military training card's plate too (0.16.0: level-up and rescue
+  cards).
+
+### The WHY
+
+- **One size on every card**: the WHY's text size was read off the selected card, which the game enlarges while it is
+  selected - on 10-10 the first card's WHY read 21.6 px and the others' 20.5 px. It is now taken from the card at rest:
+  20.5 px at 1440p, 16 px on the Steam Deck, the same on every card of a screen.
+- **A link to its card on 21:9**: the WHY panel in the side wing can stand far from its card (card 3 of 4 is explained in
+  the left wing). A small gold jewel - a gold diamond with a dark ring and a gold core - now sits on the top edge of the
+  selected card, and the panel's end diamond on the cards' side becomes the same jewel, at the same size. Only with the
+  side panel; the band under the cards needs none.
+
+### The QUEST row in the game's words
+
+The PLAN readout's info-only QUEST row says what the game's quest box says:
+
+- a story quest: `Broken Vials 3 of 5` (0.15.0 - 0.16.0: `story objective 3 of 5`, seen live under "Genesis" on 10-10),
+  `Broken Vials, done`; a Boss Rush story quest names its boss: `Defeat Tower`;
+- the other counted objectives are on the row now too (0.16.0 only logged them): `Liberate Survivors 1 of 3`, `Open Item
+  Chests 4 of 7`, `Collect Cash 12 of 30`, `Defeat Elite Bosses 0 of 3`;
+- two rows at most, the story first, open ones before met ones; dim and info only as before (no card moves for them),
+  switched by `[General] QuestProgress` as before. A count over ten rebuilds the readout once per tenth of the way
+  (Collect Cash 30: every third pickup), not at every step.
+
+The log keeps the ids: `[quest] GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only`.
+
+### EQUIP ADVICE in the advice's order, and by controller
+
+- EQUIP ADVICE (off by default) now leaves the slots in the advice's order, slot 1 = badge 1, also when some badges are
+  equipped already; up to 0.16.0 the new badges went to the end of the row (from full slots on 10-07 it read 4 2 1 3), so
+  on the Deck the slots were emptied by hand first. It takes up to 8 presses (about 1 s); UNDO puts the old badges back
+  in their old slots, and a controller's Y (`· Y` on the plate) or A on the plate, reached with the d-pad, presses it.
+
+### From the 10-11 PC session
+
+- **Extermination's clock**: in Extermination the advice thought the run was almost over from the second wave. It took
+  the time left as the share of waves still to play times the game's goal number (`TimeRequiredForSuccess`), which in
+  that mode is not the run's length: on 10-11 it counted `~3 level-ups to come` at wave 2 of 20 and `~2` at wave 3, and
+  about 50 came. So the rescue cards put Liberate over strong recruits (`Too late for a recruit to grow (wave 3/20)`;
+  the player took the recruit both times), about a hundred card lines said `too late` or `little time left`, evolutions
+  read as out of reach, and the PLAN's SOS row said Liberate from the first wave. It was so in every version since
+  0.10.0. The time left is now the waves still to play times a wave's length - 42 s (that run's average, 20 waves in
+  14:03) until the run has finished waves of its own, then blended with its own pace -, with `[Advice] ModeAware` off
+  too; the game's number is not read for it. Extermination's level-up pace starts from that run's 3.9 a minute, not
+  Normal's 2.9. With 42 s waves a recruit keeps its full value to about wave 16; Liberate passes a weak recruit at about
+  wave 18 and says `Too late for a recruit to grow` on the last wave. Every other mode reads the clock as before.
+- **One 'Boosted by' reason**: a WHY could say `Boosted by <passive> (<survivor>)` and `Boosted by <passive>` side by
+  side for one team passive (16 WHY bands on 10-11, and in every log since 10-08), spending one of its four reasons. It
+  says it once, with the survivor - on an evolution without it, as before, so a card whose own line is `Evolution -
+  boosted by <passive>` does not say it again under its WHY.
+
+### For the maintainer
+
+- The pause walk (`[Debug] PreviewPause`) draws a REROLL and then a SKIP hint on its first offer, before the hover tour,
+  as real hints draw them, with a shot each (`hint_reroll`, `hint_skip`); the run clock stands meanwhile, and no
+  `[squad] ... SHOWN` line is written for them (advice_audit.py counts those).
+- New log lines: `[badge] LevelUp 02:31: REROLL advised - the gold frame on the Reroll button; #1 <card> gave it up: 'IF
+  YOU KEEP' over its line '...'` once per offer and verdict, then `[badge] ...: the gold frame back on #1 <card> (the hint
+  went)`; `[squad] action hint: the line moved as the screen settled - now ...` (`came` / `went`) when the 0.6 s measure
+  changed it; once a session `[why] link marker: ...`, and `, diamond link` after `card N of M` on the side panel's
+  `[why]` lines; a weak item's `[card]` reason `weak here, but it costs nothing (no AVOID)`; the all-AVOID SKIP's `| every
+  card is under 1 (AVOID; none costs the squad anything: weak)`; the quest's read line ends `| counted: N (progress on the
+  readout)`; an Extermination offer's `[ctx]` line ends `..., ~38 s a wave, game goal 55 s)` (ahead of `, health N%` and
+  `, survive quest`): the wave length the time left used and the game's `TimeRequiredForSuccess`, which the next
+  Extermination log shows for the first time (`waves not read: knowledge goal 1200 s, game goal ...` when the waves could
+  not be read).
+- `build.cmd` refuses to deploy while the game runs (`error YAZSDEPLOY: DEPLOY REFUSED ...`): nothing is copied, the
+  compiled DLL stays in `bin\Release`; `-p:Deploy=false` never asks.
+- The bench: `SeenLiveCases.cs` (SL1 - SL4: the economy word, the estimate cue, AVOID only with a cost, the SKIP words;
+  the 10-10 11:57:59 chest replayed), `QuestWordsCases.cs` (Q6a: the 16 counted objectives' words, steps and rows; every
+  row of the game's 53 events within 40 characters), `GeometryCases.cs` G15 - G18 (one gold frame in 44 hint states, the
+  line widths, the room of IF YOU KEEP, one WHY size, the link jewel's place) and G13's military plate;
+  `itembook_expected.txt` rewritten for the cue and the 1.00 floor; 0.16.0 joins the released list; `PcRoundCases.cs` (made-up
+  runs only: XH1 - XH8 Extermination's time left at wave 3 of 20 and over the last waves, the wave-1 and waves-not-read
+  guards, ModeAware off, 2,304 contexts of the other modes read as 0.16.0 read them, the `[ctx]` line, the pace prior, the
+  sources; BO1 one 'Boosted by' reason, none under an evolution whose line says it).
+
+### Choices made for room
+
+Two of the answers of 10-10 needed a form; either can change:
+
+- The cue reads `(unrated)`, not "no guide rating": with the longer words 24 of the 73 unrated items could not carry it
+  on a PC card; with `(unrated)` every one can, and about 6 in 10 on the Steam Deck's first card (the WHY says it on
+  every one).
+- `IF YOU KEEP` stands in the ribbon's place, not at the head of the card's line: there it cost 14 characters, and half
+  the Steam Deck's lines lost words.
+
+### How it was checked, and what was not seen
+
+Checked offline: the bench with `--strict`, in full and without game data (as the GitHub workflow runs it) - all as
+wanted -, and `--check-log` over the 10-10 PC session (42 hooks patched, 0 warnings, 0 errors, 276 card texts on the
+rails, 5 chest offers each with its `[items]` line).
+
+That session (0.16.0, 11:42 - 12:16, three runs at 3440 x 1440) showed four things 0.16.0 was released without seeing
+live: the chest item advice (5 chests, every item with a rule), the WHY side panel at 21:9 (168 views), the story row
+stepping from 0 to 2 of 5 under "Genesis", and the Training Yard following the badge advice (8 of 9 purchases the
+advised #1).
+
+Seen in the 10-11 PC session (0.16.1, 19:42 - 20:56, an Extermination win and an Endless run at 3440 x 1440;
+`--check-log`: all as wanted): EQUIP ADVICE put badges chosen out of order into slots 1 2 3 4 (4 and 8 presses) and UNDO
+gave the row back exactly twice, by pad (A and Y both press it); the gold frame on the REROLL button with the grey IF YOU
+KEEP ribbon in the same millisecond as the hint (7 of 7); one WHY size, 20.5 px, on all 542 side lines, each with the
+link marker; `(unrated)` on 33 card texts and never on a guide-tiered item; `More luck` and Magazine Clip's line.
+
+Not yet seen in the game:
+
+- **The jewel by eye** on the selected card at 21:9 - whether it covers anything of the card's top (the log has it, no
+  shot does).
+- **`C-tier in the guides`** on a real chest card; on the Steam Deck, whether the WHY's `Unrated by the guides` reason
+  leaves room for another (the band there shows one or two).
+- **The QUEST row's new words** under "Genesis" and under a quest that counts liberations, chests, cash or elites.
+- **EQUIP ADVICE** with one or two badges already equipped, UNDO by mouse, and on the Steam Deck the Y button from the
+  camp and from the main menu's Play.
+- **Extermination's clock**: at wave 3 of 20 the `[ctx]` line should count about 40 - 50 level-ups to come, the rescue
+  cards should put recruits first until the last waves, and the line shows the game's goal number for the first time.
+
 ## 0.16.0 (2026-10-10) - every item
 
 Every chest item read by its own text, the items the squad holds in the advice, and the fixes of the 10-07 Steam Deck

@@ -288,13 +288,14 @@ namespace YazsCompanion.Bench
         static void Needs(Dictionary<string, ProbeItem> b)
         {
             Need(b, "Buckshot Roulette", "no magazine on the squad", c => c.ClipShare = 0, 1.60, "No weapon on the squad uses a magazine");
-            Need(b, "Buckshot Roulette", "every weapon reloads a magazine", c => c.ClipShare = 1, 2.32, "The squad reloads magazines");
+            // 0.16.1 (R-07 of the 10-11 Deck round): the item's own words first, the condition as one (up to here 'The squad reloads magazines')
+            Need(b, "Buckshot Roulette", "every weapon reloads a magazine", c => c.ClipShare = 1, 2.32, "Quicker cooldowns, 20% instant reloads", "quicker cooldowns, 20% instant reloads - your guns use magazines");
             Need(b, "Magazine Clip", "no magazine on the squad", c => c.ClipShare = 0, 1.40, "No weapon on the squad uses a magazine");
-            Need(b, "Magazine Clip", "every weapon reloads a magazine", c => c.ClipShare = 1, 3.92, "The squad reloads magazines");
+            Need(b, "Magazine Clip", "every weapon reloads a magazine", c => c.ClipShare = 1, 3.92, "Doubles every magazine - your guns use magazines");
             Need(b, "Empty Chest", "1 free slot", c => c.FreeSlots = 1, 1.00, "No item slot left empty after it");
             Need(b, "Empty Chest", "3 free slots", c => c.FreeSlots = 3, 1.60, "+20% damage now (2 empty slots)");
             Need(b, "Empty Chest", "6 free slots", c => c.FreeSlots = 6, 2.50, "+50% damage now (5 empty slots)");
-            Need(b, "Empty Chest", "free slots unknown", c => c.FreeSlots = double.NaN, 1.60, "+10% damage per empty item slot");
+            Need(b, "Empty Chest", "free slots unknown", c => c.FreeSlots = double.NaN, 1.60, "+10% damage per empty item slot (unrated)");     // 0.16.1 (C-1): no guide tier
             Need(b, "Wooden Stick", "1 free slot", c => c.FreeSlots = 1, 1.59, "+10% XP now, no slot left empty");
             Need(b, "Wooden Stick", "3 free slots", c => c.FreeSlots = 3, 2.84, "+30% XP now (2 empty slots)");
             Need(b, "Wooden Stick", "6 free slots", c => c.FreeSlots = 6, 4.45, "+60% XP now (5 empty slots)");
@@ -319,7 +320,7 @@ namespace YazsCompanion.Bench
             Need(b, "Vampire Survivor", "Huntress, Ghost, Tank", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.88);
             Need(b, "Walkie Talkie", "Huntress, Ghost, Tank (a full squad)", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.32, "Halved in a full squad");
             Need(b, "Power of Friendship", "Huntress, Ghost, Tank", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.93);
-            Need(b, "Combat Knife", "as is (Normal)", c => { }, 1.70, "+30% damage to basic enemies");
+            Need(b, "Combat Knife", "as is (Normal)", c => { }, 1.70, "+30% damage to basic enemies (unrated)");
             Need(b, "Combat Knife", "Boss Rush", c => { c.Ctx.Mode = "BossRush"; c.Ctx.Goal = 600; }, 1.35, "Boss Rush: few basic enemies");
             Need(b, "Sugar Rush", "Boss Rush", c => { c.Ctx.Mode = "BossRush"; c.Ctx.Goal = 600; }, 1.40);
             Need(b, "Silver Padlock", "a lockdown advised", c => c.LockdownAdvised = true, 1.32);
@@ -327,9 +328,9 @@ namespace YazsCompanion.Bench
             Need(b, "Omnigeode", "no tag points at all", c => c.Tags.Points.Clear(), 3.20);
             Need(b, "Magical Hat", "as is (Ice 5: +4)", c => { }, 2.85, "Boosts Ice - your Freezing Arrows deals it");
             Need(b, "Metal Gear", "pickup range 1.5", c => c.Pickup = 1.5, 2.17, "+25% duration from your pickup range");
-            Need(b, "Wrench", "pickup range 1.0", c => c.Pickup = 1.0, 1.42, "Ability area from pickup range");
+            Need(b, "Wrench", "pickup range 1.0", c => c.Pickup = 1.0, 1.42, "Ability area from pickup range (unrated)");
             Need(b, "Compass", "speed 150", c => c.MoveSpeed = 150, 1.87, "+12% ability power from your speed");
-            Need(b, "Toilet Paper", "speed 150, no Chemical on the squad", c => c.MoveSpeed = 150, 1.15, "+20 speed; speed adds Chemical damage");
+            Need(b, "Toilet Paper", "speed 150, no Chemical on the squad", c => c.MoveSpeed = 150, 1.15, "+20 speed; speed adds Chemical damage (unrated)");
             Need(b, "Devil's Deal", "health 30%, 18:20", c => { c.Ctx.Health = 0.3; c.Ctx.Seconds = 1100; }, 1.85);
             Need(b, "Accumulator", "as is (no Electric points)", c => { }, 4.29);
             Need(b, "Accumulator", "Electric 10 points", c => c.Tags.Points["Electric"] = 10, 4.79, null, "your 10 Electric tags raise its damage");
@@ -520,7 +521,7 @@ namespace YazsCompanion.Bench
         {
             foreach (var name in new[] { "Jewel of Life", "Plot Armor" })
             {
-                string say = name == "Jewel of Life" ? "One revive, then halves max HP" : "Survives a killing blow once a minute";
+                string say = name == "Jewel of Life" ? "One revive, then halves max HP (unrated)" : "Survives a killing blow once a minute (unrated)";     // 0.16.1 (C-1): no guide tier
                 var states = new[]
                 {
                     Tuple.Create("health 100%, no quest", 1.0, false, 3.38, say, (string)null),
@@ -571,7 +572,7 @@ namespace YazsCompanion.Bench
         static void DeckChest()
         {
             var offer = new[] { "Frozen Heart", "Pickup Pick", "Jewel of Life", "Last Unicorn" };
-            foreach (var st in new[] { Tuple.Create(0.55, true, new[] { 2.45, 2.27, 3.95, 1.57 }, "A second life - the squad is at 55%"), Tuple.Create(1.0, false, new[] { 2.45, 2.27, 3.41, 1.57 }, "One revive, then halves max HP") })
+            foreach (var st in new[] { Tuple.Create(0.55, true, new[] { 2.45, 2.27, 3.95, 1.57 }, "A second life - the squad is at 55%"), Tuple.Create(1.0, false, new[] { 2.45, 2.27, 3.41, 1.57 }, "One revive, then halves max HP (unrated)") })
             {
                 var cells = offer.Select(n => Pure(n, Deck(st.Item1, st.Item2))).ToList();
                 bool ok = cells.Select((x, i) => Near(x.Score, st.Item3[i])).All(b => b) && cells[2].Line == st.Item4;

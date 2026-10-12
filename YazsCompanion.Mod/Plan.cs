@@ -285,6 +285,9 @@ namespace YazsCompanion
         // level", "QUEST  a health item (0 of 1)"; QuestRules.Row) - the team rule stays on the SOS row
         // 0.15.0 (C15-09): then the story objective's progress, dim and info only ("QUEST  story objective 3 of 5"; QuestStory.Row),
         // behind [General] QuestProgress - the row no longer waits for a rule that changes the advice when the quest is a story one.
+        // 0.16.1 (C16-04a): every counted objective, in the words of the game's quest box - a story count ("Broken Vials 3 of 5"), the Boss
+        // Rush boss ("Defeat Tower"), an event count ("Liberate Survivors 1 of 3", "Open Item Chests 4 of 7", "Collect Cash 12 of 30") and
+        // kills of a rank ("Defeat Elite Bosses 0 of 3"); story counts first, two items in all (QuestStory.Rows).
         // The readout is hidden on every selection screen, so this never stands next to a card.
         void QuestLine(Snapshot s)
         {
@@ -295,13 +298,12 @@ namespace YazsCompanion
                 var items = r.Row(2);
                 shown.AddRange(items.Select(x => N(Names.Text(x))));
             }
-            string story = shown.Count < 2 && StoryShown() ? StoryRow(s) : null;
-            if (story != null) shown.Add(C(Dim, N(story)));
+            if (shown.Count < 2 && StoryShown()) foreach (var t in StoryRows(s, 2 - shown.Count)) shown.Add(C(Dim, N(t)));
             if (shown.Count == 0) return;
             Add("run", "quest", "QUEST", Join(shown));
         }
         static bool StoryShown() { try { return Plugin.QuestProgress == null || Plugin.QuestProgress.Value; } catch { return true; } }
-        static string StoryRow(Snapshot s) { try { var st = s.Story; return st == null ? null : st.Row(); } catch { return null; } }
+        static List<string> StoryRows(Snapshot s, int max) { try { var st = s.Story; return st == null ? new List<string>() : st.Rows(max); } catch { return new List<string>(); } }
 
         // the run's damage type tag points (two highest types) and, when it is not the first one, the type to build up at the next Research Pod
         void TagsLine(Snapshot s)

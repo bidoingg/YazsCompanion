@@ -63,6 +63,9 @@ namespace YazsCompanion
         public string ShortType; public int Short;   // the type 2 - 3 tags short of its 10-tag effect
         public string ShareType, ShareFrom; public int SharePct;   // the squad's biggest share among its types, the first powerup dealing it
         public string Boost;                 // a team passive on the squad that boosts it
+        public string BoostOwner;            // 0.16.1 (COMPANION-LOG-06, PC round 10-11): whose passive it is - the WHY names it as the
+                                             // ability's head does, so the two read as one reason (Wording.Tags, WhyText.TagFacts;
+                                             // not an evolution's WHY: its own line says the boost without it)
         // ---- evolutions
         public string Base, Pick; public bool Mine, PickOffered = true;    // the base ability, the build's pick and whether this is it / offered
         public int BasePriority = -1;        // 0.15.0 (C15-03 c): the base ability's place in the build's order (Priority's scale; -1: none, or skipped)
@@ -107,11 +110,24 @@ namespace YazsCompanion
         // 'already held' (null: none), and what filling an empty item slot costs this card (C16-01c, the action hints judge the merit)
         public string[] LeadForms;
         public double HeldCost;
+        // 0.16.1 (C-1): no guide tiers it - the item book's own worth (or the keyword reading) rated it: where a guide-tiered item says its
+        // tier, the card says "(unrated)", and the WHY's first reason says whose rating it is (EstimateWhy)
+        public bool Estimate;
+        // 0.16.1 (C-8): the rules kept it at 1.00 - weak for this squad but costing it nothing, so no AVOID (a guide C tier then reads
+        // "C-tier in the guides"); Cost = what it does take from the squad when it does (null: nothing - the log's and the bench's)
+        public bool Weak;
+        public string Cost;
+        // 0.16.1 (C161-01): what its "economy" gain gives in its own words ("luck", "XP", "level-ups"; null: the tag's "XP and luck")
+        public string EconNoun;
+        // 0.16.1 (R-03 / R-07 of the 10-11 Steam Deck round): the note's shorter card forms, longest first, tried before it is cut to the
+        // room - the item book's Brief; under a rule's note that leads with the book's words, those words and their Brief (null: none)
+        public string[] Shorter;
     }
 
     /// <summary>One thing an item boosts or weakens: a damage type (<see cref="Typed"/>), a powerup tag the squad owns
-    /// (<see cref="Power"/>) or a keyword a class favours; <see cref="Who"/> = the first powerup dealing the type, or the class.</summary>
-    internal sealed class ItemFit { public string What, Who; public bool Typed, Power; public int Pct; public double Weight; }
+    /// (<see cref="Power"/>) or a keyword a class favours; <see cref="Who"/> = the first powerup dealing the type, or the class;
+    /// <see cref="Noun"/> (0.16.1, C161-01) = the item's own word for it, where the keyword's is too broad ("XP" for "economy").</summary>
+    internal sealed class ItemFit { public string What, Who, Noun; public bool Typed, Power; public int Pct; public double Weight; }
 
     /// <summary>What speaks for a rescue card (Ranker.RecruitScore fills it beside the reason lines).</summary>
     internal sealed class RecruitSay
@@ -224,8 +240,28 @@ namespace YazsCompanion
 
         // the last resort of a form that names something another mod renames longer: whole words off its end until it fits as drawn,
         // never ending on a word that leads into the cut part ("keep the slot for" -> "keep the slot"); the form itself when even
-        // two words do not fit
-        static readonly HashSet<string> Dangling = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "for", "with", "of", "the", "and", "or", "to", "a", "an", "your", "like", "on", "in", "by", "at", "+", "-", "is" };
+        // two words do not fit. 0.16.1 (R-03 of the 10-11 Steam Deck round): the words from "every" on joined the list - a note cut to its
+        // room drew 'Throws an Explosive grenade every', 'Rerolls and banishes may cost' and 'Better military cards under a' at 1280 x 800
+        static readonly HashSet<string> Dangling = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "for", "with", "of", "the", "and", "or", "to", "a", "an", "your", "like", "on", "in", "by", "at", "+", "-", "is",
+            "every", "each", "may", "can", "will", "under", "than", "per", "into", "from", "when", "while", "if", "that", "its", "their", "but", "are", "be", "as" };
+
+        /// <summary>0.16.1 (R-03): the line ends on a word that leads into a part cut off ("every", "under a").</summary>
+        internal static bool EndsDangling(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return false;
+            string t = line.TrimEnd(',', ':', ';', ' '); int sp = t.LastIndexOf(' ');
+            return sp >= 0 && Dangling.Contains(t.Substring(sp + 1));
+        }
+
+        /// <summary>0.16.1 (R-03): a line cut at a space, without the words off its end that lead into the cut part ("Better military
+        /// cards under a" -> "Better military cards"), two words kept at least.</summary>
+        static string Undangle(string s)
+        {
+            var words = s.TrimEnd(',', ':', ';', '-', ' ').Split(' ').ToList();
+            while (words.Count > 2 && Dangling.Contains(words[words.Count - 1].TrimEnd(',', ':', ';'))) words.RemoveAt(words.Count - 1);
+            return string.Join(" ", words).TrimEnd(',', ':', ';', '-', ' ');
+        }
+
         static string Cut(string s)
         {
             if (string.IsNullOrEmpty(s) || Len(s) <= Room) return s;
@@ -386,7 +422,8 @@ namespace YazsCompanion
             if (w.HeadRank >= 6 && w.Head != null) return Say(null, w.Head);
             if (w.Reach < 0.6) return Say(null, "little time left to level it (" + w.Clock + ")");
             if (w.HeadRank > 0 && w.Head != null) return Say(null, w.Head);
-            return Say(null, w.Owned < 4 ? "fills an empty ability slot early" : "fills an ability slot");
+            // 0.16.1: a shorter last form for a line of 30 (the IF YOU KEEP line beside the best card at 1280 x 720, GeometryCases G16)
+            return w.Owned < 4 ? Say(null, "fills an empty ability slot early", "fills an empty slot early") : Say(null, "fills an ability slot");
         }
 
         // ---- a level of the weapon in hand
@@ -546,8 +583,9 @@ namespace YazsCompanion
 
         // ================================================================ items (chests)
         /// <summary>An item's line, the strongest reason first: the quest, held already, what the rules put first (a pair, a tag
-        /// item), a downside, a damage type the squad deals, a build's leaning, a type nobody deals, what it needs, a class it suits,
-        /// growing, the knowledge note, the guides' tier, survival, a keyword in words.</summary>
+        /// item), a downside, (0.16.1) a weak guide C tier, a damage type the squad deals, a build's leaning, a type nobody deals, what it
+        /// needs, a class it suits, growing, the knowledge note (an estimate-rated item's with its cue), the guides' tier, survival, a
+        /// keyword in words.</summary>
         public static string Item(ItemSay s)
         {
             if (s == null) return null;
@@ -570,6 +608,9 @@ namespace YazsCompanion
                 if (worst.Typed && worst.Who != null) return Say(null, "weakens " + worst.What + " - your " + worst.Who + " deals it", "weakens " + worst.What);
                 return Say(null, "a downside: less " + And(hurt), "a downside: less " + hurt[0]);
             }
+            // 0.16.1 (C-8): a guide C tier the rules kept at 1.00 - weak for this squad, but costing it nothing: the guides' word is why it
+            // ranks low, never praise (up to 0.16.0 "AVOID   Stronger status effects - suits Huntress" stood under Brave Toaster)
+            if (s.Weak && LowTier(s.Tier)) return Say(null, Tier(s.Tier.Trim()));
             // an S- or A-tier item says so in front of a fit (a B or C tier is no reason of its own there)
             string top = s.Tier != null && (s.Tier.Trim().ToUpperInvariant() == "S" || s.Tier.Trim().ToUpperInvariant() == "A") ? s.Tier.Trim().ToUpperInvariant() + "-tier, " : null;
             var typed = s.Boosts.Where(b => b.Typed).OrderByDescending(b => b.Weight).FirstOrDefault();
@@ -588,30 +629,65 @@ namespace YazsCompanion
             var other = s.Boosts.OrderByDescending(b => b.Weight).FirstOrDefault();
             if (other != null) return other.Power ? Say(null, "boosts your " + PowerNoun(other.What)) : Say(null, Verb(other.What) + (other.Who != null ? " - suits " + other.Who : ""), Verb(other.What));
             if (s.Scaling != null) return s.Scaling == "early" ? Say(null, "grows all run - take it early") : Say(null, "grows too slowly now (" + s.Clock + ")");
-            if (!string.IsNullOrEmpty(s.Note)) return Say(null, NoteForms(s.RuleNote ? null : s.Tier, s.NoteSay ?? s.Note, s.RuleNote));
+            if (!string.IsNullOrEmpty(s.Note))
+            {
+                // 0.16.1 (C-1): no guide tiers it - where a guide-tiered item says "B-tier - ...", it says "... (unrated)"
+                if (s.Estimate && !s.RuleNote && s.Tier == null) return Estimated(s.NoteSay ?? s.Note, s.Shorter);
+                return Say(null, NoteForms(s.RuleNote ? null : s.Tier, s.NoteSay ?? s.Note, s.RuleNote, s.Shorter));
+            }
             if (s.Tier != null) return Say(null, s.Tier.ToUpperInvariant() + "-tier in the guides");
             if (s.Survival != null)
                 return Say(null, s.Survival == "onehit" ? "health means nothing in One Hit" : s.Survival == "hurting" ? "keeps the squad alive - you are low on health"
                     : s.Survival == "now" ? "keeps the squad alive - survival matters now" : "keeps the squad alive");
-            if (s.Keyword != null) return Say(null, Keyword(s.Keyword, s.KeywordAxis, s.KeywordValue, s.Clock));
+            if (s.Keyword != null) return Say(null, Keyword(s.Keyword, s.KeywordAxis, s.KeywordValue, s.Clock, s.EconNoun));
             return Say(null, "nothing in it for this squad");
         }
 
+        // ================================================================ 0.16.1 (C-1): whose rating it is
+        /// <summary>The cue on the card of an item no guide tiers (its worth the Companion's estimate from the item's text, capped at B -
+        /// the user's decision B2-Q2 of 10-10: mark them), where a guide-tiered item says its tier: "... (unrated)". The shortest wording
+        /// that fits: with "(no guide rating)" (18 characters) 24 of the 73 estimate-rated items' words did not fit a PC card's 50 even
+        /// at their first clause; with "(unrated)" (10) every one fits there (the book's words are 40 at most), and about 6 in 10 on the
+        /// Steam Deck's #1 card (42; the bench's SL2: 194 of 319 cards in six squads - about 4 in 10 with the long cue). The WHY's first
+        /// reason says what it means (<see cref="EstimateWhy"/>).</summary>
+        public const string EstimateCue = "unrated";
+        /// <summary>The WHY's first reason on such a card (64 characters at most, the band's rails).</summary>
+        public const string EstimateWhy = "Unrated by the guides - the Companion's estimate from its text";
+
+        /// <summary>An estimate-rated item's line in the tier's place: "&lt;its words&gt; (unrated)", else its first clause with the cue
+        /// ("Chests and signals open at once (unrated)"), else its words alone - the cue gives way where a guide-tiered item's "B-tier - "
+        /// does (a narrow Deck card; the WHY says it first either way). Never the cue alone: four estimate-rated cards of one chest would
+        /// draw the same line, and the offer's second card would lose it to its next reason (WhyText.Distinct).</summary>
+        static string Estimated(string note, string[] shorter = null)
+        {
+            string tail = " (" + EstimateCue + ")";
+            var forms = new List<string> { note + tail };
+            foreach (var cut in new[] { ':', ',', ';' }) { int i = note.IndexOf(cut); if (i > 8) forms.Add(note.Substring(0, i).TrimEnd() + tail); }
+            foreach (var f in forms) { string line = Cap(f); if (Len(line) <= Room) return line; }
+            return Say(null, NoteForms(null, note, false, shorter));
+        }
+
+        /// <summary>A guide tier under B ("C"): the guides call it weak.</summary>
+        static bool LowTier(string tier) { return tier != null && tier.Trim().ToUpperInvariant() == "C"; }
+
         // a knowledge note (editable in knowledge.json, so it may be long): with the tier, alone, cut at its colon or comma, cut short;
-        // a rule's own note (it already says this squad's case in full) is never cut at a colon - "with 1 survivor: ..." would lose it all
-        static string[] NoteForms(string tier, string note, bool rule = false)
+        // a rule's own note (it already says this squad's case in full) is never cut at a colon - "with 1 survivor: ..." would lose it all.
+        // 0.16.1 (R-03 / R-07 of the 10-11 Steam Deck round): its shorter forms (ItemSay.Shorter: the book's Brief) right after it, and a
+        // cut short never ends on a word that leads into the part cut off (Undangle)
+        static string[] NoteForms(string tier, string note, bool rule = false, string[] shorter = null)
         {
             var forms = new List<string>();
             if (tier != null) forms.Add(tier.ToUpperInvariant() + "-tier - " + note);        // "S-tier - boosts short-range weapons"
             forms.Add(note);
+            if (shorter != null) foreach (var s in shorter) if (!string.IsNullOrEmpty(s)) forms.Add(s);
             if (!rule) foreach (var cut in new[] { ':', ',', ';' }) { int i = note.IndexOf(cut); if (i > 8) forms.Add(note.Substring(0, i)); }
             int room = Room;
-            if (note.Length > room) { int sp = note.LastIndexOf(' ', room - 1); forms.Add(sp > 8 ? note.Substring(0, sp).TrimEnd(',', ':', ';', '-', ' ') : note.Substring(0, room)); }
+            if (note.Length > room) { int sp = note.LastIndexOf(' ', room - 1); forms.Add(sp > 8 ? Undangle(note.Substring(0, sp)) : note.Substring(0, room)); }
             forms.Add(Cut(note));         // as drawn: a note that names a powerup another mod renames longer
             return forms.ToArray();
         }
 
-        static string Noun(ItemFit f) { return f.Typed ? f.What : f.Power ? PowerNoun(f.What) : KeywordNoun(f.What); }
+        static string Noun(ItemFit f) { return f.Noun != null ? f.Noun : f.Typed ? f.What : f.Power ? PowerNoun(f.What) : KeywordNoun(f.What); }
         static string WantNoun(string want) { foreach (var t in TagProfile.Names) if (string.Equals(t, want, StringComparison.OrdinalIgnoreCase)) return t; return KeywordNoun(want); }
 
         /// <summary>A keyword of the item rules as a noun: "crits", "XP and luck", "damage to elites".</summary>
@@ -664,15 +740,17 @@ namespace YazsCompanion
                 default: return "boosts " + KeywordNoun(tag);
             }
         }
-        /// <summary>What an item without a squad-specific fit is scored for, in words, with the run clock's say.</summary>
-        static string[] Keyword(string tag, string axis, double value, string clock)
+        /// <summary>What an item without a squad-specific fit is scored for, in words, with the run clock's say. 0.16.1 (C161-01):
+        /// <paramref name="econ"/> = what its "economy" gain really gives ("luck": "More luck - pays off all run"; live 10-10 11:57:59
+        /// Power of Friendship, +10 Luck and no XP, read "More XP and luck"); null: the tag's own "XP and luck".</summary>
+        static string[] Keyword(string tag, string axis, double value, string clock, string econ = null)
         {
             string what;
             switch ((tag ?? "").ToLowerInvariant())
             {
                 case "weapons": what = "boosts weapons"; break;
                 case "abilities": what = "boosts abilities"; break;
-                case "economy": what = "more XP and luck over the run"; break;
+                case "economy": what = "more " + (string.IsNullOrEmpty(econ) ? KeywordNoun(tag) : econ) + " over the run"; break;
                 case "cash": what = "more cash for the Training Yard"; break;
                 case "elites/bosses": what = "more damage to elites and bosses"; break;
                 case "pickups": what = "a bigger pickup range"; break;
@@ -759,9 +837,11 @@ namespace YazsCompanion
                 int k = r.LiberateLevelUps; bool heal = r.CashHeals;
                 if (k <= 1 && !heal)
                 {
-                    if (r.Full) return Say(null, "squad is full - take the level-up and cash");
+                    // 0.16.1 (R-02 of the 10-11 Steam Deck round): a shorter form where the long one does not fit - beside the Deck's "3RD"
+                    // (36 characters) the line ended in "..." on every rescue screen (969 units in the 900 of its rect)
+                    if (r.Full) return Say(null, "squad is full - take the level-up and cash", "squad is full - level-up and cash");
                     if (r.Late != null) return Say(null, "too late for a recruit to grow (" + r.Late + ")");
-                    return Say(null, "a level-up and cash instead of a recruit");
+                    return Say(null, "a level-up and cash instead of a recruit", "level-up and cash, no recruit");
                 }
                 string gives = HeldRules.LiberateWhat(k, heal, "a level-up"), take = HeldRules.LiberateWhat(k, heal);
                 if (r.Full) return Say(null, "squad is full - take " + take, take);
@@ -879,7 +959,7 @@ namespace YazsCompanion
                         break;
                     }
             }
-            if (boosts != null) foreach (var b in boosts) if (b.Covers(p)) { w.Boost = b.Name; break; }
+            if (boosts != null) foreach (var b in boosts) if (b.Covers(p)) { w.Boost = b.Name; w.BoostOwner = b.Owner; break; }      // 0.16.1: with its owner (COMPANION-LOG-06)
         }
 
         // ================================================================ the rails (the bench holds every builder to them)

@@ -502,6 +502,8 @@ namespace YazsCompanion
                 if (gm != null)
                 {
                     try { c.Difficulty = (int)gm.difficulty + 1; } catch { }
+                    // 0.16.1 (COMPANION-LOG-03, PC round 10-11): Extermination's horizon no longer reads it (its waves do: RunContext.
+                    // WaveSeconds); the [ctx] line prints it there, to show what the game holds in that mode
                     try { c.Goal = gm.TimeRequiredForSuccess; } catch { }
                     if (s.Mode == "Extermination")
                     {

@@ -133,6 +133,10 @@ namespace YazsCompanion.Bench
             bad += HintCases.RunPure();                 // C16-13 / C16-15: the revive guard, the short hint words (HintCases.cs)
             bad += Loadouts.RunPure();                  // C16-16: the summary row's join forms, the marker digits (LoadoutCases.cs)
             bad += GeometryCases.Run();                 // 0.15.0 C15-05 / C15-06 / C15-12 and 0.16.0 C16-10 / C16-14 / C16-15: all data-free (GeometryCases.cs)
+            bad += SeenLiveCases.RunPure();             // 0.16.1 C161-01 / C-1 / C-8: the item words seen live on 10-10 (SeenLiveCases.cs)
+            bad += DeckRoundCases.RunPure();            // 0.16.1 R-02 / R-03 / R-05 / R-07: the card words of the 10-11 Steam Deck round (DeckRoundCases.cs)
+            bad += EquipOrderCases.Run();               // 0.16.1: EQUIP ADVICE in the advice's order, the UNDO's row, the pad's Y - all data-free (EquipOrderCases.cs)
+            bad += PcRoundCases.RunPure();              // 0.16.1 (PC round 10-11) COMPANION-LOG-03 / -06: Extermination's horizon, one 'Boosted by' - all data-free (PcRoundCases.cs)
             bad += Tail(strict);
             return bad == 0 ? 0 : 3;
         }

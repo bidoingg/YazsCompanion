@@ -881,14 +881,19 @@ namespace YazsCompanion.Bench
             for (var st = run.Next(live); st != null; st = run.Next(live)) { live = LoadoutView.Apply(live, new[] { st }, new int[0], unlocked, 4); run.Pressed(live); pressed.Add(st.ToString()); }
             var undoRun = run.Undo(); var live2 = live.ToList();
             for (var st = undoRun.Next(live2); st != null; st = undoRun.Next(live2)) { live2 = LoadoutView.Apply(live2, new[] { st }, new int[0], unlocked, 4); undoRun.Pressed(live2); }
-            Check("V5 the EQUIP run: 8 presses to the advice; its UNDO back to the save's set", run.Finished && pressed.Count == 8 && new HashSet<int>(live).SetEquals(a1.Equip) && undoRun.Finished && new HashSet<int>(live2).SetEquals(b1.Equipped),
+            Check("V5 the EQUIP run: 8 presses to the advice; its UNDO back to the save's row (0.16.1: the same slots, not only the set)", run.Finished && pressed.Count == 8 && new HashSet<int>(live).SetEquals(a1.Equip) && undoRun.Finished && live2.SequenceEqual(b1.Equipped),
                 string.Join(" ", pressed) + " | undo " + string.Join(" ", undoRun.Steps));
             var hand = LoadoutView.RunOf(v1, unlocked); var lv = b1.Equipped.ToList();
             for (int n = 0; n < 3; n++) { var st = hand.Next(lv); lv = LoadoutView.Apply(lv, new[] { st }, new int[0], unlocked, 4); hand.Pressed(lv); }
             lv.Add(12);                                                                         // the player clicks Gamble in between
-            var stop = hand.Next(lv); var partUndo = hand.Undo();
-            Check("V5 a click by hand mid-run stops it, and the UNDO takes back only the presses made", stop == null && hand.Stopped.Contains("by hand") && partUndo.Steps.Count == 3 && partUndo.Steps.All(x => x.Add),
-                hand.Stopped + " | undo " + string.Join(" ", partUndo.Steps));
+            var stop = hand.Next(lv); var partUndo = hand.Undo(); var liveUndo = hand.Undo(lv);
+            // 0.16.1: the UNDO puts the save's row back, not only the presses' badges - from what the presses made ([1]: remove Thunder, add
+            // the four in their old slots = 5) or from what the game shows ([1,12], the hand's Gamble included = 6); up to 0.16.0 it took
+            // back the 3 removes as adds ([1,15,6,9]: the set, another order)
+            Check("V5 a click by hand mid-run stops it, and the UNDO puts back the save's row 15,6,9,1 (from the presses' row: 5 presses; from the game's: 6)",
+                stop == null && hand.Stopped.Contains("by hand") && partUndo.Steps.Count == 5 && LoadoutView.Apply(partUndo.Start, partUndo.Steps, new int[0], unlocked, 4).SequenceEqual(b1.Equipped)
+                && liveUndo.Steps.Count == 6 && LoadoutView.Apply(lv, liveUndo.Steps, new int[0], unlocked, 4).SequenceEqual(b1.Equipped),
+                hand.Stopped + " | undo " + string.Join(" ", partUndo.Steps) + " | from the game's row " + string.Join(" ", liveUndo.Steps));
             var forcedRun = new EquipRun(new[] { 27, 15 }, new[] { new EquipStep { Id = 27, Add = false } }, new[] { 27 }, unlocked, 4);
             Check("V5 a press that would remove a forced badge is refused", forcedRun.Next(new[] { 27, 15 }) == null && forcedRun.Stopped.Contains("forced"), forcedRun.Stopped);
             // V6 texts

@@ -146,13 +146,14 @@ full squad), or what the active quest's team rule says (`quest: stay solo`, `que
 quest target, not held); `QUEST` what the active quest still asks while one of its rules changes the advice - at most two items, in
 words that change with a pick, not with every kill (`Taser to tier 3, max level`, `Plasma 3/4 to max level`, `a
 health item (0 of 1)`, `evolutions (2 of 6)`, `no Pyro abilities`, `Explosive+Slashing+Fire under 20`, `Engineer kills to 2000`); gone once
-met. Since 0.15.0 the row also follows a story quest, which no card is steered by: `story objective 3 of 5` (the story's own
-event count - the game's quest box says what it is, "Broken Vials 0/5" under "Genesis") or `story objective: the Boss Rush boss`,
-dim and info only, after the rules' items, `, done` once the count is reached, never when the run cannot complete the quest; a
-story step rebuilds the row. `[General] QuestProgress` (on) switches it; the `[quest]` lines name every counted objective's id and
-count either way (`1. CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only`, then `[quest]
-GameHubQuest_Main_06 -> story objective main_story_objective_q6: 3 of 5 - progress only` at each step; event counts and kills of
-a rank too, log only). When a rebuild changes a line (a pick, a recruit, a
+met. Since 0.15.0 the row also follows what the quest counts, which no card is steered by, in the words of the game's quest
+box (0.16.1): a story objective (`Broken Vials 3 of 5` under "Genesis", `Defeat Tower` for a Boss Rush one) and the other
+counts (`Liberate Survivors 1 of 3`, `Open Item Chests 4 of 7`, `Collect Cash 12 of 30`, `Defeat Elite Bosses 0 of 3`) -
+two at most, the story first, dim and info only, after the rules' items, `, done` once the count is reached, never when the
+run cannot complete the quest; a step rebuilds the row (a count over ten once per tenth of the way). `[General]
+QuestProgress` (on) switches it; the `[quest]` lines name every counted objective's id and count either way (`1.
+CustomGameplayEvent (Live) id main_story_objective_q6 0/5 - progress only`, then `[quest] GameHubQuest_Main_06 -> story
+objective main_story_objective_q6: 3 of 5 - progress only` at each step). When a rebuild changes a line (a pick, a recruit, a
 Research Pod), that row's value comes back gold and eases to white over `PanelHighlight` seconds (default 3,
 0.8 s of it held gold; the block itself never grows or jumps for it); the log names the changed lines (`[plan] ... [changed: Tank.plan]`).
 It hides while a selection screen, the pause menu, the results screen or any other game view is up, and goes with the
@@ -237,6 +238,8 @@ With `Motion = false` every element is put straight into its end pose (the fail-
 - **A `RECOMMENDED` ribbon hangs under that card**, diamond-tipped like the game's `NEW` / `UPGRADE`
   label, in the card's own font. While you hover a recommended ability card the game shows its own green
   `Skill Tree 3 / 5` label in that place; the ribbon fades out with the label's fade-in and comes back as it goes.
+  While a REROLL or SKIP hint takes the screen's gold frame to its button, the ribbon turns grey and reads `IF YOU
+  KEEP` over the card's line, grey too (0.16.1: one gold frame per screen).
 - **Every card gets one reason line** just below it, in plain words (`Wording.cs`): what the pick
   does and why, in the game's own words, every number with what it counts, 50 characters at most - `Level 3 of 4 -
   evolution unlocks at level 4`, `Max level - next tier: Pump-Action Shotgun`, `2ND   The Rifleman build's main
@@ -246,7 +249,10 @@ With `Motion = false` every element is put straight into its end pose (the fail-
   `The Bombardier build wants ability area`, `Mixed: boosts Ice, weakens Kinetic and Explosive`, `Does nothing until a
   tag hits 30 (Kinetic is 16)`, `S-tier, also deals Kinetic like your Handgun`, `Chemical 10-tag effect - but nobody
   deals Chemical`. Grey on the others, warm on the pick, dull red with `AVOID` in place of its place when a card is
-  worth avoiding (a score under 1). The 50 characters are counted as drawn: with the names
+  worth avoiding (a score under 1) - for an item, only when it costs the squad something (0.16.1: a weak item that
+  costs nothing stays at 1.00, a guide C tier reading `C-tier in the guides`). An item no guide rates says `(unrated)`
+  where a guide-rated item says its tier (`Halves some hits, more in a big team (unrated)`; on a narrow card its words
+  come first). The 50 characters are counted as drawn: with the names
   another mod lends (a shorter form when they make a line too long), 48 beside `AVOID`; fewer at a larger card text
   size (the line is sized to the room its size leaves: 42 characters in all on the Deck), and a line still too wide
   shrinks to 15 px before an ellipsis would cut it. Two cards of one offer never
@@ -272,7 +278,10 @@ With `Motion = false` every element is put straight into its end pose (the fail-
   four reasons at the cards' own reason size, one reason a line - a long one wraps onto a second line, slightly
   indented, and the panel grows upward for it rather than leaving a reason out (`side wing left, header + 3 lines, ...,
   3 of 3 shown, card 1 of 3` in the `[why]` line: the header, then the reasons' lines, and which card of the row the
-  panel speaks for, left to right); 16:9 and the Deck's 16:10 keep the band.
+  panel speaks for, left to right); 16:9 and the Deck's 16:10 keep the band. A gold jewel on the selected card's top
+  edge matches the panel's end diamond on the cards' side, so the eye finds the card the panel speaks for (0.16.1).
+  The WHY's text size is measured on the cards at rest, so it is one size on every card of a screen (0.16.1; before,
+  the selected card's enlargement gave the first card 21.6 px against the others' 20.5 px).
   The "vs #1" sentence names what the first card has that this one lacks - never a place in a build this card stands
   higher in. When the first two cards are less than 0.20 apart on the cards' own scale, the lead reads `CLOSE CALL` on
   both and the sentence does not argue the order (`Either works - Medical Drone is a hair ahead`, `Either works - a hair
@@ -334,11 +343,13 @@ REROLL  -  Tank would fit this squad better
 - **The reroll count is the game's own** for that screen (the number it hands the screen's action buttons, else the
   team's `Rerolls available`, else the number on the Reroll button); a FREE reroll counts too. When the game's own
   count comes late and differs, the hint is judged again once (`(re-judged with rerolls 8 - ...)` in the log).
-- **Where.** The Reroll button gets the recommended card's gold frame, and the line stands over the button in the
-  band between the cards' reason lines and the button - measured on screen 0.6 s after the cards came, never over
-  a card's text; when that band is too low it goes under the button, and without room for either only the frame
-  shows. Motion only when it appears (the frame settles, the line unfolds from its left tip and types on); nothing
-  loops.
+- **Where.** The screen's one gold frame goes to the Reroll button (0.16.1): the line over it reads `RECOMMENDED:
+  REROLL  -  ...`, and the best card gives its frame up - its ribbon turns grey and reads `IF YOU KEEP`, over its own
+  line in grey - until the hint goes. The frame comes with the cards; the line stands over the button in the band
+  between the cards' reason lines and the button, placed a frame later and measured again 0.6 s in, once the cards
+  have flown in, never over a card's text; when that band is too low it goes under the button (with the action alone
+  as its head), and without room for either only the frame shows. Motion only when it appears (the frame settles,
+  the line unfolds from its left tip and types on); nothing loops.
 - **The active quest first**: at the quest's team limit no hint (`not shown - quest: stay solo - no recruit
   wanted (Liberate)`); while the quest needs a class the squad lacks, the hint speaks for that class alone, whatever
   the margin or the clock: `REROLL - the quest needs Huntress` when she could still come and a reroll is left, nothing
@@ -373,7 +384,8 @@ BANISH  -  Medical Drone - the Rifleman build skips it
   of them taken as offered), at 2.5 on 34; the words say the best card is weak, not that nothing fits - the card's own
   line may well say `A-tier, fits the Rifleman build`.
 - **SKIP** when a quest wants no item at all (a chest: a reroll brings only more items); when every card is worth
-  avoiding (all under 1) and no reroll is left; or when every card is under 1.5 and the skip bonus is worth more. The
+  avoiding (all under 1) and no reroll is left (`every card here is weak for this squad` when not every card costs the
+  squad something, 0.16.1); or when every card is under 1.5 and the skip bonus is worth more. The
   game's skip grants cash (`(money multiplier + enemy scaling - 1) x 300`) and heals 20 % of the team's max health
   (read in its machine code: `GetSkipBonusMoney` / `GetSkipBonusHp`); the heal counts as much as the squad is missing
   of it, the cash as the run goal values it.
@@ -399,7 +411,9 @@ BANISH  -  Medical Drone - the Rifleman build skips it
   upgrade", its weapon, ability or evolution, a health item it counts, a card a quest line decided) - never the card
   framed RECOMMENDED.
 - **Lockdown** is not advised: what a lockdown keeps has not been read in the game's code yet.
-- **Where.** As on the rescue screen: the action's button gets the gold frame, the line stands over it in the band
+- **Where.** As on the rescue screen: a REROLL or SKIP takes the screen's one gold frame to its button (`RECOMMENDED:
+  SKIP  -  ...` over it, the best card's grey `IF YOU KEEP`; a BANISH leaves the gold frame on the best card, which stays
+  the pick, and frames its button in grey), the line stands over it in the band
   under the cards (or under the button, or the frame alone) - the band manager's rule (`ScreenBand.Hint`); the WHY band
   keeps clear of it. On a button right of the screen's centre (Skip, next to the team panel) the line ends at the
   button's right edge and grows left, and no line runs into the team panel or the skip reward (cut short with an
@@ -476,11 +490,12 @@ priority order, and why - in the game's own look, on the game's own buttons:
   run being played (`THIS RUN: 3 of 4 as advised`). The BUILDS cards' description gains one sentence: `Badges as leader
   (Normal II): 1 Gunner L2 · 2 Critical L2 · 3 Power L2 · 4 Tough L2.`
 - **EQUIP ADVICE** (off by default; `[Advice] LoadoutEquip`; no key unless `[Advice] LoadoutEquipKey` names one - a
-  clash with another plugin's, the game's or Steam's key is noted in the log): a plate next to the slots; a click or
-  the key presses the game's own badge button along the plan - removes first, then adds, one press
+  clash with another plugin's, the game's or Steam's key is noted in the log): a plate next to the slots; a click, the
+  key, a controller's Y (`· Y` on the plate) or A once the d-pad reaches the plate presses the game's own badge button
+  along the plan - removes first, then adds, so the slots end in the advice's order 1, 2, 3, 4 - one press
   every 0.12 s, never a quest's badge, never a locked one, never past the slots, every guard checked again against the
   screen before each press, each press logged - exactly what your own clicks would do (the game saves the selection).
-  Afterwards it offers UNDO until the screen closes or you click a badge by hand.
+  Afterwards it offers UNDO (the old badges in their old slots) until the screen closes or you change a badge by hand.
 - **During play nothing new appears** (badges cannot change in a run); the `[ctx]` lines gain `| badges: Gunner L2, ...
   (advice #7: 4 of 4)`.
 - **At 1280 x 800** (0.16.0) the SWAP OUT / FILL THE FREE SLOTS / ALL EQUIPPED part stays on the EQUIP row in a shorter
@@ -546,17 +561,18 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   says the guides or your Training Yard investment decided.
 - **The clock** (`Context.cs`). `Reach(n)` = can a plan that needs n more picks of one powerup still finish, from
   the level-up pace and the time left. The pace (`LevelPace`, 0.15.0) starts from the mode's measured pace - Normal 2.9
-  level-ups a minute, Hardcore 4.7, Endless 3.2, Boss Rush 4.6, measured over the logged runs of three minutes or more -
-  which counts as four level-ups seen, blends in the last three minutes' rate by the level-ups the run has seen, and is
-  smoothed at each level-up (half-life 60 s of play), so `~N level-ups to come` on the `[ctx]` line holds steady from the
-  first minute (it swung 58 - 76 in the first two minutes up to 0.14.0). It scales a new ability, the pull toward an
+  level-ups a minute, Hardcore 4.7, Endless 3.2, Boss Rush 4.6, Extermination 3.9, measured over the logged runs of
+  three minutes or more - which counts as four level-ups seen, blends in the last three minutes' rate by the level-ups
+  the run has seen, and is smoothed at each level-up (half-life 60 s of play), so `~N level-ups to come` on the `[ctx]`
+  line holds steady from the first minute (it swung 58 - 76 in the first two minutes up to 0.14.0). It scales a new ability, the pull toward an
   evolution, an unfinished weapon (late, a weapon that cannot be finished falls back to the balanced floor: a
   level-1 bow with ninety seconds left is not a carry) and a recruit. Economy - XP, luck, pickup range, chest and
   upgrade quality, items that grow over the run - is worth x1.5 at the start, x1 a third in, x0.3 near the end;
   cash only ever buys Training Yard levels; survival weighs more as the clock runs, on higher difficulties and
   while the squad is hurting.
 - **The mode.** The goal comes from the game (`TimeRequiredForSuccess`: Default 20:00, Hardcore and Boss Rush
-  10:00, One Hit 5:00), Extermination counts waves, Endurance and Infinite are open-ended (economy never fades).
+  10:00, One Hit 5:00), Extermination counts its waves (the time left is the waves still to play times a wave's length:
+  42 s, blended with the run's own wave length as it plays), Endurance and Infinite are open-ended (economy never fades).
   Boss damage x2 in Boss Rush and x1.3 in Endurance; survival x1.25 in Hardcore and nothing in One Hit, where
   crowd control counts x1.6 instead. The game already withholds what is pointless per mode (no health, armor or
   dodge cards in One Hit; no XP, luck or pickup range in Extermination), so the mode only steers what is left.
@@ -566,8 +582,11 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   reading of 0.15.0 is only the fallback for an item a newer game build adds (`[items] no rule for '<name>' - keyword
   reading`, once). Guide tier first (S +3, A +2, B +1, C -1.5; 59 items tiered, unchanged); an item no guide rates gets
   a value from its own numbers (0.03 per 1 % of the squad's damage, so a guide B = about +33 %), never shown as a tier
-  and capped at B for now (no unrated item ranks above a guide B pick). Then the fit: damage types by the squad's share
-  (an item that deals damage of its own is raised by the squad's tags of its type, never cut for a type nobody deals);
+  (the card says `(unrated)`, 0.16.1) and capped at B for now (no unrated item ranks above a guide B pick). An item
+  that ends under 1 without a cost to the squad - only weak for it - is held at 1.00, no AVOID (0.16.1); a gain for
+  the run's economy is named as the item gives it (`More luck`, `More XP`, `level-ups`). Then the fit: damage types by
+  the squad's share (an item that deals damage of its own is raised by the squad's tags of its type, never cut for a type
+  nobody deals);
   turret / melee / taunt / deployable / grenade by whether the squad OWNS such a powerup (the game's powerup tags, not a
   class table); Silencer and Dartboard by the squad's weapons' own range modifiers; Magazine Clip and Last Round by
   clip sizes; Glass Cannon by an owned Energy Shield. Items whose worth depends on the run are scored from it: Empty
@@ -883,15 +902,14 @@ entry). A sent log answers most of them - the lines to look for are named below 
 1. **Steam Deck pad and touch**: proven 10-07 on the Deck: the first input (`[menu] first input this session: pad`)
    and Training Yard purchases (`[yard] bought ... (advice #1)`, five in one session). Still owed: the WHY band and
    the badge advice's cursor driven with the Deck's touch screen.
-2. **EQUIP ADVICE by touch**: pressed on the Deck 10-07 (EQUIP, UNDO, EQUIP), but a 0.15.0 line does not say how it
-   was pressed. Owed: the next Deck session with 0.16.0 - `--check-log ... --expect equip` should print `equip: seen
-   N, first at ...: touch` (`mouse` would mean the Deck's touch screen reaches the game as a pointer).
-3. **The look on wider and taller screens**: the WHY panel headed with its card at 21:9 - 0.16.0 was released without
-   it seen in a live run (the 10-09 series' pause walks ran at 1024 x 768 and 1280 x 800; where it goes on four-card
-   screens is still open) -, and on the Deck's own screen the WHY band's 15 px lines, the hint's short words and SELECT
-   LOADOUT's joined summary row, from screenshots (`[Debug] Screenshots = true`). Seen on 10-09: the frame cut round the
-   card's plate (level-up and rescue cards), the results steps and the hover tour over cards 2 to 4. The side panel's
-   proof: `--expect side-panel` on the log of a level-up at 21:9.
+2. **EQUIP ADVICE by pad, and in order**: the Deck's touch reaches it as a pointer (3 sessions of 10-10 / 10-11:
+   `pressed by mouse`). Owed (0.16.1): Y and A on the plate on the Deck, from the camp and from the main menu (`--expect
+   equip,equip-order`: `equip: ... pad`, a done line `= slots #1 #2 #3 #4, the advice's order`), and nothing else on Y.
+3. **The look on wider and taller screens**: the WHY panel headed with its card at 21:9 was seen in a live run on 10-10
+   (168 views at 3440 x 1440, four-card screens included); owed: 0.16.1's gold jewel linking it to its card (`, diamond
+   link` in the `[why]` line - whether it covers the card's top), one WHY size on every card (20.5 px at 1440p, no 21.6),
+   and on the Deck's own screen the WHY band's 15 px lines, the hint's short words and SELECT LOADOUT's joined summary
+   row, from screenshots (`[Debug] Screenshots = true`). The side panel's proof: `--expect side-panel`.
 4. **The quest rules on a kind they handle, live**: a run under a quest whose objective moves the cards (a tier-3
    weapon at max level, a health item, a team size): the `[quest]` lines, the `Quest: ...` line under the card and the
    QUEST row along the run (`--check-log` lists it under quest proofs, `quest-story`).
@@ -900,16 +918,22 @@ entry). A sent log answers most of them - the lines to look for are named below 
 6. **The badge weights U1 - U3**, not measured yet (tag points against the Hashtag stat, player stats on recruits,
    the crit pools): read from the `[loadout] measure` line of real runs, then set in `knowledge.json`.
 7. **LOCKDOWN**: what a lockdown keeps has not been read in the game's code, so the action hints never advise one.
-8. **The story progress row, live** (0.15.0): a run under a story quest ("Genesis": `story objective 0 of 5` on the readout,
-   stepping with the game's quest box, the `[quest] ... -> story objective ...` line at each step; a Boss Rush one: `story
-   objective: the Boss Rush boss`). It widens the PLAN rule "the QUEST row shows only while a rule changes the advice" on purpose:
-   the user had "Genesis" active for two sessions without a word from the mod. Whether `_count` reads the game's own count (its
-   runtime class is the only source) is what the run proves; `[General] QuestProgress = false` takes the row away.
+8. **The QUEST row's counts, live** (0.15.0; the game's words 0.16.1): seen on 10-10 under "Genesis" - the readout's
+   `story objective 0 of 5` stepped to 2 of 5 with the game's quest box (`[quest] ... -> story objective
+   main_story_objective_q6: 2 of 5 - progress only`), so `_count` reads the game's own count. Owed: 0.16.1's words on the
+   readout (`Broken Vials 2 of 5`, a Boss Rush quest's `Defeat Tower`) and a quest that counts liberations, chests, cash or
+   elites (`Liberate Survivors 1 of 3`). The row widens the PLAN rule "the QUEST row shows only while a rule changes the
+   advice" on purpose; `[General] QuestProgress = false` takes it away.
 9. **What the game does with a held item** (0.16.0): the held-item rules were read in machine code and the advice is
    proven with `[Debug] HeldPretend`; the game's side shows once a run holds a real Reserve Bench, Mana Potion, Hijacked
    Signal, Life Savings, Wooden Stick, Empty Chest or A Cookie (the lines to look for: the CHANGELOG's 0.16.0 request).
 10. **The item slots and stats the item book reads** (0.16.0): the `[items] item slot reads:` line and the free slots of
    `[items] held:` against the empty slots on the game's screen; luck, pickup range and speed against the game's stats.
-11. **The chest item advice, live** (0.16.0, released without a chest offer in a live run): one run that opens a chest
-   or two - every chest offer's `[items] held:` line and the cards' item lines; `--check-log` must say `items` PASS with
-   at least one chest offer.
+11. **One gold frame, live** (0.16.1): a REROLL or SKIP hint in a real run - `[badge] <screen> <clock>: REROLL advised -
+   the gold frame on the Reroll button; #1 <card> gave it up: ...`, the line `RECOMMENDED: REROLL  -  ...` over the
+   button and the card's grey `IF YOU KEEP`; a `the line came as the screen settled` on most hinted screens would mean
+   the game's buttons come up late (the card's frame then turns grey up to 0.6 s after the cards).
+12. **The chest words of 0.16.1, live**: `(unrated)` on the cards of items no guide rates and `Unrated by the guides -
+   ...` first in their WHY (on the Deck: whether another reason still fits), `C-tier in the guides` in grey where AVOID
+   stood, and an economy item's own gain (`More luck - pays off all run` under Power of Friendship). The chest advice
+   itself was seen live on 10-10 (5 chests, `items` PASS).

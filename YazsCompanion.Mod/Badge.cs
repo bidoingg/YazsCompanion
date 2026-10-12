@@ -13,6 +13,12 @@
 // at 0.77 of the canvas): on the Steam Deck the line came out at about 12 px, now about 13.
 // 0.16.0 (C16-11g): the gold frame's bottom edge stops either side of the game's TIER / NEW / RECRUIT plate (Cut) - the plate being
 // the card's class label's plate 'Content/AddonDescription' (r1 fix of 10-08; r1 measured the portrait's level diamond).
+// 0.16.1 (C-3 + DK-C07, the user's B2-Q3 of 10-10 "move it to the button"): one gold frame per screen - when the screen's hint says REROLL
+// or SKIP, RerollHint puts the gold frame on that button in the frame the cards are badged (its line there reads 'RECOMMENDED: REROLL';
+// ScreenCall.GoldFrame) and the best card gives up its frame (Yield): its ribbon turns grey and reads 'IF YOU KEEP' over its own line,
+// grey too (the words keep their room). Restore gives the frame back when the verdict goes. (C161-02) The reason line's size at rest
+// (ReasonPxAtRest, no hover) is what the WHY takes. (C16-11g, more plates) the military card's 'Content/Rarity' plate - and that path or 'Content/AddonDescription' on any
+// other class - is cut round too (the live dump of 10-10 11:59:05); the edge dump leaves the game's own full-card highlight out.
 // All of it is parented to the card root, so it rises with a hovered card and disappears with the screen.
 // Nothing here captures clicks. Colours and primitives are the shared ones in Ui.cs.
 using System;
@@ -24,6 +30,7 @@ namespace YazsCompanion
     internal static class Badge
     {
         const string FrameName = "YazsFrame", RibbonName = "YazsRibbon", ReasonName = "YazsReason";
+        internal const string LinkName = "YazsLink";       // 0.16.1 (C16-10b): the WHY panel's link diamond on the card (WhyUi.Link draws it)
 
         // geometry in canvas units, relative to the card root (832 x 1462)
         // fonts sized like the card's own description text (~44 units); the band below the card is ~260 units deep (on the card)
@@ -48,7 +55,7 @@ namespace YazsCompanion
                 if (best) { Cut(frame, root, c.Button); CutAgain(frame, root, c.Button); }
 
                 var ribbon = Ribbon(root, c.Button, CardTextSize.RibbonScale(s));        // 0.15.0: no larger than x1.3 - a larger size goes to the words
-                if (ribbon != null) ribbon.gameObject.SetActive(best);
+                if (ribbon != null) { RibbonLook(ribbon, false); ribbon.gameObject.SetActive(best); }      // 0.16.1 (C-3): RECOMMENDED in gold again (a card that gave it up last offer)
                 if (best) { Entrance(frame, ribbon, "badge:" + c.Button.Pointer); Follow(c.Button, ribbon); }
 
                 var reason = Reason(root, c.Button, s);
@@ -61,8 +68,94 @@ namespace YazsCompanion
                     reason.color = best ? Theme.Cream : (c.Score < 1 ? Theme.Rust : Theme.Grey);
                     reason.gameObject.SetActive(true);
                 }
+                // 0.16.1 (C161-02): the reason line's pixels at rest - the WHY's size for every card of this screen (WhyUi.ReasonPx)
+                ReasonPxAtRest = _px1 > 0 ? _px1 * s : 0f;
             }
             catch (Exception e) { Plugin.Logger.LogWarning("[badge] " + e.Message); }
+        }
+
+        /// <summary>0.16.1 (C161-02, DK-C12): the reason line's size in pixels with the card at rest, as the last offer was badged - the card's
+        /// resting chain on the canvas measured in Scale (CardTextSize.RestPx; no hover, so one size for every card of a screen), times the
+        /// line's s. 0: not measured yet.</summary>
+        public static float ReasonPxAtRest { get; private set; }
+
+        /// <summary>0.16.1 (C16-10b): a card unit's pixels at rest (the reason line's px at s = 1 over its 40-unit font); 0: not measured yet.</summary>
+        public static float CardUnitPx { get { return _px1 > 0 ? _px1 / ReasonFont : 0f; } }
+
+        // ---- 0.16.1 (C-3 + DK-C07, the user's B2-Q3 of 10-10 "move it to the button"): the best card gives its frame to the hint's button ----
+        // When the screen's verdict is REROLL or SKIP and the game shows that button (ScreenCall.GoldFrame = Button), RerollHint calls Yield in the
+        // frame the cards were badged (or, for a button that comes up later, the next frame): the gold frame's entrance is cancelled before a frame
+        // of it is drawn and the frame goes; the ribbon stays in its place but turns grey and reads 'IF YOU KEEP' (ScreenCall.KeepLead: no plate
+        // rule or tips in gold, no unfold, no ping), and the card's own line under it turns grey - its words as Ranker sized them, so the line
+        // keeps its whole room (the lead inline, as 2ND is, cost 14 characters: on the Deck's 42 the bench's sweep cut half the lines at the 15 px
+        // floor). The ribbon still steps aside for the Skill Tree label (Follow). The card stays the #1 of the ranking and of the log ([card] #1
+        // PICK, '[pick] ... (#1, the pick)'). Restore: the card's badges as the offer drew them (Show), when the verdict goes while the screen
+        // stays (a re-judge, the walk's preview ending); a pick closes the screen as it is.
+        static readonly Color KeepEdge = new Color(0.42f, 0.42f, 0.42f, 1f);      // the grey ribbon's rule and tips: dimmer than its words
+
+        /// <summary>The best card <paramref name="c"/> gives up its gold frame; its ribbon reads 'IF YOU KEEP' and its line goes grey. Returns the
+        /// line's words (for the log), null when nothing could be done.</summary>
+        public static string Yield(Card c)
+        {
+            try
+            {
+                if (c == null || c.Button == null) return null;
+                var root = c.Button.transform.TryCast<RectTransform>();
+                if (root == null) return null;
+                var p = c.Button.Pointer;
+                Fx.Cancel("badge:" + p + ":");                              // the frame's settle and the ribbon's unfold and pings (Entrance) - never drawn
+                Fx.Cancel(CutKey + p);                                       // the plate's second measure (it would touch a hidden frame only)
+                if (_cutCard != null && _cutCard.Pointer == p) { _cutAt = -1f; _cutFrame = null; _cutRoot = null; _cutCard = null; }
+                var f = root.Find(FrameName); if (f != null) f.gameObject.SetActive(false);
+                var rt = root.Find(RibbonName); var ribbon = rt == null ? null : rt.TryCast<RectTransform>();
+                if (ribbon != null) { RibbonLook(ribbon, true); ribbon.localScale = Vector3.one; ribbon.gameObject.SetActive(true); }
+                var t = root.Find(ReasonName); var reason = t == null ? null : t.GetComponent<TextMeshProUGUI>();
+                string words = Text(c);
+                if (reason == null) return words;
+                reason.text = words;
+                Fit(reason, Scale(root));
+                reason.color = Theme.Grey;
+                reason.gameObject.SetActive(true);
+                return words;
+            }
+            catch (Exception e)
+            {
+                if (!_yieldWarned) { _yieldWarned = true; Plugin.Logger.LogWarning("[badge] the best card did not give up its frame (" + e.GetType().Name + " " + e.Message + ") - said once a session"); }
+                return null;
+            }
+        }
+        static bool _yieldWarned;
+
+        /// <summary>The verdict that took the frame went while the screen stays: the card <paramref name="c"/> is badged again as the offer drew
+        /// it (frame, gold ribbon, cream line, their entrance). False when there is nothing to put back (its screen gone, badges off).</summary>
+        public static bool Restore(Card c)
+        {
+            try
+            {
+                if (c == null || c.Button == null || !c.Button.gameObject.activeInHierarchy) return false;
+                if (!Plugin.ShowBadges.Value) return false;
+                Show(c);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        // the ribbon's two looks: RECOMMENDED in gold on its plate with the gold rule and diamond tips, or (kept) IF YOU KEEP in grey with a dim
+        // rule and tips - set on every Show too, as the game reuses its card objects from one offer to the next (the edges' names: Ribbon's)
+        static readonly string[] RibbonEdges = { "Rule", "TipL", "TipR" };
+        static void RibbonLook(RectTransform ribbon, bool kept)
+        {
+            try
+            {
+                var t = ribbon.Find("Text"); var text = t == null ? null : t.GetComponent<TextMeshProUGUI>();
+                if (text != null) { string want = kept ? ScreenCall.KeepLead : ScreenCall.Recommended; if (text.text != want) text.text = want; text.color = kept ? Theme.Grey : Theme.GoldText; }
+                foreach (var n in RibbonEdges)
+                {
+                    var e = ribbon.Find(n); var img = e == null ? null : e.GetComponent<UnityEngine.UI.Image>();
+                    if (img != null) img.color = kept ? KeepEdge : Theme.Gold;
+                }
+            }
+            catch { }
         }
 
         /// <summary>The line a card's reason shows (without its "2ND" / "AVOID"): its plain words (0.14.0, A1; the headline when it has
@@ -166,7 +259,7 @@ namespace YazsCompanion
             {
                 if (_follow != null && b != null && _follow.Pointer == b.Pointer) Forget();
                 var t = b.transform;
-                foreach (var n in new[] { FrameName, RibbonName, ReasonName }) { var x = t.Find(n); if (x != null) x.gameObject.SetActive(false); }
+                foreach (var n in new[] { FrameName, RibbonName, ReasonName, LinkName }) { var x = t.Find(n); if (x != null) x.gameObject.SetActive(false); }
             }
             catch { }
         }
@@ -293,7 +386,7 @@ namespace YazsCompanion
                 var inv = System.Globalization.CultureInfo.InvariantCulture;
                 var rr = root.rect;
                 float e0 = rr.yMin + FrameInset, e1 = e0 + FrameThick;
-                var found = new System.Collections.Generic.List<string>();
+                var found = new System.Collections.Generic.List<string>(); var whole = new System.Collections.Generic.List<string>();
                 var content = root.Find("Content");
                 foreach (var parent in new[] { root, content })
                 {
@@ -306,11 +399,15 @@ namespace YazsCompanion
                         var q0 = root.InverseTransformPoint(_corners[0]); var q2 = root.InverseTransformPoint(_corners[2]);
                         float y0 = Mathf.Min(q0.y, q2.y), y1 = Mathf.Max(q0.y, q2.y), x0 = Mathf.Min(q0.x, q2.x), x1 = Mathf.Max(q0.x, q2.x);
                         if (!(y0 < e1 && y1 > e0)) continue;
+                        // 0.16.1: a rect half the card high or more is no plate - the game's own full-card highlight (SelectionHighlight, 833 x 1462,
+                        // on every class in the dumps of 10-10): named apart
+                        if (y1 - y0 >= rr.height * 0.5f) { whole.Add((parent == root ? "" : "Content/") + rt.name); continue; }
                         found.Add((parent == root ? "" : "Content/") + rt.name + " " + (x1 - x0).ToString("0", inv) + "x" + (y1 - y0).ToString("0", inv) + " at x " + x0.ToString("0", inv) + ".." + x1.ToString("0", inv) + ", y " + y0.ToString("0", inv) + ".." + y1.ToString("0", inv));
                     }
                 }
                 Plugin.Logger.LogInfo("[badge] plate dump: " + cls + " - on the frame's bottom edge " + e0.ToString("0", inv) + ".." + e1.ToString("0", inv) + ": "
-                    + (found.Count == 0 ? "nothing of the card's" : string.Join("; ", found)) + " (once a session per card class)");
+                    + (found.Count == 0 ? "nothing of the card's" : string.Join("; ", found))
+                    + (whole.Count > 0 ? " (left out, the whole card: " + string.Join(", ", whole) + ")" : "") + " (once a session per card class)");
             }
             catch (Exception e) { Plugin.Logger.LogInfo("[badge] plate dump: " + cls + " - not read (" + e.GetType().Name + ")"); }
         }
@@ -339,18 +436,37 @@ namespace YazsCompanion
         }
 
         /// <summary>The plate the game hangs on the card's bottom edge (TIER / NEW / RECRUIT): the image its className label is written on
-        /// ('Content/AddonDescription'), on a skill card and on a rescue card; null on any other card class (none known).</summary>
+        /// ('Content/AddonDescription'), on a skill card and on a rescue card. 0.16.1 (C16-11g's plate list, the live dumps of 10-10): on any
+        /// other card class the plate by its path - 'Content/Rarity' (the military card's: 400 x 150 astride the edge, the skill card's
+        /// plate geometry, dump 11:59:05.094), else 'Content/AddonDescription'; null when the card has neither (the item card's edge held
+        /// nothing but the game's own highlight, dump 11:53:49.342). PlateCut still decides from the rect: a plate off the edge is not cut.</summary>
         static RectTransform PlateOf(UIPowerupButtonBase b)
         {
             TextMeshProUGUI label = null;
             var skill = b.TryCast<UIPowerupButtonSkill>(); if (skill != null) label = skill.className;
             else
             {
-                if (_noSos) return null;
-                try { label = SosPlateLabel(b); } catch { _noSos = true; return null; }
+                if (!_noSos)
+                {
+                    try { label = SosPlateLabel(b); } catch { _noSos = true; label = null; }
+                }
+                if (label == null) return PlateByPath(b);
             }
             var up = label == null ? null : label.transform.parent;
             return up == null ? null : up.TryCast<RectTransform>();
+        }
+
+        // 0.16.1: the plate of a card class with no label field for it (item, military, Research Pod), by the prefab's path under the card root
+        static readonly string[] PlatePaths = { "Content/Rarity", "Content/AddonDescription" };
+        static RectTransform PlateByPath(UIPowerupButtonBase b)
+        {
+            var root = b.transform;
+            foreach (var path in PlatePaths)
+            {
+                var t = root.Find(path); var rt = t == null ? null : t.TryCast<RectTransform>();
+                if (rt != null) return rt;
+            }
+            return null;
         }
 
         // ---- RECOMMENDED ribbon under the card, diamond tips like the game's NEW / UPGRADE label ----
@@ -375,7 +491,7 @@ namespace YazsCompanion
                 if (text != null)
                 {
                     Ui.Stretch(text.rectTransform, RibbonTip, 0, RibbonTip, 0);
-                    text.text = "RECOMMENDED"; text.color = Theme.GoldText; text.fontStyle = FontStyles.Bold;
+                    text.text = ScreenCall.Recommended; text.color = Theme.GoldText; text.fontStyle = FontStyles.Bold;      // 0.16.1: one source with the hint's head
                     text.alignment = TextAlignmentOptions.Center; text.characterSpacing = 4f;
                 }
             }
@@ -485,7 +601,7 @@ namespace YazsCompanion
                     var up = root.parent;
                     if (up != null && canvasScale > 0) chain = up.lossyScale.y / canvasScale * RestingRootScale;
                     if (!(chain > 0.05f) || chain > 4f) chain = RestingRootScale;
-                    px1 = ReasonFont * chain * pixels / h;
+                    px1 = CardTextSize.RestPx(ReasonFont, chain, pixels, h);         // 0.16.1 (C161-02): the one rest-size model (no hover input)
                 }
             }
             catch { px1 = 0f; }

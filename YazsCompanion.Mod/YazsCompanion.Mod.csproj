@@ -53,8 +53,46 @@
     <EmbeddedResource Include="Art\*.png;Art\*.jpg" />
   </ItemGroup>
 
-  <!-- Deploy straight into BepInEx/plugins after a build (skip with -p:Deploy=false) -->
-  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(Deploy)' != 'false'">
+  <!-- 2026-10-10: THE DEPLOY GUARD. DeployToGame depends on YazsDeployGuard, which fails the build - before anything is copied - while
+       the game runs: the game holds YazsCompanionMod.dll open, so the copy cannot replace it (and a build must not change a running
+       game's plugin folder). The guard looks for a process named $(YazsGameProcess) (the exe's name without .exe); the compiled DLL
+       stays in bin\Release, so close the game and run build.cmd again. -p:Deploy=false (compile only, release.ps1's build) never runs
+       the guard: a target whose Condition is false runs none of its DependsOnTargets. Test it alone, nothing deployed:
+         dotnet msbuild YazsCompanion.Mod.csproj -t:YazsDeployGuard -nologo                            (passes while the game is closed)
+         dotnet msbuild YazsCompanion.Mod.csproj -t:YazsDeployGuard -nologo -p:YazsGameProcess=explorer (the refusal: explorer always runs) -->
+  <PropertyGroup>
+    <YazsGameProcess Condition="'$(YazsGameProcess)' == ''">Yet Another Zombie Survivors</YazsGameProcess>
+  </PropertyGroup>
+  <UsingTask TaskName="YazsGameRunningTask" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <ProcessName ParameterType="System.String" Required="true" />
+      <Count ParameterType="System.Int32" Output="true" />
+      <Ids ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Diagnostics" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // every process of that name (the exe's name without .exe, any case) - its count and process ids
+        var ps = Process.GetProcessesByName(ProcessName);
+        var ids = new string[ps.Length];
+        for (int i = 0; i < ps.Length; i++) { ids[i] = ps[i].Id.ToString(); ps[i].Dispose(); }
+        Count = ps.Length;
+        Ids = string.Join(", ", ids);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="YazsDeployGuard">
+    <YazsGameRunningTask ProcessName="$(YazsGameProcess)">
+      <Output TaskParameter="Count" PropertyName="_YazsGameRunning" />
+      <Output TaskParameter="Ids" PropertyName="_YazsGameIds" />
+    </YazsGameRunningTask>
+    <Error Condition="'$(_YazsGameRunning)' != '0'" Code="YAZSDEPLOY" Text="DEPLOY REFUSED: '$(YazsGameProcess)' is running (process id $(_YazsGameIds)) - nothing was copied into $(BepInExDir)\plugins\YazsCompanion. The compiled DLL is in bin\Release: close the game, then run build.cmd again (compile only: build.cmd -p:Deploy=false)." />
+    <Message Importance="high" Text="Deploy guard: '$(YazsGameProcess)' is not running - the deploy goes on" />
+  </Target>
+
+  <!-- Deploy straight into BepInEx/plugins after a build (skip with -p:Deploy=false); refused while the game runs (YazsDeployGuard above) -->
+  <Target Name="DeployToGame" AfterTargets="Build" DependsOnTargets="YazsDeployGuard" Condition="'$(Deploy)' != 'false'">
     <MakeDir Directories="$(BepInExDir)\plugins\YazsCompanion" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BepInExDir)\plugins\YazsCompanion" />
     <Message Importance="high" Text="Deployed $(TargetFileName) to $(BepInExDir)\plugins\YazsCompanion" />
