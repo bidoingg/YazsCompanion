@@ -204,6 +204,54 @@ namespace YazsCompanion
             return sb == null ? s : sb.ToString();
         }
 
+        // ================================================================ another mod's words in the mod menu (0.16.3, CO-GLYPH)
+        /// <summary>Another mod's text as a font can draw it - the MODS tab's owners, groups, labels, values and footers (Menu.Drawn asks
+        /// the menu font through <paramref name="has"/>, cached). A character the font and its fallbacks lack (TMP draws a box: the backslash
+        /// in a footer, 10-12) becomes its stand-in when the font has that - the backslash as '/', curly quotes straight, the long dashes '-', the
+        /// ellipsis "...", '×' as 'x', a no-break space a space - or is left out; a surrogate pair (an emoji) is one character, left out.
+        /// Spaces, line breaks and markup (&lt;b&gt;...&lt;/b&gt;: up to its '&gt;') are kept and never asked about. <paramref name="missing"/>
+        /// gets each character the font lacked and what was drawn instead ("" = left out). Nothing to change: the same string back.</summary>
+        public static string Drawable(string s, Func<char, bool> has, IDictionary<string, string> missing)
+        {
+            if (string.IsNullOrEmpty(s) || has == null) return s ?? "";
+            StringBuilder sb = null;
+            for (int i = 0; i < s.Length; i++)
+            {
+                char ch = s[i]; int len = 1, end; string to = null;
+                if (ch == '<' && (end = s.IndexOf('>', i + 1)) > i) len = end - i + 1;                                     // markup, whole
+                else if (char.IsHighSurrogate(ch) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])) { len = 2; to = ""; }
+                else if (ch > ' ' && !has(ch)) to = StandIn(ch, has);
+                if (to != null)
+                {
+                    if (sb == null) { sb = new StringBuilder(s.Length); sb.Append(s, 0, i); }
+                    sb.Append(to);
+                    if (missing != null) missing[s.Substring(i, len)] = to;
+                }
+                else if (sb != null) sb.Append(s, i, len);
+                i += len - 1;
+            }
+            return sb == null ? s : sb.ToString();
+        }
+
+        // the stand-in for a character the font lacks, when the font has every character of it ("" = none: left out)
+        static string StandIn(char ch, Func<char, bool> has)
+        {
+            string to;
+            switch (ch)
+            {
+                case '\\': to = "/"; break;
+                case '\u2018': case '\u2019': to = "'"; break;
+                case '\u201c': case '\u201d': to = "\""; break;
+                case '\u2013': case '\u2014': to = "-"; break;
+                case '\u2026': to = "..."; break;
+                case '\u00d7': to = "x"; break;
+                case '\u00a0': to = " "; break;
+                default: return "";
+            }
+            foreach (char c in to) if (c > ' ' && !has(c)) return "";
+            return to;
+        }
+
         // ================================================================ composing a line
         /// <summary>The first form that fits the budget: "&lt;lead&gt; - &lt;form&gt;", or the form alone, capitalised (no lead). Each
         /// form is tried as it is, then without its parenthesis; the last one tried when none fits.</summary>

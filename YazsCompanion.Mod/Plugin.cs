@@ -24,7 +24,7 @@ namespace YazsCompanion
     {
         public const string GUID = "bidoi.yazs.companion";
         public const string NAME = "YAZS Companion";
-        public const string VERSION = "0.16.2";
+        public const string VERSION = "0.16.3";
         public const string DefaultUpdateUrl = "https://github.com/bidoingg/YazsCompanion/releases/latest/download/latest.json";
         /// <summary>0.16.2 (the beta channel, WP1): the test builds' feed - the rolling prerelease 'beta' whose one asset latest.json
         /// names the newest published build (a release or a test build) and the withdrawn ones (release.ps1 -Beta / -Pull write it).</summary>

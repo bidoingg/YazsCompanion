@@ -138,6 +138,7 @@ namespace YazsCompanion.Bench
             bad += EquipOrderCases.Run();               // 0.16.1: EQUIP ADVICE in the advice's order, the UNDO's row, the pad's Y - all data-free (EquipOrderCases.cs)
             bad += PcRoundCases.RunPure();              // 0.16.1 (PC round 10-11) COMPANION-LOG-03 / -06: Extermination's horizon, one 'Boosted by' - all data-free (PcRoundCases.cs)
             bad += UpdaterCases.Run();                  // 0.16.2 (the beta channel WP1 - WP3): the switch, two feeds, the way back - all data-free (UpdaterCases.cs)
+            bad += PcRoundCases.RunPure0163();          // 0.16.3: the hint line placed once (C162-01), one-choice rows (CO-INFO), the menu font (CO-GLYPH) - all data-free (PcRoundCases.cs)
             bad += Tail(strict);
             return bad == 0 ? 0 : 3;
         }

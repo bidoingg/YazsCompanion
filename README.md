@@ -70,11 +70,11 @@ game's own buttons, wired into their up / down navigation), or with **F10** (`[M
   Every element is checked against the game's own layout before it is touched (a menu that does not match keeps the
   frame), every change is undone when the setting goes off or the resolution changes, and the log says what was done
   (`[wide] ...` lines). Nothing changes on a 16:9 screen.
-- **MODS** - only there while another mod has registered an option (see "Extensions (for other mods)"): a
-  header per mod, a sub-header per group, and under them the same left / right rows as on the other tabs. A list
-  longer than the tab scrolls with the focus and the mouse wheel. Builds another mod lends show up on the BUILDS
-  tab instead, tagged with that mod's title; with more than five cards the row keeps the cards readable and scrolls
-  with the focus. A survivor on Auto whose lender names a default reads `Auto: <build>` and the card says `VIA AUTO`.
+- **MODS** - only there while another mod has registered an option (see "Extensions (for other mods)"): a header per mod, a
+  sub-header per group, and under them the same left / right rows as on the other tabs (a row with one value shows it without
+  arrows, 0.16.3). A list longer than the tab scrolls with the focus and the mouse wheel. Builds another mod lends show up on
+  the BUILDS tab instead, tagged with that mod's title; with more than five cards the row keeps the cards readable and
+  scrolls with the focus. A survivor on Auto whose lender names a default reads `Auto: <build>` and the card says `VIA AUTO`.
 
 Every change is written as it is made (BepInEx saves the config file inside the setter; `builds.json` is written by
 `Builds`), the header says `SAVED - applies at once` for a moment (or `NOT SAVED` when the file could not be
@@ -346,8 +346,8 @@ REROLL  -  Tank would fit this squad better
 - **Where.** The screen's one gold frame goes to the Reroll button (0.16.1): the line over it reads `RECOMMENDED:
   REROLL  -  ...`, and the best card gives its frame up - its ribbon turns grey and reads `IF YOU KEEP`, over its own
   line in grey - until the hint goes. The frame comes with the cards; the line stands over the button in the band
-  between the cards' reason lines and the button, placed a frame later and measured again 0.6 s in, once the cards
-  have flown in, never over a card's text; when that band is too low it goes under the button (with the action alone
+  between the cards' reason lines and the button, placed once, 0.6 s in, when the cards have flown in (0.16.3), never
+  over a card's text; when that band is too low it goes under the button (with the action alone
   as its head), and without room for either only the frame shows. Motion only when it appears (the frame settles,
   the line unfolds from its left tip and types on); nothing loops.
 - **The active quest first**: at the quest's team limit no hint (`not shown - quest: stay solo - no recruit
@@ -797,12 +797,13 @@ public static void InvalidateDisplayNames();                                    
 public static void Unregister(string owner);
 ```
 
-- **`RegisterOption`** adds a row to the **MODS** tab: `owner` is your mod's display name (the section header),
-  `group` a sub-header under it (may be empty), `description` the footer text while the row has the focus.
-  `choices()` is asked every time the row is drawn or changed, so the list may change at run time; `get()` is the
-  index shown; `set(index)` is called when the player changes the value - save it there. The menu then reads
-  `get()` again (for every MODS row: one option may move another) and shows `SAVED - applies at once`, or
-  `NOT SAVED` when `set` threw. The same owner + group + label again replaces the row in place.
+- **`RegisterOption`** adds a row to the **MODS** tab: `owner` is your mod's display name (the section header), `group` a
+  sub-header under it (may be empty), `description` the footer text while the row has the focus. `choices()` is asked every
+  time the row is drawn or changed, so the list may change at run time; `get()` is the index shown; `set(index)` is called
+  when the player changes the value - save it there. The menu then reads `get()` again (for every MODS row: one option may
+  move another) and shows `SAVED - applies at once`, or `NOT SAVED` when `set` threw. The same owner + group + label again
+  replaces the row in place. 0.16.3: a one-choice option is information (no arrows, `set` never called: register it again to
+  show another value); a character the menu font lacks becomes a stand-in (`/` for a backslash) or is left out.
 - **`RegisterBuildProvider`** lends builds. The function is asked with a survivor's name as `builds.json` has it -
   `SWAT`, `Tank`, `Engineer`, `Huntress`, `Ghost` (the class the game's code calls Ninja), `Medic`, `Pyro`,
   `Mechanic`, `Ranger` - and answers the full path of a build pack file, or `null` for "none right now". It is asked
@@ -939,10 +940,9 @@ entry). A sent log answers most of them - the lines to look for are named below 
    Signal, Life Savings, Wooden Stick, Empty Chest or A Cookie (the lines to look for: the CHANGELOG's 0.16.0 request).
 10. **The item slots and stats the item book reads** (0.16.0): the `[items] item slot reads:` line and the free slots of
    `[items] held:` against the empty slots on the game's screen; luck, pickup range and speed against the game's stats.
-11. **One gold frame, live** (0.16.1): a REROLL or SKIP hint in a real run - `[badge] <screen> <clock>: REROLL advised -
-   the gold frame on the Reroll button; #1 <card> gave it up: ...`, the line `RECOMMENDED: REROLL  -  ...` over the
-   button and the card's grey `IF YOU KEEP`; a `the line came as the screen settled` on most hinted screens would mean
-   the game's buttons come up late (the card's frame then turns grey up to 0.6 s after the cards).
+11. **The hint's line drawn once, live** (0.16.3): the gold frame on the Reroll button with the cards was seen on 10-11
+   (`[badge] ... REROLL advised - the gold frame on the Reroll button`, 7 of 7 hints); owed: the line placed once,
+   `..., 0.60 s after the cards` at the end of its `drawn over the Reroll button` line, and no `as the screen settled`.
 12. **The chest words of 0.16.1, live**: `(unrated)` on the cards of items no guide rates and `Unrated by the guides -
    ...` first in their WHY (on the Deck: whether another reason still fits), `C-tier in the guides` in grey where AVOID
    stood, and an economy item's own gain (`More luck - pays off all run` under Power of Friendship). The chest advice

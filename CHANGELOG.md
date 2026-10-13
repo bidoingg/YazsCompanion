@@ -5,6 +5,50 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.3 (2026-10-12) - the REROLL line placed once, rows that only show a value
+
+The first test build (Beta updates On). Three small fixes from the PC sessions of 10-11 and 10-12; the advice and everything
+else drawn in play are unchanged.
+
+### The REROLL / SKIP line stays where it is drawn
+
+- The line over the hinted button (`RECOMMENDED: REROLL  -  ...`) was placed the frame after the cards came, then moved down
+  once the screen had flown in, about 0.6 s later: on 5 of 5 first draws in the 10-11 PC session (4 chests and 1 rescue
+  screen) and 2 of 2 on 10-12 - the band over the button went from 85 to 111 units at 3440 x 1440. Now the line waits those
+  0.6 s and is drawn once, where the screen has settled. The button's gold frame still comes with the cards (0.16.1's one
+  gold frame per screen); a verdict that comes later (judged again, a reroll's new cards) is drawn at once, as before.
+- The log: the `[squad] action hint: ... drawn over the Reroll button - ...` line (`reroll hint:` on the rescue screen) ends
+  `, 0.60 s after the cards`; the `the line moved / came / went as the screen settled` lines are gone.
+
+### Rows of other mods that only show a value
+
+- An option another mod adds to the MODS tab with one value only (a status: which build runs, how the session went) is shown
+  as information: its value without the `<` `>` arrows of a choice, and left / right, select, a click or a touch on it change
+  nothing. Up to 0.16.2 such rows looked like a choice that did nothing: each press "changed" the value to itself, lit
+  `SAVED` and wrote a log line (43 in under three minutes on 10-12). The row keeps the focus, so its help can be read at the
+  bottom of the menu, and that help is no longer typed on again from nothing when the other mod refreshes the row while it has
+  the focus. Rows with two or more values work as before.
+- The log: `[ext] '<mod>', <group> / <label>: one choice - shown as information (no arrows; left / right and select change
+  nothing)` once per row and session. For mod authors: register the row again to show another value (README, Extensions).
+
+### Characters the menu font cannot draw
+
+- A character in another mod's words that the menu font cannot draw was shown as a box (a backslash in a help text on 10-12).
+  It is now drawn as a close stand-in - `/` for a backslash, straight quotes for curly ones, `-` for a long dash, `...` for an
+  ellipsis - or left out. The font is asked once per character, while the MODS tab is drawn; nothing in play.
+- The log: `[ext] '<mod>': 1 character(s) the menu font cannot draw ('\' as '/') - in '<group> / <label>'` once per mod
+  (again only for a character not named yet).
+
+### How it was checked, and what was not seen
+
+- Compiled with 0 warnings; bench (full, `--strict`, `--no-data`) all as wanted, with the new cases LA1 - LA2 (the line's
+  time: first draw, judged again, a later verdict, new words; the 10-11 screen replayed - placed twice in 0.16.2, once now),
+  CI1 - CI2 (no path from a one-choice row to its mod's `set`; the help not typed on again when the row is rebuilt under the
+  focus) and CG1 - CG4 (a help text with a path, as on 10-12, with a font that lacks the backslash; the stand-ins, markup
+  and line breaks kept, the font asked once per character); the public API unchanged (`api_v3.txt`).
+- Not seen in the game yet: a REROLL or SKIP hint's line drawn once (`, 0.60 s after the cards`, no `as the screen settled`
+  line), the MODS tab's one-value rows without arrows, and a stand-in for a missing character.
+
 ## 0.16.2 (2026-10-12) - Beta updates: test builds, and the way back
 
 From this release on, new builds can go out as test builds (GitHub pre-releases) before they become the release, and one

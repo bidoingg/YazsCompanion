@@ -320,5 +320,123 @@ namespace YazsCompanion.Bench
                 whySrc != null && whySrc.Contains("raw.Add(First(Wording.Boosted(w.Boost, w.Kind == SayKind.Evolution ? null : w.BoostOwner)));") && !whySrc.Contains("Wording.Boosted(w.Boost, null)")
                 && words != null && words.Contains("w.Boost = b.Name; w.BoostOwner = b.Owner; break;") && words.Contains("if (w.Boost != null) return Say(lead, Boosted(w.Boost, null));"));
         }
+
+        // ================================================================ 0.16.3
+        //   LA1 - LA2  C162-01 (COMPANION-LOG-05 of the 10-11 round): the action hint's line placed once. Placed the frame after the cards, it
+        //        moved 0.58 - 0.60 s later on 5 of 5 first draws (band 85 -> 111 units); now an offer's first line waits for SettleAfter
+        //        (ScreenBand.LineAt) and is placed where the screen settled; the gold frame still comes with the cards.
+        //   CI1 - CI2  CO-INFO (the 10-12 PC session's three marks): another mod's one-choice option is a row of information - no arrows, no
+        //        set() from left / right / select / a click (43 '[ext] ... = ...' lines in under three minutes on two status rows), its footer
+        //        not typed on again when the body is rebuilt under the focused row.
+        //   CG1 - CG4  CO-GLYPH: another mod's words as the menu font can draw them - a backslash drawn as a box in a footer on 10-12.
+        public static int RunPure0163()
+        {
+            _bad = 0;
+            Console.WriteLine("\n=== 0.16.3: the hint's line placed once (C162-01), one-choice rows as information (CO-INFO), the menu font's characters (CO-GLYPH) - PcRoundCases.cs");
+            LineOnce();
+            InfoRows();
+            Glyphs();
+            Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
+            return _bad;
+        }
+
+        static string S2(float v) { return v.ToString("0.00", IC); }
+
+        // ---------------------------------------------------------------- LA: the line placed once
+        static void LineOnce()
+        {
+            const float Settle = 0.6f, Offer = 100f;
+            float first = ScreenBand.LineAt(Offer + 0.016f, Offer, false, Settle), early = ScreenBand.LineAt(Offer + 0.3f, Offer, false, Settle);
+            float late = ScreenBand.LineAt(Offer + 3f, Offer, false, Settle), words = ScreenBand.LineAt(Offer + 0.3f, Offer, true, Settle), none = ScreenBand.LineAt(5f, -1f, false, Settle);
+            Check("LA1", "ScreenBand.LineAt: an offer's first line at the settle (" + S2(first - Offer) + " s after the cards; a re-judge 0.30 s in keeps it: " + S2(early - Offer)
+                + "), a verdict after the settle at once (" + S2(late - Offer) + "), new words on a shown line 0.05 s on (" + S2(words - Offer) + "), no offer clock: now (" + S2(none) + ")",
+                Math.Abs(first - (Offer + Settle)) < 1e-4 && Math.Abs(early - (Offer + Settle)) < 1e-4 && Math.Abs(late - (Offer + 3f)) < 1e-4
+                && Math.Abs(words - (Offer + 0.35f)) < 1e-4 && Math.Abs(none - 5f) < 1e-4);
+            // COMPANION-LOG-05 replayed on a made-up screen: the band over the button as the screen flies in (85 units on the cards' frame,
+            // 111 once it has flown in at 0.58 s). 0.16.2 placed the line on the next frame and again at the settle; 0.16.3 once, at the settle
+            Func<float, float> band = t => t < 0.58f ? 85f : 111f;
+            var then = new List<float> { band(0.016f) }; if (band(Settle) != then[0]) then.Add(band(Settle));
+            var now = new List<float> { band(ScreenBand.LineAt(Offer + 0.016f, Offer, false, Settle) - Offer) };
+            Check("LA1", "COMPANION-LOG-05 replayed: 0.16.2 placed the line " + then.Count + " times (band " + string.Join(" -> ", then.Select(b => F0(b))) + " units), 0.16.3 "
+                + now.Count + " time (band " + F0(now[0]) + " units, the settled one)", then.Count == 2 && now.Count == 1 && now[0] == 111f);
+            string hint = Src("RerollHint.cs"); string apply = Body(hint, "static void Apply(ScreenCall call)"), tick = Body(hint, "public static void Tick()"), place = Body(hint, "static void Place()");
+            Check("LA2", "sources: Apply draws the frame first (FrameNow) and times the line by ScreenBand.LineAt with SettleAfter; Tick places it once (no second measure, no '_settleAt'); "
+                + "no 'as the screen settled' line is left; the drawn line says how long after the cards ('..., 0.60 s after the cards')",
+                hint != null && apply.Contains("FrameNow();") && apply.Contains("_placeAt = ScreenBand.LineAt(Time.realtimeSinceStartup, _offerAt, _shown, SettleAfter); _placeFrame = Time.frameCount;")
+                && apply.IndexOf("FrameNow();", StringComparison.Ordinal) < apply.IndexOf("ScreenBand.LineAt(", StringComparison.Ordinal)
+                && tick.Contains("{ _placeAt = -1f; Place(); }") && !hint.Contains("_settleAt") && !hint.Contains("Place(true)") && !hint.Contains("\"the line \" + (appear")
+                && !hint.Contains("as the screen settled - ") && place.Contains("Plugin.Logger.LogInfo(Tag + \"drawn \" + what + After() + Pv());")
+                && hint.Contains("Time.realtimeSinceStartup - _offerAt).ToString(\"0.00\", CultureInfo.InvariantCulture) + \" s after the cards\""));
+        }
+
+        static string Body(string src, string head)
+        {
+            if (src == null) return "";
+            int at = src.IndexOf(head, StringComparison.Ordinal); if (at < 0) return "";
+            int end = src.IndexOf("\n        }", at, StringComparison.Ordinal);
+            return end < 0 ? src.Substring(at) : src.Substring(at, end - at);
+        }
+
+        // ---------------------------------------------------------------- CI: one-choice rows are information
+        static void InfoRows()
+        {
+            string menu = Src("Menu.cs"), api = Src("Api/Extensions.cs");
+            string mods = Body(menu, "static void BuildMods()"), info = Body(menu, "static void Info(Ctl c)"), isInfo = Body(api, "internal static bool IsInfo(Option o)");
+            string mouse = Body(menu, "static bool Mouse()"), activate = Body(menu, "static void Activate(Ctl c)"), input = Body(menu, "static void ReadInput()");
+            Check("CI1", "sources: a MODS row whose option has exactly one choice (Api.Extensions.IsInfo, said once per option) loses its arrows and its Change - and left / right, select, "
+                + "a click and a touch reach set() only through Change (ReadInput, Activate, Mouse), so nothing on it calls Step; a row that gains or loses its second choice is built again; 2+ choices unchanged",
+                isInfo.Contains("if (ChoicesOf(o).Length != 1) return false;") && isInfo.Contains(": one choice - shown as information (no arrows; left / right and select change nothing)\", false);")
+                && mods.Contains("bool info = Api.Extensions.IsInfo(o);") && mods.Contains("if (info) Info(c);") && mods.Contains("SettingSaved(Api.Extensions.Step(o, d), o.Owner + \" did not take the change\");")
+                && mods.Contains("if ((Api.Extensions.ChoicesOf(o).Length == 1) != info) _dirty = true; else show();")
+                && info.Contains("a.gameObject.SetActive(false);") && info.Contains("c.Left = null; c.Right = null; c.Change = null;")
+                && input.Contains("else if (_focus != null && _focus.Change != null) { _focus.Change(x); Click(); }") && activate.Contains("else if (c.Change != null) { c.Change(1); Click(); }")
+                && mouse.Contains("if (over.Change != null && over.Left != null && Hit(over.Left, p))") && mouse.Contains("else if (over.Change != null && over.Right != null && Hit(over.Right, p))")
+                && menu.Split(new[] { "Api.Extensions.Step(" }, StringSplitOptions.None).Length == 2);
+            string focus = Body(menu, "static void Focus(Ctl c, bool byMouse)"), setDesc = Body(menu, "static void SetDesc(string text, string key)");
+            // the guard, replayed: the footer types on again only for other words or another control
+            string shownText = "", shownKey = null; int typed = 0;
+            Action<string, string> set = (text, key) => { if (key != null && key == shownKey && shownText == text) return; shownKey = key; shownText = text; typed++; };
+            set("Build 0.1.0 ...", "mod:A/Updates/Build"); set("Build 0.1.0 ...", "mod:A/Updates/Build"); set("Build 0.1.0 ...", "mod:A/Updates/Build");     // focused, then two rebuilds
+            int afterRebuilds = typed; set("Build 0.1.1 ...", "mod:A/Updates/Build"); set("This session ...", "mod:A/Updates/This session"); set("This session ...", null);
+            Check("CI2", "sources: Focus hands SetDesc its control's key, and SetDesc leaves a footer as it is when the same control is focused again with the same words (a rebuild under it); "
+                + "replayed: 3 focuses of one row typed it " + afterRebuilds + " time, new words, another row and a press typed it on again (" + typed + " in all)",
+                focus.Contains("SetDesc(c.Desc != null ? c.Desc() : \"\", c.Key);") && setDesc.Contains("if (key != null && key == _descKey && _desc.text == text) return;")
+                && setDesc.Contains("_descKey = key;") && menu.Contains("static void SetDesc(string text) { SetDesc(text, null); }") && afterRebuilds == 1 && typed == 4);
+        }
+
+        // ---------------------------------------------------------------- CG: the menu font's characters
+        static void Glyphs()
+        {
+            // a font with no backslash, as the frames of 10-12 showed it (a box between a folder and a file name in another mod's footer)
+            Func<char, bool> noBackslash = c => c != '\\';
+            var miss = new Dictionary<string, string>();
+            string footer = "Off puts the release back (tools\\switch.ps1 -Stable).";
+            string drawn = Wording.Drawable(footer, noBackslash, miss);
+            Check("CG1", "a footer with a path, as on 10-12, with a font that lacks the backslash: '" + drawn + "' - " + string.Join(", ", miss.Select(m => "'" + m.Key + "' as '" + m.Value + "'")),
+                drawn == "Off puts the release back (tools/switch.ps1 -Stable)." && miss.Count == 1 && miss["\\"] == "/");
+            // a font with ASCII only: the stand-ins; a character with none, and a stand-in the font lacks too, are left out
+            Func<char, bool> ascii = c => c < 128;
+            miss.Clear();
+            string quotes = Wording.Drawable("“Fast” – it’s 3× … ★", ascii, miss);
+            var noDash = new Dictionary<string, string>();
+            string dash = Wording.Drawable("a — b", c => c < 128 && c != '-', noDash);
+            Check("CG2", "ASCII only: '" + quotes + "' (" + miss.Count + " characters: " + string.Join(", ", miss.Select(m => m.Value.Length > 0 ? "as '" + m.Value + "'" : "left out")) + "); a long dash where '-' is missing too: '" + dash + "'",
+                quotes == "\"Fast\" - it's 3x ... " && miss.Count == 7 && miss["★"] == "" && miss["…"] == "..." && dash == "a  b" && noDash["—"] == "");
+            // markup, spaces, line breaks never asked; an emoji (a surrogate pair) is one character; nothing to change: the very same string
+            var asked = new HashSet<char>(); miss.Clear();
+            Func<char, bool> spy = c => { asked.Add(c); return c != 'Z'; };
+            string marked = Wording.Drawable("<color=#FFD700>A</color> B\nZ 😀", spy, miss);
+            string same = "Build 0.1.0 (built 10-12 03:10)"; var none = new Dictionary<string, string>();
+            Check("CG3", "markup kept whole and never asked ('" + marked.Replace("\n", "|") + "', asked: " + new string(asked.OrderBy(c => c).ToArray()) + "), a surrogate pair one character left out; a text the font draws whole comes back as the same string",
+                marked == "<color=#FFD700>A</color> B\n " && !asked.Contains('<') && !asked.Contains('#') && !asked.Contains(' ') && !asked.Contains('\n') && asked.Contains('Z')
+                && miss.Count == 2 && miss["Z"] == "" && miss["😀"] == "" && ReferenceEquals(Wording.Drawable(same, noBackslash, none), same) && none.Count == 0);
+            string menu = Src("Menu.cs"); string mods = Body(menu, "static void BuildMods()"), has = Body(menu, "static bool HasGlyph(TMP_FontAsset font, char ch)"), say = Body(menu, "static void SayGlyphs(Api.Extensions.Option o)");
+            Check("CG4", "sources: the MODS tab draws every word of another mod through Drawn (owner, group, label, value, footer); the font is asked once per character (HasGlyph: TMP's HasCharacter with "
+                + "its fallbacks, kept until the font changes); '[ext] '<owner>': N character(s) the menu font cannot draw (...)' once per owner and character",
+                mods.Contains("Drawn(o, owner.ToUpperInvariant())") && mods.Contains("Drawn(o, group.ToUpperInvariant())") && mods.Contains("Drawn(o, o.Label)") && mods.Contains("() => Drawn(o, Api.Extensions.ValueOf(o))")
+                && mods.Contains("() => Drawn(o, o.Description.Length > 0 ? o.Description : \"An option of \" + o.Owner + \".\")")
+                && has.Contains("if (_glyphs.TryGetValue(ch, out ok)) return ok;") && has.Contains("ok = font.HasCharacter(ch, true, true);") && menu.Contains("if (p != _glyphFont) { _glyphFont = p; _glyphs.Clear(); }")
+                && say.Contains("if (said.Add(m.Key))") && say.Contains("\" character(s) the menu font cannot draw (\""));
+        }
     }
 }

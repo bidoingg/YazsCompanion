@@ -486,15 +486,24 @@ namespace YazsCompanion
                 Fx.Cancel("menu.glow");
                 if (img != null) Fx.Loop("menu.glow", 1.8f, k => { img.color = new Color(1f, 0.93f, 0.7f, 0.62f + 0.3f * Mathf.Sin(k * Mathf.PI * 2f)); });
             }
-            SetDesc(c.Desc != null ? c.Desc() : "");
+            SetDesc(c.Desc != null ? c.Desc() : "", c.Key);
             if (!byMouse) Reveal(c);        // the mouse focuses what it can see; the wheel scrolls for it
             if (c.Focused != null) c.Focused();
         }
 
-        static void SetDesc(string text)
+        static void SetDesc(string text) { SetDesc(text, null); }
+
+        // 0.16.3 (CO-INFO): <key> = the control focused (Focus). The same control focused again with the same words - the body rebuilt under
+        // it, as when another mod registers a row again while the menu is open - keeps its footer as it is, typed on or typing (it typed on
+        // again from nothing on every rebuild); a change or a press still types its words on
+        static string _descKey;
+        static void SetDesc(string text, string key)
         {
             if (_desc == null) return;
-            _desc.text = text ?? "";
+            text = text ?? "";
+            if (key != null && key == _descKey && _desc.text == text) return;
+            _descKey = key;
+            _desc.text = text;
             // 10-07 review (walk-shot nit): while a walk runs the help shows whole at once - its typing (up to 0.9 s) left the walks'
             // shots with half a help text (205 of 444 characters)
             if (WalkOn) { Fx.Cancel("menu.desc"); try { _desc.maxVisibleCharacters = 99999; } catch { } return; }
@@ -724,7 +733,7 @@ namespace YazsCompanion
 
             // ---- footer: what the focused control does, and the keys
             var foot = Ui.FadeRule(_stage, "FootRule", Theme.GoldRule); Place(foot, 120, 1846, W - 240, 3);
-            _desc = Text(_stage, "Desc", 140, 1872, 2780, 250, 44f, Theme.Cream, "", TextAlignmentOptions.TopLeft, false, true);
+            _desc = Text(_stage, "Desc", 140, 1872, 2780, 250, 44f, Theme.Cream, "", TextAlignmentOptions.TopLeft, false, true); _descKey = null;
             _hints = Text(_stage, "Hints", 2960, 1872, 760, 250, 38f, Theme.Grey, "", TextAlignmentOptions.TopRight, false, true);
 
             _body = Ui.NewRect("Body", _stage); Place(_body, 0, 0, W, H);
@@ -1408,7 +1417,8 @@ namespace YazsCompanion
         // A header per mod, a sub-header per group, and under them the same rows as on the other tabs: the value comes
         // from the mod's get(), left / right hands the next index to its set(), and the row reads get() again. The
         // callbacks are another mod's code: Api.Extensions catches what they throw. A list longer than the tab scrolls
-        // with the focus (and the wheel).
+        // with the focus (and the wheel). 0.16.3: a one-choice option is a row of information (CO-INFO: Info, Api.Extensions.IsInfo), and
+        // the mods' words are drawn as the menu font can draw them (CO-GLYPH: Drawn).
         static void BuildMods()
         {
             var options = Api.Extensions.Options();         // a copy: registrations come and go on their own time
@@ -1424,27 +1434,84 @@ namespace YazsCompanion
                 {
                     owner = o.Owner; group = null;
                     if (y > 0f) { y += 36f; head = y; }
-                    Text(area.Content, "Owner", 0, y, w, 78, 50f, Theme.GoldText, owner.ToUpperInvariant(), TextAlignmentOptions.Left, true);
+                    Text(area.Content, "Owner", 0, y, w, 78, 50f, Theme.GoldText, Drawn(o, owner.ToUpperInvariant()), TextAlignmentOptions.Left, true);
                     Box(area.Content, "OwnerRule", 0, y + 82f, w, 3f, Theme.GoldRule);
                     y += 104f;
                 }
                 if (o.Group != group)
                 {
                     group = o.Group;
-                    if (group.Length > 0) { Text(area.Content, "Group", 8, y, w, 60, 38f, Theme.Grey, group.ToUpperInvariant(), TextAlignmentOptions.Left, true); y += 66f; }
+                    if (group.Length > 0) { Text(area.Content, "Group", 8, y, w, 60, 38f, Theme.Grey, Drawn(o, group.ToUpperInvariant()), TextAlignmentOptions.Left, true); y += 66f; }
                 }
-                var c = Cycler(area.Content, "mod:" + o.Key, 0, y, w, rh, o.Label, null, () => Api.Extensions.ValueOf(o),
+                bool info = Api.Extensions.IsInfo(o);
+                var c = Cycler(area.Content, "mod:" + o.Key, 0, y, w, rh, Drawn(o, o.Label), null, () => Drawn(o, Api.Extensions.ValueOf(o)),
                     d =>
                     {
                         if (Api.Extensions.ChoicesOf(o).Length == 0) return;        // nothing to choose from right now
                         SettingSaved(Api.Extensions.Step(o, d), o.Owner + " did not take the change");
                         foreach (var k in _ctls) if (k.Refresh != null && k.Key.StartsWith("mod:", StringComparison.Ordinal)) k.Refresh();      // one option may move another, and its choices
                     },
-                    () => o.Description.Length > 0 ? o.Description : "An option of " + o.Owner + ".", vw);
+                    () => Drawn(o, o.Description.Length > 0 ? o.Description : "An option of " + o.Owner + "."), vw);
+                if (info) Info(c);
+                // an option that gained or lost its second choice (moved by another one) is drawn again as the row it is now
+                var show = c.Refresh;
+                c.Refresh = () => { if ((Api.Extensions.ChoicesOf(o).Length == 1) != info) _dirty = true; else show(); };
                 c.In = area; c.Lead = y - head;
                 y += step;
             }
             Settle(area, Mathf.Max(0f, y - (step - rh)));
+        }
+
+        // 0.16.3 (CO-INFO): a row that only shows a value - another mod's one-choice option (a status: a build, a session). On 10-12 two such
+        // rows wore the arrows of a choice, and the player pressed left / right on them 43 times in under three minutes: each press 'changed' the
+        // value to itself, logged it, lit SAVED and typed the footer on again from nothing. Now: the value alone in its well (centred, as
+        // before), and left / right, select, a click or a touch on the row do nothing; it keeps the focus, so its footer reads on.
+        static void Info(Ctl c)
+        {
+            foreach (var a in new[] { c.Left, c.Right }) if (a != null) { try { a.gameObject.SetActive(false); } catch { } }
+            c.Left = null; c.Right = null; c.Change = null;
+        }
+
+        // 0.16.3 (CO-GLYPH): another mod's words as the menu font can draw them. A character the font (and its fallbacks) lacks is drawn as a
+        // box - '\' in a footer on 10-12 -: Wording.Drawable draws a close stand-in ('\' as '/') or leaves it out. The font is asked once
+        // per character (TMP's HasCharacter, kept until the font changes), only while the MODS tab is built or one of its rows changes, never
+        // in play; '[ext] '<owner>': N character(s) the menu font cannot draw (...)' once per owner (again only for a character not said yet).
+        static IntPtr _glyphFont;
+        static readonly Dictionary<char, bool> _glyphs = new Dictionary<char, bool>();
+        static readonly Dictionary<string, HashSet<string>> _glyphSaid = new Dictionary<string, HashSet<string>>();
+        static readonly Dictionary<string, string> _glyphMiss = new Dictionary<string, string>();
+
+        static string Drawn(Api.Extensions.Option o, string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s ?? "";
+            TMP_FontAsset font = null; IntPtr p = IntPtr.Zero;
+            try { font = _template != null ? _template.font : null; if (font != null) p = font.Pointer; } catch { font = null; }
+            if (font == null) return s;
+            if (p != _glyphFont) { _glyphFont = p; _glyphs.Clear(); }
+            _glyphMiss.Clear();
+            string drawn = Wording.Drawable(s, ch => HasGlyph(font, ch), _glyphMiss);
+            if (_glyphMiss.Count > 0) SayGlyphs(o);
+            return drawn;
+        }
+
+        static bool HasGlyph(TMP_FontAsset font, char ch)
+        {
+            bool ok;
+            if (_glyphs.TryGetValue(ch, out ok)) return ok;
+            ok = true; try { ok = font.HasCharacter(ch, true, true); } catch { }
+            _glyphs[ch] = ok;
+            return ok;
+        }
+
+        static void SayGlyphs(Api.Extensions.Option o)
+        {
+            HashSet<string> said;
+            if (!_glyphSaid.TryGetValue(o.Owner, out said)) _glyphSaid[o.Owner] = said = new HashSet<string>();
+            var fresh = new List<string>();
+            foreach (var m in _glyphMiss) if (said.Add(m.Key)) fresh.Add("'" + m.Key + "' " + (m.Value.Length > 0 ? "as '" + m.Value + "'" : "left out"));
+            if (fresh.Count == 0) return;
+            Plugin.Logger.LogInfo("[ext] '" + o.Owner + "': " + fresh.Count + " character(s) the menu font cannot draw (" + string.Join(", ", fresh) + ") - in '"
+                + (o.Group.Length > 0 ? o.Group + " / " : "") + o.Label + "'");
         }
 
         // ================================================================ the game's own art: portraits, weapon and ability icons

@@ -375,7 +375,10 @@ for the Skill Tree label (ribbon alpha ...)`; `[badge] a reason line shrank to f
 main menu `[data] all N names of the Companion's tables are in this game build (...)`, or one warning naming what is
 missing. A Training Yard node bought or refunded between two reads of its tab: `[yard] bought <node> 1>2 (advice #1)` (or
 `not advised`), `[yard] refunded <node> 2>1`. Wide menus put back: `[wide] <site> restored (<why>): N changes undone, M
-frame pieces back`.
+frame pieces back`. The MODS tab (0.16.3), once per row: `[ext] '<owner>', <group> / <label>: one choice - shown as information
+(no arrows; left / right and select change nothing)` - a one-choice option is shown as information, and nothing on it calls
+its `set` (no `[ext] '<owner>', ... = <value>` line); once per owner and character: `[ext] '<owner>': 1 character(s) the
+menu font cannot draw ('\' as '/') - in '<group> / <label>'` (`left out` when there is no stand-in the font has).
 
 **The hints.** The rescue screen's reroll hint, one line per judgement with the scores: `[squad] reroll hint: SHOWN -
 Tank would rate higher (5.93 vs Huntress 4.64, +1.29) | rerolls 3 (the team's Rerolls available) | on the cards:
@@ -404,9 +407,11 @@ needs <class>`). The line's `| '<words>'` tail keeps the long words (advice_audi
 0.16.1 (one gold frame per screen): a REROLL or SKIP hint that takes the frame says so once per offer and verdict,
 `[badge] LevelUp 02:31: REROLL advised - the gold frame on the Reroll button; #1 <card> gave it up: 'IF YOU KEEP' over
 its line '<words>'`, and `[badge] ...: the gold frame back on #1 <card> (the hint went)` when the screen stays without it;
-the `drawn over ...` width includes the `RECOMMENDED: ` head (about 235 units more than 0.16.0's); `[squad] action hint:
-the line moved as the screen settled - now ...` (`came` / `went`, once an offer) when the second measure at 0.6 s changed
-it - on most hinted screens that would mean the game's buttons come up after the cards. The all-AVOID SKIP's tail reads
+the `drawn over ...` width includes the `RECOMMENDED: ` head (about 235 units more than 0.16.0's). 0.16.3 (C162-01): the
+line is placed once - an offer's first line 0.6 s after the cards, where the screen has flown in (the 10-11 PC session's
+`[squad] action hint: the line moved as the screen settled - now ...` on 5 of 5 first draws: band 85 -> 111 units) -, and
+its `drawn ...` line ends `, 0.60 s after the cards` (a later verdict - a re-judge, a reroll's new cards - says how much
+later); the `moved` / `came` / `went as the screen settled` lines are gone. The all-AVOID SKIP's tail reads
 `| every card is under 1 (AVOID; none costs the squad anything: weak)` when its words are the weak ones.
 
 **The run setup screen** (`[loadout] ...`; replay them offline with `ItemBench --replay-loadout <companion.log>`, which

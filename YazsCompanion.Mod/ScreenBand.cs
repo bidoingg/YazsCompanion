@@ -164,6 +164,19 @@ namespace YazsCompanion
             return right ? button.X1 - w : button.X0;
         }
 
+        /// <summary>0.16.3 (C162-01, COMPANION-LOG-05 of the 10-11 PC round): when the hint's line is placed (the realtime clock). An
+        /// offer's first line (<paramref name="shown"/> false) waits until <paramref name="settle"/> s after the cards came
+        /// (<paramref name="offerAt"/>: the screen has flown in by then) and is placed there once - at once when that time has passed (a
+        /// later verdict); new words on a line already shown (a re-judge, a reroll's new cards) 0.05 s from <paramref name="now"/>. Up to
+        /// 0.16.2 a first line was placed the frame after the cards and measured again at the settle: 5 of 5 first draws moved (band 85
+        /// -> 111 units at 3440 x 1440).</summary>
+        public static float LineAt(float now, float offerAt, bool shown, float settle)
+        {
+            if (shown) return now + 0.05f;
+            float at = offerAt + settle;
+            return at > now ? at : now;
+        }
+
         /// <summary>The lines a band of height <paramref name="h"/> holds at the font <paramref name="font"/> (0..MaxLines).</summary>
         public static int LinesIn(float h, float font) { return LinesIn(h, font, Pad); }
 

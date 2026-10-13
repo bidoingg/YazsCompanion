@@ -51,6 +51,9 @@
 // re-judge), the card's frame comes back (Badge.Restore). '[badge] <screen> <clock>: REROLL advised - the gold frame on the Reroll
 // button; #1 <card> gave it up: 'IF YOU KEEP' over its line '...'' says what moved, once per offer and verdict. For the pause walk ([Debug] PreviewPause) only,
 // DebugPreviewDue draws a REROLL and a SKIP hint in turn on its first offer (the walk's level-ups are strong), with a shot each.
+// 0.16.3 (C162-01, COMPANION-LOG-05 of the 10-11 PC round): the line is placed ONCE. Placed the frame after the cards, it moved when the
+// screen had flown in on 5 of 5 first draws (4 chest hints, 1 rescue hint: band 85 -> 111 units, 0.58 - 0.60 s later); now an offer's
+// first line waits for that moment (ScreenBand.LineAt) and is placed where the screen settled - the frame still comes with the cards.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -74,7 +77,7 @@ namespace YazsCompanion
         const string FrameName = "YazsRerollFrame", LineName = "YazsRerollHint";
         // canvas units at scale 1 (the card badges' sizes: the reason line's font, the ribbon's tips)
         // 0.16.1 (C-3): SettleAfter - the line is measured again this long after the cards came (the screen has flown in by then; up to
-        // 0.16.0 the whole hint waited for it, PlaceDelay)
+        // 0.16.0 the whole hint waited for it, PlaceDelay) - 0.16.3 (C162-01): an offer's first line is placed then, once
         const float Font = 40f, LineH = 62f, Tip = 36f, Pad = 26f, MaxW = 1800f, Gap = ScreenBand.Gap, SettleAfter = 0.6f;
 
         sealed class Avail
@@ -101,11 +104,11 @@ namespace YazsCompanion
         static float _placeAt = -1f;
         static bool _shown;                              // the line placed (or the frame alone decided) on this offer
         // 0.16.1 (C-3): the action on screen (the walk's preview's while it runs), its button's frame drawn, the best card that gave up its
-        // frame (Badge.Yield; null: none), when the cards came, the frame the line may be placed from, the settle re-measure, the line as drawn
+        // frame (Badge.Yield; null: none), when the cards came, the frame the line may be placed from, the line as drawn
         static HintAction _action;
-        static bool _framed, _lineOn, _settleSaid;
+        static bool _framed, _lineOn;
         static Card _keptCard;
-        static float _offerAt = -1f, _settleAt = -1f;
+        static float _offerAt = -1f;
         static int _placeFrame = -1;
         static string _drawn;
         static bool Badges { get { try { return Plugin.ShowBadges.Value; } catch { return true; } } }
@@ -137,7 +140,7 @@ namespace YazsCompanion
                 int hook = _hookPtr == p && Time.frameCount - _hookFrame <= 1 ? _hookCount : -1;
                 if (_sel != null && _selPtr != p) Hide();
                 // 0.16.1 (C-3): Advisor has just badged these cards afresh (Badge.Show: the frame on the new best card) - nothing is given up yet
-                _keptCard = null; _offerAt = Time.realtimeSinceStartup; _settleSaid = false;
+                _keptCard = null; _offerAt = Time.realtimeSinceStartup;
                 _sel = sel; _selPtr = p; _cards = cards; _screen = screen; _clock = s.Clock; _call = null; _rescue = null; _rejudge = false;
                 if (!OnFor(screen))
                 {
@@ -274,21 +277,19 @@ namespace YazsCompanion
         /// <summary>The HUD went away with the scene: nothing of ours is left to hide (the unlock cards are looked up again next run).</summary>
         public static void Forget()
         {
-            _placeAt = -1f; _settleAt = -1f; _text = null; _short = null; _drawn = null; _shown = false; _framed = false; _lineOn = false; _button = null; _keptCard = null; _preview = null;
+            _placeAt = -1f; _text = null; _short = null; _drawn = null; _shown = false; _framed = false; _lineOn = false; _button = null; _keptCard = null; _preview = null;
             LineRect = new R4(); _sel = null; _selPtr = IntPtr.Zero; _cards = null; _in = null; _gin = null; _av = null; _call = null; _rescue = null; _count.Reset(); _rejudge = false; _hookPtr = IntPtr.Zero; _unlockCards = null; _banishing = null;
         }
 
-        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and two float compares a frame.
-        /// 0.16.1 (C-3): the line is placed on the frame after the hint was decided (never the same frame: the buttons are laid out by then),
-        /// and measured again once the screen has flown in. The clock is read only while one of the two is due (review 10-10: no engine
-        /// call on the frames nothing waits).</summary>
+        /// <summary>From the GameMaster.Update post-fix (it ticks while the screen holds the game): a bool and a float compare a frame.
+        /// 0.16.1 (C-3): the line is placed on a frame after the hint was decided (never the same frame: the buttons are laid out by then);
+        /// 0.16.3 (C162-01): an offer's first line once the screen has flown in (ScreenBand.LineAt), placed once. The clock is read only while
+        /// the line is due (review 10-10: no engine call on the frames nothing waits).</summary>
         public static void Tick()
         {
             if (_rejudge) Rejudge();
-            if (_placeAt < 0f && _settleAt < 0f) return;
-            float now = Time.realtimeSinceStartup;
-            if (_placeAt >= 0f && now >= _placeAt && Time.frameCount > _placeFrame) { _placeAt = -1f; Place(false); }
-            if (_settleAt >= 0f && now >= _settleAt && _placeAt < 0f) { _settleAt = -1f; Place(true); }
+            if (_placeAt < 0f) return;
+            if (Time.realtimeSinceStartup >= _placeAt && Time.frameCount > _placeFrame) { _placeAt = -1f; Place(); }
         }
 
         // the game's count differed from the one the cards were judged with: judge them again, once, with what the game left on
@@ -441,7 +442,8 @@ namespace YazsCompanion
         }
 
         // 0.16.1 (C-3): a verdict onto the screen. Shown: the frame on its button at once (FrameNow: gold, and the best card gives up its own,
-        // for REROLL / SKIP; grey for BANISH), the line from the next frame (Place). Not shown: the hint goes and the best card's frame comes back.
+        // for REROLL / SKIP; grey for BANISH), the line from the next frame (Place) - 0.16.3 (C162-01): an offer's first line once the screen
+        // has flown in, SettleAfter after the cards. Not shown: the hint goes and the best card's frame comes back.
         static void Apply(ScreenCall call)
         {
             if (call == null || !call.Show) { Hide(); return; }
@@ -455,10 +457,9 @@ namespace YazsCompanion
             FrameNow();
             if (_shown && same && text == _text && brief == _short) return;            // the same words on screen already (a count that moved, still > 0)
             _text = text; _short = brief;
-            _placeAt = Time.realtimeSinceStartup + (_shown ? 0.05f : 0f); _placeFrame = Time.frameCount;
-            // measured again once the screen has flown in (a verdict that comes later - a re-judge, a reroll's new cards - finds it in place)
-            float settle = _offerAt + SettleAfter;
-            if (!_shown && Time.realtimeSinceStartup < settle) _settleAt = settle;
+            // 0.16.3 (C162-01): placed once - a first line where the screen settles (a verdict that comes later - a re-judge, a reroll's new
+            // cards - finds the screen in place: the next frame); up to 0.16.2 it was placed at once and measured again at SettleAfter
+            _placeAt = ScreenBand.LineAt(Time.realtimeSinceStartup, _offerAt, _shown, SettleAfter); _placeFrame = Time.frameCount;
         }
 
         // the line's words: the rescue screen's verdict carries its own head (LineText); every other screen's words get theirs here -
@@ -572,7 +573,7 @@ namespace YazsCompanion
         // the screen stays) - not when the screen closes (Close: it animates out as it is)
         static void Hide(bool restore)
         {
-            _placeAt = -1f; _settleAt = -1f; _text = null; _short = null; _drawn = null;
+            _placeAt = -1f; _text = null; _short = null; _drawn = null;
             bool was = _shown || _framed; _shown = false; _framed = false; _lineOn = false;
             bool had = !LineRect.Empty; LineRect = new R4();
             if (had) WhyUi.Relayout();
@@ -588,10 +589,10 @@ namespace YazsCompanion
             _button = null;
         }
 
-        // the line: placed on the frame after the verdict (<settle> false), and measured again once the screen has flown in (<settle> true:
-        // moved only when the spot changed, said once an offer - '... the line moved as the screen settled'). 0.16.1 (C-3): the frame is
-        // FrameNow's, drawn with the cards; up to 0.16.0 all of it waited 0.6 s.
-        static void Place(bool settle)
+        // the line, placed when Apply's time comes: 0.16.1 (C-3) the frame is FrameNow's, drawn with the cards (up to 0.16.0 all of it waited
+        // 0.6 s); 0.16.3 (C162-01) an offer's first line is placed once, where the screen settled - the drawn line says how long after the
+        // cards ('..., 0.60 s after the cards'); up to 0.16.2 it was measured again then ('... the line moved as the screen settled')
+        static void Place()
         {
             if (_text == null || _sel == null) return;
             try
@@ -601,7 +602,7 @@ namespace YazsCompanion
                 var button = _button;
                 var brt = button == null ? null : button.transform.TryCast<RectTransform>();
                 var view = sel.transform.TryCast<RectTransform>();
-                if (brt == null || view == null) { if (!settle) Plugin.Logger.LogInfo(Tag + "not drawn - the screen has no " + ScreenCall.Name(_action).ToLowerInvariant() + " button" + Pv()); return; }
+                if (brt == null || view == null) { Plugin.Logger.LogInfo(Tag + "not drawn - the screen has no " + ScreenCall.Name(_action).ToLowerInvariant() + " button" + Pv()); return; }
                 bool first = !_shown;
                 FrameNow();                 // a button that came up after the verdict: its frame now (and the best card gives up its own)
                 float s = Scale(view);
@@ -626,12 +627,12 @@ namespace YazsCompanion
                 var line = view.Find(LineName); var lrt = line == null ? null : line.TryCast<RectTransform>();
                 if (spot.Where == null)
                 {
-                    Alone(lrt, first, settle, "no room for the line (over the button " + spot.Band.ToString("0") + " units, under it " + spot.Below.ToString("0") + ", the line needs " + spot.Need.ToString("0") + ")");
+                    Alone(lrt, first, "no room for the line (over the button " + spot.Band.ToString("0") + " units, under it " + spot.Below.ToString("0") + ", the line needs " + spot.Need.ToString("0") + ")");
                     return;
                 }
                 string where = spot.Where == "over" ? "over the " + ButtonWord() + " button" : "under the " + ButtonWord() + " button (the band over it is " + spot.Band.ToString("0") + " units)";
                 if (lrt == null) lrt = BuildLine(view, brt);
-                if (lrt == null) { if (!settle) Plugin.Logger.LogInfo(Tag + "not drawn - no label to clone for the line"); return; }
+                if (lrt == null) { Plugin.Logger.LogInfo(Tag + "not drawn - no label to clone for the line"); return; }
                 var textT = lrt.Find("Text"); var text = textT == null ? null : textT.GetComponent<TextMeshProUGUI>();
                 float k = spot.K, sk = s * k, tip = Tip * sk, pad = Pad * sk;
                 text.fontSize = Font * sk;
@@ -648,7 +649,7 @@ namespace YazsCompanion
                 try { x0 = ScreenBand.HintX(b, want, vr.width / 2f, spot.Top, spot.Top + h * k, SelectBands.Panels(sel, view, _corners), out w); } catch { w = want; }
                 if (w < tip + 2 * pad + 200f * sk)
                 {
-                    Alone(lrt, first, settle, "the line would run into the team panel (" + want.ToString("0") + " units wanted, " + w.ToString("0") + " clear)");
+                    Alone(lrt, first, "the line would run into the team panel (" + want.ToString("0") + " units wanted, " + w.ToString("0") + " clear)");
                     return;
                 }
                 var bar = lrt.Find("Bar").TryCast<RectTransform>(); Ui.Stretch(bar, tip / 2, 0, tip / 2, 0);
@@ -664,8 +665,7 @@ namespace YazsCompanion
                 bool appear = !_lineOn, moved = !appear && !Same(rect, LineRect);
                 LineRect = rect;
                 string what = where + (x0 > b.X0 ? ", growing left" : "") + (w < want - 0.5f ? ", cut short by the team panel" : "") + (brief ? ", short form" : "") + " - " + w.ToString("0") + " x " + (h * k).ToString("0") + " units, font " + (Font * sk).ToString("0.#") + " (x" + sk.ToString("0.00") + "), " + (spot.Band >= 0 ? "band " + spot.Band.ToString("0") + " units between the cards' lowest line and the button" : "the cards reach below the button's top");
-                if (first) Plugin.Logger.LogInfo(Tag + "drawn " + what + Pv());
-                else if (settle && (moved || appear) && !_settleSaid) { _settleSaid = true; Plugin.Logger.LogInfo(Tag + "the line " + (appear ? "came" : "moved") + " as the screen settled - now " + what + Pv()); }
+                if (first) Plugin.Logger.LogInfo(Tag + "drawn " + what + After() + Pv());
                 _shown = true; _lineOn = true;
                 if (appear) EnterLine(lrt, text, true);
                 else if (drawn != _drawn) EnterLine(lrt, text, false);            // new words on a shown line (a re-judge): typed on again
@@ -676,16 +676,17 @@ namespace YazsCompanion
         }
 
         // the frame alone on the button: no room for the line (or it would run into the team panel)
-        static void Alone(RectTransform lrt, bool first, bool settle, string why)
+        static void Alone(RectTransform lrt, bool first, string why)
         {
-            bool had = _lineOn;
             if (lrt != null) lrt.gameObject.SetActive(false);
             _lineOn = false; _drawn = null;
             if (!LineRect.Empty) { LineRect = new R4(); WhyUi.Relayout(); }
-            if (first) Plugin.Logger.LogInfo(Tag + "drawn as the frame alone - " + why + Pv());
-            else if (settle && had && !_settleSaid) { _settleSaid = true; Plugin.Logger.LogInfo(Tag + "the line went as the screen settled - the frame alone: " + why + Pv()); }
+            if (first) Plugin.Logger.LogInfo(Tag + "drawn as the frame alone - " + why + After() + Pv());
             _shown = true;
         }
+
+        // 0.16.3 (C162-01): how long after the cards came the line was placed (an offer's first line: SettleAfter, 0.60 s)
+        static string After() { return ", " + (Time.realtimeSinceStartup - _offerAt).ToString("0.00", CultureInfo.InvariantCulture) + " s after the cards"; }
 
         static bool Same(R4 a, R4 b) { return Mathf.Abs(a.X0 - b.X0) <= 1f && Mathf.Abs(a.Y0 - b.Y0) <= 1f && Mathf.Abs(a.X1 - b.X1) <= 1f && Mathf.Abs(a.Y1 - b.Y1) <= 1f; }
         static string Pv() { return _preview != null ? " (the walk's preview)" : ""; }

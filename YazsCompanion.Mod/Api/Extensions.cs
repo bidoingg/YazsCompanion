@@ -36,7 +36,9 @@ namespace YazsCompanion.Api
         /// the row is in focus. <paramref name="choices"/> is asked every time the row is drawn or changed (the list may
         /// change at run time), <paramref name="get"/> gives the index shown, <paramref name="set"/> is called with the new
         /// index when the player changes the value - save it there; the menu reads <paramref name="get"/> again afterwards.
-        /// Registering the same owner, group and label again replaces the row in place.</summary>
+        /// Registering the same owner, group and label again replaces the row in place. A one-choice option is shown as
+        /// information (0.16.3): its value without the arrows, its description in the footer, and <paramref name="set"/> is never
+        /// called - register it again to show another value.</summary>
         public static void RegisterOption(string owner, string group, string label, string description, Func<string[]> choices, Func<int> get, Action<int> set)
         {
             try
@@ -231,6 +233,16 @@ namespace YazsCompanion.Api
         {
             try { int i = o.Get(); return i >= 0 && i < count ? i : -1; }
             catch (Exception e) { Once("get:" + o.Key, "'" + o.Owner + "', option '" + o.Label + "': get() threw " + e.GetType().Name + ": " + e.Message, true); return -1; }
+        }
+
+        /// <summary>0.16.3 (CO-INFO): an option with exactly one choice is information - the menu draws it without arrows and nothing
+        /// on it calls set() (up to 0.16.2 every press 'changed' it to the one value it has: 43 '[ext] ... = ...' lines in under three
+        /// minutes on a mod's two status rows, 10-12). Said once a session per option.</summary>
+        internal static bool IsInfo(Option o)
+        {
+            if (ChoicesOf(o).Length != 1) return false;
+            Once("info:" + o.Key, "'" + o.Owner + "', " + (o.Group.Length > 0 ? o.Group + " / " : "") + o.Label + ": one choice - shown as information (no arrows; left / right and select change nothing)", false);
+            return true;
         }
 
         internal static string ValueOf(Option o)
