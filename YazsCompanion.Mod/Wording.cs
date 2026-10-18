@@ -703,7 +703,7 @@ namespace YazsCompanion
         public const string EstimateWhy = "Unrated by the guides - the Companion's estimate from its text";
 
         /// <summary>An estimate-rated item's line in the tier's place: "&lt;its words&gt; (unrated)", else its first clause with the cue
-        /// ("Chests and signals open at once (unrated)"), else its words alone - the cue gives way where a guide-tiered item's "B-tier - "
+        /// ("+30% damage below half HP (unrated)"), else its words alone - the cue gives way where a guide-tiered item's "B-tier - "
         /// does (a narrow Deck card; the WHY says it first either way). Never the cue alone: four estimate-rated cards of one chest would
         /// draw the same line, and the offer's second card would lose it to its next reason (WhyText.Distinct).</summary>
         static string Estimated(string note, string[] shorter = null)

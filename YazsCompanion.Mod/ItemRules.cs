@@ -133,8 +133,8 @@ namespace YazsCompanion
             new ItemRule("economy", @"\bxp\b|experience|specializ|\bluck|level-up", generic: .5, stats: "XPMultiplier,TeamLuck", axis: "economy"),
             new ItemRule("cash", @"\bcash|money", generic: .4, stats: "MoneyMultiplier", axis: "cash"),
             // what a keyword is NOT about: "2 Elite enemies or 1 Boss enemy" is a kill count (Glass of Milk is a Max HP item),
-            // "Item Chests, responding to Signals, and collecting Samples" is the list of things one opens (Crowbar only
-            // makes them instant), "10% of the damage done" is a measure (Vampire Survivor restores health)
+            // "Item Chests, responding to Signals, and collecting Samples" is the list of things one opens (Crowbar makes
+            // them instant), "10% of the damage done" is a measure (Vampire Survivor restores health)
             new ItemRule("elites/bosses", @"(?<!\d )\belite|(?<!\d )\bboss", generic: .6, axis: "boss"),
             new ItemRule("pickups", @"magnet|pickup|pick-up|collect(?!(ing)? samples)", generic: .4, stats: "MagnetRange", axis: "economy"),
             new ItemRule("upgrade quality", @"military training|lockdown|reroll|banish|\bskip|rarity|quality|item chest(?!s?, re)", generic: .3, stats: "NumRerolls,NumBanishes", axis: "economy"),
@@ -339,6 +339,17 @@ namespace YazsCompanion
         // -1.5) = 2.0), and higher while the quest asks to survive the run or the squad (the leader's bar) is under 60 % health
         public const double ReviveFloor = 2.0, ReviveLift = 0.5, ReviveHurt = 0.6;
 
+        // 0.16.4 (the game's 10-16 texts): Toilet Paper's own speed ("+30 Movement Speed", +20 up to then), the item that keeps Walkie
+        // Talkie whole in a full squad and what that gives back (half of Walkie Talkie's 0.4), and Zugzwang's grant to a damage type tag
+        // at a given count
+        public const int ToiletPaperSpeed = 30;
+        public const string WalkieKeeps = "Power of Friendship";
+        public const double WalkieWhole = 0.2;
+
+        /// <summary>0.16.4: what Zugzwang Hypergaster XD adds to a tag at <paramref name="points"/> - +5 below 6, the points again at
+        /// exactly 6 (doubled: +6), -2 above 6 ("Gain +5 points if below 6. - Double points if at 6. - Lose -2 points if above 6").</summary>
+        public static int ZugzwangGrant(int points) { return points < 6 ? 5 : points == 6 ? 6 : -2; }
+
         /// <summary>0.16.0 (C16-02): what an item needs to work, against this squad (the item book's Need). Returns the note in the
         /// card's words (null: none).</summary>
         static string Need(string need, string name, ItemContext c, ref double tierScore, ref double fit, List<string> fitWhy, ref string note)
@@ -414,9 +425,9 @@ namespace YazsCompanion
                         return null;
                     }
                 case "move":
-                    {
+                    {   // the item's own speed counts: Compass +10, Toilet Paper +30 (0.16.4: +20 up to the 10-16 patch)
                         if (double.IsNaN(c.MoveSpeed)) return null;
-                        double over = Math.Max(0, c.MoveSpeed + (arg == "Chemical" ? 20 : 10) - 100);
+                        double over = Math.Max(0, c.MoveSpeed + (arg == "Chemical" ? ToiletPaperSpeed : 10) - 100);
                         int bonus = (int)Math.Round(arg == "Chemical" ? over / 2 : over / 5);
                         if (arg == "Chemical" && tags != null && tags.Known && tags.Fit("Chemical") <= 0) bonus = 0;
                         tierScore += 0.03 * bonus;
@@ -435,8 +446,23 @@ namespace YazsCompanion
                 case "squad":
                     {
                         int size = c.Squad == null ? 1 : c.Squad.Count;
-                        if (Is(name, "Walkie Talkie")) { if (size >= 3) { tierScore *= 0.5; note = "halved in a full squad"; return note; } return null; }
+                        // 0.16.4: "When equipped with Power of Friendship: The total bonus is no longer reduced in full team" (10-16) - the
+                        // pair's only effect, so it is this rule and no pair weight: no halving then, and a Power of Friendship card in a full
+                        // squad gets the half of a held Walkie Talkie it gives back (nothing with 1 or 2 survivors, where nothing is halved)
+                        bool keeps = c.Held != null && c.Held.Contains(WalkieKeeps);
+                        if (Is(name, "Walkie Talkie"))
+                        {
+                            if (size < 3) return null;
+                            if (keeps) { note = "not halved: you hold " + WalkieKeeps; return note; }
+                            tierScore *= 0.5; note = "halved in a full squad"; return note;
+                        }
                         tierScore += (Is(name, "Farming Tools") ? 0.1 : 0.15) * (size - 1);
+                        if (Is(name, WalkieKeeps) && size >= 3 && c.Held != null && c.Held.Contains("Walkie Talkie"))
+                        {
+                            tierScore += WalkieWhole;
+                            fitWhy.Insert(0, "keeps your Walkie Talkie whole in a full squad");
+                            if (c.Say != null) c.Say.Lead = "keeps your Walkie Talkie whole";
+                        }
                         return null;
                     }
                 case "solo":
@@ -481,16 +507,16 @@ namespace YazsCompanion
         }
 
         /// <summary>0.16.0 (C16-02): the distinct statuses the squad applies - each damage type with a share of 10 % or more applies its
-        /// own status, or the one a held conversion item turns it into; Brave Toaster held adds one.</summary>
+        /// own status, or the one a held conversion item turns it into (0.16.4: both while its partner is held too, HeldRules.StatusesOfType);
+        /// Brave Toaster held adds one.</summary>
         internal static int StatusKinds(ItemContext c)
         {
             var tags = c.Tags; var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var convs = c.Held == null ? new List<string[]>() : ItemBook.Converts.Where(cv => c.Held.Contains(cv[0])).ToList();
             foreach (var st in ItemBook.StatusOf)
             {
                 if (tags.Share(st[0]) < 0.1) continue;
-                string status = st[1];
-                if (c.Held != null) foreach (var cv in ItemBook.Converts) if (Is(cv[1], st[0]) && c.Held.Contains(cv[0])) status = cv[2];
-                seen.Add(status);
+                seen.UnionWith(HeldRules.StatusesOfType(st[0], convs));
             }
             return seen.Count + (c.Held != null && c.Held.Contains("Brave Toaster") ? 1 : 0);
         }
@@ -827,12 +853,28 @@ namespace YazsCompanion
 
             double v = 0;
             // 0.16.0 (C16-02): the grants the pattern cannot read - Omnigeode (+1 to every type, +3 where a type has none), Zugzwang (+5 below
-            // 6, -2 at 6 or more), Magical Hat (+4 instead of +2 on an elemental type that has 4 or more)
+            // 6, -2 above 6; 0.16.4: a tag at exactly 6 doubles - "Double points if at 6" of the 10-16 text, -2 there up to then), Magical
+            // Hat (+4 instead of +2 on an elemental type that has 4 or more)
             var grants = new List<KeyValuePair<int, string>>();
             if (!UseBook) foreach (var g in Parse(description).Grants) grants.Add(g);
             else if (Is(name, "Omnigeode")) foreach (var t in TagProfile.Names) grants.Add(new KeyValuePair<int, string>(tags.PointsOf(t) == 0 ? 3 : 1, t));
-            else if (Is(name, "Zugzwang Hypergaster XD")) foreach (var t in TagProfile.Names) grants.Add(new KeyValuePair<int, string>(tags.PointsOf(t) < 6 ? 5 : -2, t));
+            else if (Is(name, "Zugzwang Hypergaster XD")) foreach (var t in TagProfile.Names) grants.Add(new KeyValuePair<int, string>(ZugzwangGrant(tags.PointsOf(t)), t));
             else foreach (var g in Parse(description).Grants) grants.Add(Is(name, "Magical Hat") && tags.PointsOf(g.Value) >= 4 ? new KeyValuePair<int, string>(4, g.Value) : g);
+            // 0.16.4 (review M4): the tag synergies of the game data (ItemBook.TagPairs) - with its partner held the item's own type gains
+            // the bonus, and the partner of a held item switches that item's bonus on: Spoil Canister with Icon of Cinder held grants +4
+            // and +6 Fire, so the special check sees +10 (the pair is these points, no pair weight)
+            if (UseBook && c.Held != null)
+                foreach (var tp in ItemBook.TagPairs)
+                {
+                    bool own = Is(tp[0], name) && c.Held.Contains(tp[2]), theirs = Is(tp[2], name) && c.Held.Contains(tp[0]);
+                    if (!own && !theirs) continue;
+                    int bonus = int.Parse(tp[3], System.Globalization.CultureInfo.InvariantCulture), at = grants.FindIndex(g => Is(g.Value, tp[1]));
+                    if (at >= 0) grants[at] = new KeyValuePair<int, string>(grants[at].Key + bonus, grants[at].Value);
+                    else grants.Add(new KeyValuePair<int, string>(bonus, tp[1]));
+                    string other = own ? tp[2] : tp[0];
+                    why.Insert(0, "pairs with " + Your(other) + ": +" + bonus + " " + tp[1]);
+                    if (say != null) say.Lead = "pairs with " + Your(other);
+                }
             bool every = grants.Count >= TagProfile.Names.Length;       // a grant to every type (Omnigeode, Zugzwang): unknown damage types count as two of seven
             foreach (var grant in grants)
             {
@@ -863,7 +905,9 @@ namespace YazsCompanion
 
         /// <summary>Pairs the items themselves name: worth more when the other half is already held. 0.16.0 (C16-01i): Last Unicorn counts the
         /// animal items held (the game's own flag, HeldFacts.AnimalHeld: +0.9 each, two at most, its words first as a 'held: ' reason), and
-        /// an animal item (ItemContext.Animal) pairs with a held Last Unicorn - a held-item rule, so also under [Debug] ItemKeywords.</summary>
+        /// an animal item (ItemContext.Animal) pairs with a held Last Unicorn - a held-item rule, so also under [Debug] ItemKeywords. 0.16.4
+        /// (after review): each book pair at its worth (PairWorth), the conversion pairs by the fit of the type they change (ConvertPairs);
+        /// the tag synergies are TagPoints', Walkie Talkie + Power of Friendship the "squad" need's.</summary>
         static double Pairs(string name, ItemContext c, List<string> why, List<string> heldWhy)
         {
             if (name == null || (c.Held == null && c.HeldFacts == null)) return 0;
@@ -879,14 +923,81 @@ namespace YazsCompanion
                 if (c.Say != null) c.Say.Lead = "pairs with " + Your(HeldRules.LastUnicorn.Name);
             }
             if (c.Held == null || c.K == null) return Math.Min(1.8, v);
+            var either = new HashSet<string>(StringComparer.OrdinalIgnoreCase);       // 0.16.4: the EitherPairs rows that paid already
             foreach (var pair in Union(UseBook ? ItemBook.Pairs : new string[0][], c.K.ItemPairs))
             {
                 string other = Is(pair.Key, name) ? pair.Value : Is(pair.Value, name) ? pair.Key : null;
                 if (other == null || !c.Held.Contains(other)) continue;
-                v += 0.9; why.Insert(0, "pairs with " + Your(other));
+                if (UseBook && !EitherPays(name, other, c.Held, either)) continue;
+                v += UseBook ? PairWorth(name, other, c) : PairWeight; why.Insert(0, "pairs with " + Your(other));
                 if (c.Say != null) c.Say.Lead = "pairs with " + Your(other);
             }
+            if (UseBook) v += ConvertPairs(name, c, why);
             return Math.Min(1.8, v);
+        }
+
+        /// <summary>The one pair weight: what a pair the texts state is worth once the other half is held.</summary>
+        public const double PairWeight = 0.9;
+
+        /// <summary>0.16.4 (review M3): the worth of the pair of <paramref name="name"/> with the held <paramref name="other"/> - the one pair
+        /// weight, or an ItemBook.PairWorths row's worth on its clock (cash: x min(1.2, 2 x the run's cash weight), as the item's own cash
+        /// part; economy: x the economy curve's 0.3 .. 1.15, as an economy item's tier).</summary>
+        static double PairWorth(string name, string other, ItemContext c)
+        {
+            foreach (var pw in ItemBook.PairWorths)
+            {
+                if (!((Is(pw[0], name) && Is(pw[1], other)) || (Is(pw[1], name) && Is(pw[0], other)))) continue;
+                double w = double.Parse(pw[2], System.Globalization.CultureInfo.InvariantCulture);
+                if (c.Ctx != null && pw[3] == "cash") w *= Math.Min(1.2, 2 * c.Ctx.Cash);
+                else if (c.Ctx != null && pw[3] == "economy") w *= Math.Max(0.3, Math.Min(1.15, 0.3 + 0.7 * c.Ctx.Economy));
+                return w;
+            }
+            return PairWeight;
+        }
+
+        /// <summary>0.16.4 (review H1): a conversion item whose partner is held, or the partner of a held one (ItemBook.Converts' fourth
+        /// column, the game's code): the pair weight times the fit of the damage types that apply both statuses with the two held (summed,
+        /// 1 at most; 0.4 a type while the squad's types are unknown) - nothing on a squad that deals none of them. Battery Leakage + Biofuel
+        /// Energy: only Chemical applies both (its Electric still causes Toxify alone), so a squad with no Chemical gets nothing from it.</summary>
+        static double ConvertPairs(string name, ItemContext c, List<string> why)
+        {
+            var fits = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);       // the partner -> the fit of its both-types
+            foreach (var cv in ItemBook.Converts)
+            {
+                if (cv.Length < 4) continue;
+                string other = Is(cv[0], name) && c.Held.Contains(cv[3]) ? cv[3] : Is(cv[3], name) && c.Held.Contains(cv[0]) ? cv[0] : null;
+                if (other == null) continue;
+                double f = c.Tags != null && c.Tags.Known ? c.Tags.Fit(cv[1]) : 0.4, had;
+                fits[other] = fits.TryGetValue(other, out had) ? had + f : f;
+            }
+            double v = 0;
+            foreach (var kv in fits)
+            {
+                double w = PairWeight * Math.Min(1.0, kv.Value);
+                if (w <= 0) continue;
+                v += w; why.Insert(0, "pairs with " + Your(kv.Key));
+                if (c.Say != null) c.Say.Lead = "pairs with " + Your(kv.Key);
+            }
+            return v;
+        }
+
+        /// <summary>0.16.4: whether the pair of <paramref name="name"/> with the held <paramref name="other"/> pays, by ItemBook.EitherPairs
+        /// ("When equipped with either Rock And Roll or Ban Hammer"): the first item pays once for all of the rest (<paramref name="paid"/>
+        /// remembers the row), and one of the rest pays nothing while another of them is held already (the first one's bonus is on).
+        /// True for every pair no such row names.</summary>
+        static bool EitherPays(string name, string other, ICollection<string> held, HashSet<string> paid)
+        {
+            foreach (var e in ItemBook.EitherPairs)
+            {
+                bool rest(string n) { for (int i = 1; i < e.Length; i++) if (Is(e[i], n)) return true; return false; }
+                if (Is(e[0], name) && rest(other)) return paid.Add(e[0]);
+                if (Is(e[0], other) && rest(name))
+                {
+                    for (int i = 1; i < e.Length; i++) if (!Is(e[i], name) && held.Contains(e[i])) return false;
+                    return true;
+                }
+            }
+            return true;
         }
 
         /// <summary>0.16.0 (C16-01j rule A): a status item while a conversion item is held - <paramref name="fit"/> loses the default type's fit
@@ -909,8 +1020,8 @@ namespace YazsCompanion
             bool others = false;             // another damage type the item is about, dealt by the squad
             for (int j = 0; j < All.Length; j++) if (j != ki && All[j].Type != null && weight(j) > 0 && c.Tags.Fit(All[j].Type) > 0) others = true;
             fits = newFit > 0 || others;
-            // the item's own type causes another status now (a held conversion): its fit line and its boost go
-            if (oldFit > 0 && HeldRules.ConversionsHeld(c.HeldFacts, c.Held).Any(cv => Is(cv[1], type)))
+            // the item's own type causes another status now (a held conversion without its partner, 0.16.4): its fit line and its boost go
+            if (oldFit > 0 && HeldRules.TypeConverted(type, HeldRules.ConversionsHeld(c.HeldFacts, c.Held)))
             {
                 string who = c.Tags.SourceText(type); if (who.Length == 0) who = "the squad";
                 fitWhy.Remove(who + ": " + All[ki].Tag);

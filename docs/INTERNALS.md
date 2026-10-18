@@ -11,9 +11,15 @@ clock, synergy, build, quest, wording, WHY, hint and badge rules, the item book 
 plan, the log rotation - into a console app (`tools\ItemBench`) and runs them over the game's own data: the PC app's
 extracted `data\gamedata.json` (from `tools\extract_gamedata.py` in the project root, outside this repository; pass the
 path if it lives elsewhere) and the `[Debug] Probe` dump `probe.json` (by default next to it). Use it before changing a
-rule or a tier. One file per round of cases (`Checks.cs`, `AdviceFixCases.cs`, `LoadoutCases.cs`, `MatchFixCases.cs`,
-`RunFixCases.cs`, `WordingCases.cs`, `QuestCases.cs`, `HintCases.cs`, `ReviewCases.cs`, 0.16.0's `ItemBookCases.cs`,
-`HeldCases.cs`, `RankSmallCases.cs`, `YardBadgeCases.cs`, ...); together they hold:
+rule or a tier. After a game update both are refreshed (0.16.4, the game's content patch of 10-16: the extract of the
+patched build, and a live probe of it made the way the 10-06 fixture was - fields as dumped, the powerup sprite names
+another mod's icons replaced set back to the vanilla ones); the item texts the game draws are only in the extract, the
+probe's item `desc` is the asset's own English text, which the game does not always update. Since 0.16.4 the probe also
+dumps each item's `synergy` (the item its "When equipped with" bonus waits for, the game's synergyItem, and a tag
+synergy's points and type), which IB12 holds the book to. One file per round of cases (`Checks.cs`, `AdviceFixCases.cs`,
+`LoadoutCases.cs`, `MatchFixCases.cs`, `RunFixCases.cs`, `WordingCases.cs`, `QuestCases.cs`, `HintCases.cs`,
+`ReviewCases.cs`, 0.16.0's `ItemBookCases.cs`, `HeldCases.cs`, `RankSmallCases.cs`, `YardBadgeCases.cs`, ...); together
+they hold:
 
 - **The names**: every preset and kit name against the game's own (a misspelt evolution would silently never match), a
   preset's text against its branch (a tier-3 weapon its summary names is its branch), every survivor's weapon fork
@@ -45,16 +51,32 @@ rule or a tier. One file per round of cases (`Checks.cs`, `AdviceFixCases.cs`, `
     <probe.json>]` rewrites it after an intended rule change); IB4 the 0.15.0 mis-hits stay fixed; IB5 the needs; IB6
     pairs, clashes, the mixed effect, knowledge.json's own pairs and clashes counted once; IB7 ten logged chest offers;
     IB8 the keyword fallback and `[Debug] ItemKeywords`; IB9 the revive need, the 10-07 Deck chest rebuilt (IB9b) and the
-    `[ctx]` tail.
+    `[ctx]` tail. 0.16.4 (the game's content patch of 10-16): IB10 holds the book to the texts the game DRAWS - the I2 texts of
+    `data\gamedata.json` (the extract of the patched build), because the probe's `desc` is the asset's EnglishDescription, which
+    the patch left at its 10-02 words: every number of a row's words in its item's text (or worked out from it: Boiling Pot's
+    third, Camping Set's 5 x 15 %, T-Pose Doll's 25 x 2 %), every "When equipped with" of the texts known (a pair, a tag
+    synergy, a conversion partner, the Walkie Talkie rule or a `TextOnly` row), every pair the book pays for the patch stated
+    by a text but the two the game wires without one (Bleeding Edge + Slingshot, Warm Ice Cream + Biofuel Energy), and the
+    changed rules' numbers (Toilet Paper's speed, Zugzwang at 6, Walkie Talkie with Power of Friendship, Stretcher without
+    dodge, A Cookie's half, Crowbar, Quick Buck's and Teddy Bear's +20 %, the conversion pairs) in their texts; IB11 (pure)
+    the rules the patch changed and each new pair at its worth - the pair weight both ways for the four that double an item,
+    `PairWorths` (an extra +20 % on its item's clock), Teddy Bear's "either" once, the tag synergies as +6 tag points
+    (Spoil Canister at Fire 3 with Icon of Cinder held: +10, the special), Walkie Talkie and Power of Friendship only in a
+    full squad; IB12 the game's own wiring where it differs from the texts (the review of 10-17 read the 10-16 code and
+    assets): `Converts`' fourth column (Warm Ice Cream's partner is Biofuel Energy, Battery Leakage has none), `TagPairs`
+    (Bleeding Edge and Slingshot each other's), `TextOnly` paid nowhere - and over the probe, once a probe carries
+    `synergy`, every `TagPairs` row and every wiring between two book items (a probe dumped before 0.16.4 is only named).
+    SL1 reads the drawn texts too.
   - `HeldCases.cs`, `=== 0.16.0: the held-item rules`: H0 - H10 the table, the lines, the run, the debug key, the rails,
     the WHY band's order, nothing held changes nothing, the sources; MA1 - MA5 Mana Potion held; MK1 - MK4 the Mana
     Potion card; LS1 - LS7 Life Savings (the generalised skip worth - 19,250 old calls pinned to 0.15.0's formula -, the
     hint, the cash items, Liberate's words, the keyword reading, the `[held]` part); RB1 - RB3 Reserve Bench; HS1 - HS4
     Hijacked Signal (Liberate's score and the crossover 0.645 / 0.814, the PLAN row, the chest's cash, the words); SR1 -
     SR4 A Cookie / Skip Rope; H12 the rails and sources of those; WS1 - WS6 Wooden Stick / Empty Chest; LU1 - LU4 Last
-    Unicorn's count and the stated pairs; CV1 - CV6 the status conversions. Full bench only: H11 (the animal list and the
-    table's assets against `data\probe.json`), LU5 (every animal item of the probe pairs with a held Last Unicorn), CV7
-    (the status items' assets and the six conversion texts against the probe).
+    Unicorn's count and the stated pairs; CV1 - CV6 the status conversions; CV8 (0.16.4) a conversion pair held applies
+    both statuses as the game's 10-16 code does, and what the pair is worth. Full bench only: H11 (the animal list and
+    the table's assets against `data\probe.json`), LU5 (every animal item of the probe pairs with a held Last Unicorn),
+    CV7 (the status items' assets and the six conversion texts against the probe).
   - `HintCases.RunPure`, `=== 0.16.0: the action hints' pure cases`: H3 the revive guard (the 10-07 Deck chest on its
     logged scores - silent at 55 % / with the quest, REROLL as live without them -, the replaced chest, the weak and the
     all-AVOID SKIPs held back, the no-item quest's SKIP kept, BANISH never on a revive, a new Resuscitation on an early
@@ -290,10 +312,12 @@ In `BepInEx\plugins\YazsCompanion\companion.log` (the README's *Logs* says where
   12 s: x1.55 with no reduction, x0.93 at 40 %, x0.62 at 60 %; one 12 s ability alone: x3.16). The other items' parts:
   `Reserve Bench: a chest or training skip is a level-up; recruiting gives 2 (4:10 since the last join)`, `Hijacked
   Signal: Liberate gives two level-ups; chest items pay cash`, `Life Savings: cash heals instead`, `A Cookie: a skip
-  heals 500 more`, `Skip Rope: a skip pays 5 points (1 on a level-up)`, `Wooden Stick: 5 empty slots (+50% XP), filling
-  one costs 2.17 now`, `Empty Chest: 5 empty slots (+50% damage), filling one costs 2.00` (`... (+80% XP, the cap),
-  filling one costs nothing` over 8 empty, `no empty slot left`, `the empty slots not read - no slot cost`), a conversion
-  item `Battery Leakage: Electric causes Toxify, not Electrify`. On the cards: a recruit `...; held: recruiting gives 2
+  also heals half your max HP` (0.16.4; `a skip heals 500 more` before), `Skip Rope: a skip pays 5 points (1 on a
+  level-up)`, `Wooden Stick: 5 empty slots (+50% XP), filling one costs 2.17 now`, `Empty Chest: 5 empty slots (+50%
+  damage), filling one costs 2.00` (`... (+80% XP, the cap), filling one costs nothing` over 8 empty, `no empty slot
+  left`, `the empty slots not read - no slot cost`), a conversion item `Battery Leakage: Electric causes Toxify, not
+  Electrify` (0.16.4, with the partner the game's code tests held too: `Biofuel Energy: Chemical causes Electrify and
+  Toxify (with Battery Leakage)`; Battery Leakage has none). On the cards: a recruit `...; held: recruiting gives 2
   level-ups (Reserve Bench)` (its first reason late in the run), Liberate `held: two level-ups and cash (Hijacked Signal);
   ...` and `...; held: a recruit brings 2 level-ups now (Reserve Bench)`, a cash item `...; held: its cash heals you
   instead (Life Savings)`, `held: fills an empty slot: -10% XP (Wooden Stick)` (the first reason of every card it costs),
@@ -394,8 +418,9 @@ after `(worth X)` the skip part names what held items add (`ScreenCall.SkipNote`
 `, a level-up (Reserve Bench)`, `, the cash also on a pick (Hijacked Signal)`, `, with A Cookie and Skip Rope` - e.g.
 `skip +675 cash, +292 health (worth 2.66), a level-up (Reserve Bench)`. A REROLL with Reserve Bench held ends `| Reserve
 Bench: if it stays weak, the skip is a level-up`; its SKIP `| Reserve Bench: the skip is a level-up, worth 2.66 (+675
-cash, +292 health)`; the weak-cards SKIP adds `| A Cookie: +500 health` / `| Skip Rope: +5 points (a quarter of a
-Military Training) worth 1.39`. With Wooden Stick or Empty Chest held both numbers show: `best Emerald Gem 0.35 (2.52
+cash, +292 health)`; the weak-cards SKIP adds `| A Cookie: +730 health` (0.16.4: half the max HP, 2.5 x the skip's own
+heal, a Research Pod's skip too; 500 up to 0.16.3) / `| Skip Rope: +5 points (a quarter of a Military Training) worth
+1.39`. With Wooden Stick or Empty Chest held both numbers show: `best Emerald Gem 0.35 (2.52
 before the held slot cost 2.17) at or over the chest floor 2.50 | every card is under 1 (AVOID) (merit 2.52 before the
 held slot cost 2.17); skip bonus +675 cash, +292 health`. The revive guard: `- held back: <card> is a second life (a
 survive quest, squad health 55%)` where a REROLL would have shown (`not shown - best Frozen Heart 2.45 under the chest
@@ -814,7 +839,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Api/Extensions.cs             the one public class: other mods register menu options, lend build packs and display names (reflection-friendly)
     Names.cs                      the names drawn for classes / powerups / items: lent by another mod, else the game's; the rules never see them
     Art.cs + Art/                 the embedded artwork (crest, glyph atlas, 9-slice panel, glow, backdrop) as sprites
-    Probe.cs                      [Debug] Probe: dumps items, powerups, input actions and the menu layout to probe.json
+    Probe.cs                      [Debug] Probe: dumps items (0.16.4: their synergy partner), powerups, input actions and the menu layout to probe.json
     Perf.cs                       [Debug] Perf: times the mod's own sections and logs the sums once a minute
     Warmup.cs                     two throw-away plans on the main menu, so a session's first plan is not built cold in the run
     Fx.cs                         motion: the tween runner and the effects (stamp-in, ping, rule draw, type-on, spin, glint)

@@ -1,15 +1,15 @@
 # ItemBench IB3: the item book's score per reference squad (A B C D) and the card line in A and C. Regenerate: ItemBench --write-itembook
 # name|A|B|C|D|lineA|lineC
 99'th Balloon|1.88|2.25|2.25|1.00|XP each second until a hit pops it (unrated)|XP each second until a hit pops it (unrated)
-A Cookie|1.49|1.88|1.43|1.59|+20% healing; skips heal too (unrated)|+20% healing; skips heal too (unrated)
+A Cookie|1.55|1.94|1.49|1.65|+20% healing; a skip heals half max HP (unrated)|+20% healing; a skip heals half max HP (unrated)
 Access Keycard|2.65|2.61|2.61|3.33|B-tier - HP, armor and XP per Parca item|B-tier - HP, armor and XP per Parca item
 Accumulator|4.44|4.29|4.29|4.18|S-tier - magnet pickups nuke the screen|S-tier - magnet pickups nuke the screen
-ACME Anvil|1.58|2.00|1.88|1.40|Slows are twice as strong (unrated)|Slows are twice as strong (unrated)
+ACME Anvil|1.98|2.40|2.28|1.80|+50% damage to slowed or stunned enemies (unrated)|+50% damage to slowed or stunned enemies (unrated)
 Acoustic Guitar|2.08|2.12|2.12|2.05|B-tier - the guides disagree on it|B-tier - the guides disagree on it
 An Apple|1.77|2.12|1.68|1.92|More Healthpaks, +20% healing (unrated)|More Healthpaks, +20% healing (unrated)
-Annoying Trumpet|1.29|1.29|1.29|1.79|An Explosive blast when you are hit (unrated)|An Explosive blast when you are hit (unrated)
+Annoying Trumpet|1.55|1.55|1.55|2.05|An Explosive blast and stun when hit (unrated)|An Explosive blast and stun when hit (unrated)
 Ban Hammer|1.70|1.93|1.93|1.33|A free banish on every screen, +10 luck (unrated)|A free banish on every screen, +10 luck (unrated)
-Barrel Roll|1.29|1.29|1.29|1.79|An Explosive blast when you dodge (unrated)|An Explosive blast when you dodge (unrated)
+Barrel Roll|1.55|1.55|1.55|2.05|An Explosive blast and stun on a dodge (unrated)|An Explosive blast and stun on a dodge (unrated)
 Battery Leakage|1.59|1.50|1.00|1.00|Boosts Electric - your Tesla deals it|Nobody on the squad deals Electric or Chemical
 Bells & Whistles|1.16|1.21|1.21|1.07|Better military cards under a lockdown (unrated)|Better military cards under a lockdown (unrated)
 Biofuel Energy|1.59|1.50|1.00|1.00|Boosts Electric - your Tesla deals it|Nobody on the squad deals Electric or Chemical
@@ -19,21 +19,21 @@ Bloody Axe|1.30|1.30|4.48|1.30|Nobody on the squad deals Slashing|Turns on the S
 Boiling Pot|1.60|2.00|2.00|1.25|Needs 3 status effects, the squad has 2|B-tier - a third status effect blows enemies up
 Boxing Gloves|2.36|2.36|2.36|2.43|B-tier - +30% against elites and bosses|B-tier - +30% against elites and bosses
 Brave Toaster|1.00|1.00|1.00|1.00|C-tier in the guides|C-tier in the guides
-Broken Glass|1.78|2.20|2.08|1.60|+25% damage to slowed enemies (unrated)|+25% damage to slowed enemies (unrated)
+Broken Glass|1.88|2.30|2.18|1.70|+30% damage to slowed enemies (unrated)|+30% damage to slowed enemies (unrated)
 Buckshot Roulette|2.36|1.92|2.02|2.39|Quicker cooldowns, 20% instant reloads|Quicker cooldowns, 20% instant reloads
 Bulletproof Vest|1.95|1.88|1.88|2.67|+30 armor, half damage from shots (unrated)|+30 armor, half damage from shots (unrated)
 Burger|1.54|2.13|1.47|1.67|Triples healing, a fifth less max HP (unrated)|Triples healing, a fifth less max HP (unrated)
-Camping Set|1.42|1.42|1.42|1.42|Up to +50% damage while standing still (unrated)|Up to +50% damage while standing still (unrated)
+Camping Set|1.57|1.57|1.57|1.57|Up to +75% damage while standing still (unrated)|Up to +75% damage while standing still (unrated)
 Chick Magnet|3.27|3.39|3.39|3.10|Pickup range, and cooldowns on every magnet|Pickup range, and cooldowns on every magnet
 Chocolate Box|1.74|1.50|2.10|1.50|More crits - suits SWAT|More crits - suits Huntress
 Coffee Cup|1.84|1.80|1.80|1.91|Elite kills reload and speed up weapons (unrated)|Elite kills reload and speed up weapons (unrated)
 Combat Knife|1.70|1.70|1.70|1.70|+30% damage to basic enemies (unrated)|+30% damage to basic enemies (unrated)
 Compass|1.53|1.57|1.63|1.50|+2% ability power from your speed|+4% ability power from your speed
 Congratulation Letter|1.82|2.09|2.09|1.41|Military cards at least Rare (unrated)|Military cards at least Rare (unrated)
-Crowbar|1.00|1.00|1.00|1.00|Chests and signals open at once (unrated)|Chests and signals open at once (unrated)
+Crowbar|1.42|1.42|1.42|1.42|+30% damage below half HP; quick chests (unrated)|+30% damage below half HP; quick chests (unrated)
 Dartboard|1.00|1.00|2.37|3.19|No long-range weapon on the squad|Half your weapons are long-range
 Detective's Pipe|1.90|2.69|1.87|1.58|Mixed: boosts Electric, weakens Kinetic|Mixed: boosts Ice, weakens Slashing and Kinetic
-Devil's Deal|1.92|1.94|1.94|1.88|+25% survivor stats, a hit every 5s (unrated)|+25% survivor stats, a hit every 5s (unrated)
+Devil's Deal|1.92|1.94|1.94|1.88|+30% survivor stats, a hit every 5s (unrated)|+30% survivor stats, a hit every 5s (unrated)
 Duct Tape|2.18|1.80|2.44|1.43|More dodge - suits SWAT|More dodge - suits Ghost
 Easter Egg|1.00|1.00|1.00|1.00|C-tier in the guides|C-tier in the guides
 Electric Personality|2.97|3.58|3.58|1.99|A-tier - magnets collect everything|A-tier - magnets collect everything
@@ -43,7 +43,7 @@ Expired Sushi|3.30|1.00|3.37|1.00|Turns on the Kinetic 10-tag effect|Turns on th
 Explosive Surprise|1.30|1.30|1.30|3.10|Nobody on the squad deals Explosive|Nobody on the squad deals Explosive
 Farming Tools|1.31|1.46|1.36|1.11|+10% cash, class points per survivor (unrated)|+10% cash, class points per survivor (unrated)
 Fire Extinguisher|1.00|2.26|1.59|1.00|Nobody on the squad deals Fire or Ice|Boosts Ice - your Freezing Arrows deals it
-Fishing Pole|3.17|3.15|3.15|3.20|A-tier - half hazard damage, then +50% damage|A-tier - half hazard damage, then +50% damage
+Fishing Pole|3.17|3.15|3.15|3.20|A-tier - half hazard damage, then +100% damage|A-tier - half hazard damage, then +100% damage
 Frozen Heart|2.47|2.44|2.44|2.38|B-tier - max HP and armor each time you are hit|B-tier - max HP and armor each time you are hit
 Frying Pan|1.88|1.86|1.86|1.90|Weapon hits can stun (unrated)|Weapon hits can stun (unrated)
 Gaslighter|3.24|3.24|3.24|3.00|+20% damage per status effect on the target|+20% damage per status effect on the target
@@ -54,9 +54,9 @@ Gold Medal|1.39|1.56|1.56|1.13|More military cards, 10% slower levels (unrated)|
 Golden Key|1.57|1.76|1.76|1.27|Chests may offer a second set (unrated)|Chests may offer a second set (unrated)
 Great Nade|2.00|2.00|2.00|2.50|B-tier - throws an Explosive grenade every 10s|B-tier - throws an Explosive grenade every 10s
 Health Potion|1.87|2.22|1.78|2.02|Healthpaks heal three times as much (unrated)|Healthpaks heal three times as much (unrated)
-Heavy Metal|2.04|2.37|2.37|1.51|B-tier - twice as many magnets|B-tier - twice as many magnets
+Heavy Metal|2.04|2.37|2.37|1.51|B-tier - twice as many magnets, +10% pickup range|B-tier - twice as many magnets, +10% pickup range
 Hijacked Signal|2.07|2.50|2.50|1.00|B-tier - Liberate gives two level-ups|B-tier - Liberate gives two level-ups
-Hit Tracks|1.48|1.47|1.47|1.51|+20 speed, slows on you halved (unrated)|+20 speed, slows on you halved (unrated)
+Hit Tracks|1.58|1.57|1.57|1.61|+40 speed, slows on you halved (unrated)|+40 speed, slows on you halved (unrated)
 Homing Pigeon|3.32|3.12|3.72|3.05|More crits - suits SWAT|More crits - suits Huntress
 Hyperactivity|2.33|2.33|2.33|2.33|B-tier - +50% attack speed and cooldowns|B-tier - +50% attack speed and cooldowns
 Icon of Cinder|1.30|2.75|1.30|1.30|Nobody on the squad deals Fire|Nobody on the squad deals Fire
@@ -74,10 +74,10 @@ Life Savings|1.35|1.36|1.36|0.59|Cash heals you instead of paying out (unrated)|
 Magazine Clip|3.96|3.12|3.32|3.99|Doubles every magazine - your guns use magazines|Doubles every magazine - your guns use magazines
 Magical Hat|2.85|5.46|2.85|1.30|Boosts Electric - your Tesla deals it|Boosts Ice - your Freezing Arrows deals it
 Mana Potion|3.08|3.12|3.12|3.05|A-tier - strong on Mechanic with Engineer|A-tier - strong on Mechanic with Engineer
-MedKit|2.07|2.20|1.98|2.22|A full heal now, +100 max HP (unrated)|A full heal now, +100 max HP (unrated)
+MedKit|2.17|2.30|2.08|2.32|A full heal now, +100 max HP (unrated)|A full heal now, +100 max HP (unrated)
 Metal Gear|1.83|1.42|1.72|2.10|+15% duration from your pickup range|+10% duration from your pickup range
 Modchip|1.80|1.52|2.12|1.59|Crits speed up your weapons (unrated)|Crits speed up your weapons (unrated)
-Mouse Trap|1.00|1.00|2.40|1.00|Nothing on the squad taunts|Boosts your taunts
+Mouse Trap|1.03|1.03|2.50|1.03|Nothing on the squad taunts|Boosts your taunts
 Mushroom Mushroom|1.00|1.00|1.00|1.00|C-tier in the guides|C-tier in the guides
 Nail Bat|3.30|1.00|3.37|1.00|Turns on the Kinetic 10-tag effect|Turns on the Slashing 10-tag effect
 Nine Inch Nails|4.80|1.30|2.43|1.30|Turns on the Kinetic 10-tag effect|Boosts Kinetic - your Bear Trap deals it
@@ -95,14 +95,14 @@ Positive Attitude|1.62|1.62|1.62|1.62|A hit resets a cooldown and reloads (unrat
 Potato|1.00|1.00|1.00|1.00|The game hides what it does (unrated)|The game hides what it does (unrated)
 Power Generator|3.48|3.24|3.84|3.24|A-tier - ability crits reload the weapons|A-tier - ability crits reload the weapons
 Power Glove|2.38|1.52|2.42|2.60|Mixed: boosts Kinetic, weakens Electric|Mixed: boosts Slashing and Kinetic, weakens Ice
-Power of Friendship|1.78|1.93|1.78|1.63|Halves some hits, more in a big team (unrated)|Halves some hits, more in a big team (unrated)
-Quick Buck|1.25|1.31|1.31|1.16|Cash pickups give a burst of speed (unrated)|Cash pickups give a burst of speed (unrated)
+Power of Friendship|2.14|2.37|2.22|1.87|Halves some hits, more in a big team (unrated)|Halves some hits, more in a big team (unrated)
+Quick Buck|1.32|1.39|1.39|1.19|+20% cash; cash pickups speed you up (unrated)|+20% cash; cash pickups speed you up (unrated)
 Quicksilver Bullets|1.66|1.62|1.62|1.69|+30% weapon attack speed (unrated)|+30% weapon attack speed (unrated)
 Ragged Patch|2.85|3.41|3.41|1.96|A-tier in the guides|A-tier in the guides
 Reserve Bench|1.50|1.77|1.77|1.00|A level-up per chest or training skip (unrated)|A level-up per chest or training skip (unrated)
 Retaliation|1.87|1.82|1.82|2.56|+20 armor, faster weapons when hit (unrated)|+20 armor, faster weapons when hit (unrated)
 Ring Of Power|2.08|2.15|2.15|1.22|+10% damage per SOS answered, up to 40% (unrated)|+10% damage per SOS answered, up to 40% (unrated)
-Rock And Roll|1.82|2.09|2.09|1.41|A free reroll on every screen (unrated)|A free reroll on every screen (unrated)
+Rock And Roll|1.94|2.26|2.26|1.44|A free reroll on every screen, +10 luck (unrated)|A free reroll on every screen, +10 luck (unrated)
 Ruby Gem|1.96|2.12|2.12|1.79|2 damage types at 3 tags or more|3 damage types at 3 tags or on the way
 Sapphire Gem|1.88|2.12|2.12|1.65|2 damage types at 3 tags or more|3 damage types at 3 tags or on the way
 Scented Candle|1.64|1.64|1.64|1.40|Stronger status effects - suits Engineer|Stronger status effects - suits Huntress
@@ -116,16 +116,16 @@ Smooth Moves|1.94|1.73|2.21|1.81|More dodge - suits SWAT|More dodge - suits Ghos
 Solar Panel|2.32|2.12|2.72|2.05|B-tier - weapon crits cut ability cooldowns|B-tier - weapon crits cut ability cooldowns
 Special Snowflake|1.30|3.93|2.85|1.30|Nobody on the squad deals Ice|Boosts Ice - your Freezing Arrows deals it
 Spoil Canister|1.30|3.10|1.30|1.30|Nobody on the squad deals Fire|Nobody on the squad deals Fire
-Stretcher|2.41|2.60|2.21|2.62|B-tier - regeneration while you keep moving|B-tier - regeneration while you keep moving
+Stretcher|2.47|2.60|2.38|2.62|B-tier - regeneration while you keep moving|B-tier - regeneration while you keep moving
 Sugar Rush|1.20|1.20|1.20|1.24|A boss kill starts a Killing Frenzy (unrated)|A boss kill starts a Killing Frenzy (unrated)
-Suspicious Pendrive|1.49|1.49|1.49|1.99|A big blast when you open a chest (unrated)|A big blast when you open a chest (unrated)
+Suspicious Pendrive|1.95|1.95|1.95|2.45|Opening a chest kills basic enemies (unrated)|Opening a chest kills basic enemies (unrated)
 T-Pose Doll|1.72|1.72|1.72|1.72|Up to +50% damage while you avoid hits (unrated)|Up to +50% damage while you avoid hits (unrated)
 Teddy Bear|1.77|2.04|2.04|1.35|Rerolls and banishes may cost nothing (unrated)|Rerolls and banishes may cost nothing (unrated)
 The Bomb|1.30|1.30|1.30|3.60|Nobody on the squad deals Explosive|Nobody on the squad deals Explosive
 The Word|2.30|2.30|2.30|2.30|B-tier - stops the horde 3s in every 20s|B-tier - stops the horde 3s in every 20s
-Toilet Paper|1.15|1.73|1.15|1.15|+20 speed; speed adds Chemical damage (unrated)|+20 speed; speed adds Chemical damage (unrated)
+Toilet Paper|1.15|1.88|1.15|1.15|+30 speed; speed adds Chemical damage (unrated)|+30 speed; speed adds Chemical damage (unrated)
 Torchlight|1.84|1.60|2.20|1.60|More crits - suits SWAT|More crits - suits Huntress
-Treasure Finder|1.48|1.65|1.65|1.22|Swap items at any chest, +1 reroll (unrated)|Swap items at any chest, +1 reroll (unrated)
+Treasure Finder|1.65|1.87|1.87|1.32|Swap at any chest: +3 rerolls, banishes (unrated)|Swap at any chest: +3 rerolls, banishes (unrated)
 Ultra Instinct|1.20|1.20|1.20|1.20|Does nothing until a tag hits 30 (Kinetic is 8)|Does nothing until a tag hits 30 (Slashing is 9)
 Vampire Survivor|1.97|2.10|1.88|2.62|Your leader's hits heal you (unrated)|Your leader's hits heal you (unrated)
 Walkie Talkie|1.48|1.32|1.52|1.45|Ability area and duration per level (unrated)|Ability area and duration per level (unrated)
@@ -133,4 +133,4 @@ Warm Ice Cream|1.00|2.26|1.59|1.00|Nobody on the squad deals Fire or Ice|Boosts 
 Well Prepped|1.85|2.10|2.10|1.46|One more item slot, kept after a swap (unrated)|One more item slot, kept after a swap (unrated)
 Wooden Stick|2.33|4.30|3.57|1.00|+30% XP now (2 empty slots)|+40% XP now (3 empty slots)
 Wrench|1.83|1.42|1.72|2.10|+15% area from your pickup range|+10% area from your pickup range
-Zugzwang Hypergaster XD|1.17|1.00|2.80|1.00|+5 to low damage tags, -2 to high ones (unrated)|Turns on the Ice 10-tag effect
+Zugzwang Hypergaster XD|1.17|3.11|2.80|1.00|+5 to low tags, doubles a 6, -2 to high (unrated)|Turns on the Ice 10-tag effect

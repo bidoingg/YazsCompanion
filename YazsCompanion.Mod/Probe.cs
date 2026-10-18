@@ -3,7 +3,8 @@
 // every item and powerup with the exact fields the game itself uses (powerup tags, damage type tags per level,
 // highlighted statistics, mode availability), the team passives that boost a powerup tag, the input actions the
 // game registered, and the layout of the main menu's button column; since 0.13.0 also every badge as the run setup screen's
-// advice reads it (and as the game itself reports it) and the badge slots. For development; it changes nothing.
+// advice reads it (and as the game itself reports it) and the badge slots; since 0.16.4 the item an item's "When equipped with" bonus
+// waits for (its synergyItem). For development; it changes nothing.
 // MeasureBadges() is the [Debug] PreviewSetup walk's one line 3 s into a run: the badge statistics the advice only estimates.
 using System;
 using System.Collections.Generic;
@@ -78,10 +79,29 @@ namespace YazsCompanion
                 try { d["swappable"] = it.isSwappable; } catch { }
                 try { d["inPool"] = it.isVisibleInItemsPool; } catch { }
                 try { d["desc"] = ItemRules.RichTag.Replace(it.EnglishDescription ?? "", ""); } catch { }
+                try { var syn = Synergy(it); if (syn != null) d["synergy"] = syn; } catch { }
                 o.Add(d);
             }
             Plugin.Logger.LogInfo("[probe] items: " + o.Count);
             return o;
+        }
+
+        /// <summary>0.16.4 (review L7): the item an item's "When equipped with" bonus waits for - the game's own synergyItem, which the
+        /// texts do not always name (Bleeding Edge's is Slingshot, its text says Bloody Axe) - and for a tag synergy its points and type
+        /// (ItemBook.TagPairs; the bench holds the book to it). Null for an item without one.</summary>
+        static Dictionary<string, object> Synergy(ItemBase it)
+        {
+            ItemBase partner = null; var d = new Dictionary<string, object>();
+            var tag = it.TryCast<ItemUnlockSuperEnemyStatusEffect>();
+            if (tag != null) { partner = tag.synergyItem; d["tags"] = tag.synergyTagBonus; d["type"] = G.TagName(tag.hashtagType) ?? tag.hashtagType.ToString(); }
+            var es = it.TryCast<ItemExplosiveSurprise>(); if (es != null) partner = es.synergyItem;
+            var cs = it.TryCast<ItemCampingSet>(); if (cs != null) partner = cs.synergyItem;
+            var sr = it.TryCast<ItemStretcher>(); if (sr != null) partner = sr.synergyItem;
+            var wt = it.TryCast<ItemWalkieTalkie>(); if (wt != null) partner = wt.synergyItem;
+            var ev = it.TryCast<ItemEventActivated>(); if (ev != null) partner = ev.synergyItem;
+            if (partner == null) return null;
+            d["item"] = G.Name(partner); d["asset"] = G.Asset(partner);
+            return d;
         }
 
         static readonly HashtagSystem.EHashtagType[] Types =

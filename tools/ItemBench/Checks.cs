@@ -53,6 +53,17 @@ namespace YazsCompanion.Bench
     {
         public string Name, Desc; public List<string> Stats = new List<string>(); public bool Healing;
         public bool InPool, Animal;         // 0.16.0: the probe's 'inPool' (C16-02, the item book's coverage) and 'animal' (C16-01i) flags
+        public string Synergy, SynergyType; public int SynergyTags;      // 0.16.4: the probe's 'synergy' (the game's synergyItem; ItemBookCases IB12)
+
+        /// <summary>0.16.4: the probe's 'synergy' object of an item (absent in a probe dumped before 0.16.4).</summary>
+        internal static void ReadSynergy(JsonElement it, ProbeItem pi)
+        {
+            JsonElement syn, e;
+            if (!it.TryGetProperty("synergy", out syn) || syn.ValueKind != JsonValueKind.Object) return;
+            if (syn.TryGetProperty("item", out e) && e.ValueKind == JsonValueKind.String) pi.Synergy = e.GetString();
+            if (syn.TryGetProperty("type", out e) && e.ValueKind == JsonValueKind.String) pi.SynergyType = e.GetString();
+            if (syn.TryGetProperty("tags", out e) && e.ValueKind == JsonValueKind.Number) pi.SynergyTags = e.GetInt32();
+        }
     }
     sealed class ProbeWeapon { public string Asset, Name, Class, Previous, Tier; }
 
@@ -62,6 +73,9 @@ namespace YazsCompanion.Bench
         static readonly Dictionary<string, string> ClassOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         static readonly List<ProbeItem> Items = new List<ProbeItem>();
         static readonly List<ProbeWeapon> Weapons = new List<ProbeWeapon>();
+        // 0.16.4: the item texts the game DRAWS (its I2 terms), name -> text, from gamedata.json - the probe's 'desc' is the asset's
+        // EnglishDescription, which the game's 10-16 patch left at its 10-02 words while 47 items changed (ItemBookCases IB10, SL1)
+        internal static readonly Dictionary<string, string> GameText = new Dictionary<string, string>(StringComparer.Ordinal);
 
         static string Norm(string s) { return new string((s ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray()); }
         static bool Same(string a, string b)
@@ -107,9 +121,17 @@ namespace YazsCompanion.Bench
                     if (it.TryGetProperty("inPool", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.InPool = e.GetBoolean();     // 0.16.0 (C16-02)
                     if (it.TryGetProperty("animal", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.Animal = e.GetBoolean();     // 0.16.0 (C16-01i)
                     if (it.TryGetProperty("stats", out e)) foreach (var t in e.EnumerateArray()) pi.Stats.Add(t.GetString());
+                    ProbeItem.ReadSynergy(it, pi);
                     Items.Add(pi);
                 }
             }
+            if (gamedataPath != null && File.Exists(gamedataPath))
+                using (var doc = JsonDocument.Parse(File.ReadAllText(gamedataPath)))
+                    foreach (var it in doc.RootElement.GetProperty("items").EnumerateArray())
+                    {
+                        JsonElement n, d;
+                        if (it.TryGetProperty("name", out n) && it.TryGetProperty("desc", out d) && n.ValueKind == JsonValueKind.String && d.ValueKind == JsonValueKind.String) GameText[n.GetString()] = d.GetString();
+                    }
             Console.WriteLine("\n\n################ 0.10 checks (" + Powers.Count + " powerups, " + Items.Count + " items from the probe)");
             int bad = Validate();
             int exact = Drift.Exact(probePath);                 // 0.15.0 C15-02: every name letter for letter on the fixture's game build (DriftCases.cs)

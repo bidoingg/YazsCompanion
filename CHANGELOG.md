@@ -5,6 +5,85 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.4 (2026-10-17) - the items of the game's 10-16 update
+
+A test build. On 2026-10-16 the game was updated without a new version number (still 1.0.2): 47 chest items got new
+numbers or new effects, and 20 item texts now name a partner ("When equipped with ...": 18 pairs). The Companion's chest
+advice was still reading the old texts; it now follows the new ones - and where the game itself does something other
+than a text says, it follows the game. Nothing else changed.
+
+### The cards say today's numbers
+
+- Hit Tracks `+40 speed, slows on you halved` (was +20), Toilet Paper `+30 speed; ...` (was +20), Camping Set `Up to +75%
+  damage while standing still` (was +50%), Fishing Pole `... then +100% damage` (was +50%), Devil's Deal `+30% survivor
+  stats, ...` (was +25%), Broken Glass `+30% damage to slowed enemies` (was +25%), Treasure Finder `Swap at any chest: +3
+  rerolls, banishes` (was +1 reroll and +1 banish).
+- New words where an item does something new: ACME Anvil `+50% damage to slowed or stunned enemies`, Annoying Trumpet and
+  Barrel Roll `An Explosive blast and stun ...`, Suspicious Pendrive `Opening a chest kills basic enemies`, Crowbar `+30%
+  damage below half HP; quick chests`, Heavy Metal `... +10% pickup range`, Rock And Roll `... +10 luck`, Quick Buck `+20%
+  cash; ...`, Zugzwang Hypergaster XD `+5 to low tags, doubles a 6, -2 to high`, A Cookie `+20% healing; a skip heals half
+  max HP`.
+- Unchanged on purpose: Glass of Milk (its cap is now 250 instead of 300, rarely reached), Pocket Watch (it now lasts
+  longer; its words stay true) and Retaliation ("Max 1 stack") keep their advice.
+
+### Rules that follow the new texts
+
+- **Toilet Paper** counts its own +30 speed when it works out the Chemical damage your speed gives (`+40% Chemical damage
+  from your speed` at 150 speed, was +35%).
+- **Zugzwang Hypergaster XD**: a damage type at exactly 6 tags now doubles (to 12) instead of losing 2, so the card can
+  now switch on that type's 10-tag effect (`Turns on the Ice 10-tag effect`).
+- **Walkie Talkie** is no longer halved in a full squad while you hold Power of Friendship (`Not halved: you hold Power of
+  Friendship`), and a Power of Friendship card in a full squad counts the half it gives back (`Keeps your Walkie Talkie
+  whole`). With one or two survivors nothing is halved, so nothing changes there.
+- **Stretcher** no longer costs dodge.
+- **Crowbar** now gives +30% damage while you are below half health; it was rated as an item that only saves time. The old
+  note in knowledge.json ("saves time, nothing else") is gone: an unedited knowledge.json is refreshed at the first start
+  (the old copy is kept as knowledge.json.bak); if you edited yours, delete Crowbar's line under `itemNotes`.
+- **A Cookie held**: a skip now heals half your max HP more (was 500), on a Research Pod too (the update added it there),
+  so the SKIP hint counts the bigger heal (`the skip heals 730 more (A Cookie)` on a skip that heals 292 by itself).
+
+### The new item pairs, each worth what it does
+
+- **The pair weight** (`Pairs with your Barrel Roll`, as the pairs before): Annoying Trumpet and Barrel Roll, Camping Set and
+  Stretcher, Positive Attitude and Retaliation, Pills and MedKit.
+- **An extra +20%** counts less, like the item's own part of the same kind: Quick Buck and Farming Tools (+20% cash, weighed
+  as cash), Teddy Bear and Rock And Roll or Ban Hammer (+20% chance of a free reroll or banish; one of the two is enough, the
+  second adds nothing).
+- **Tag points**: each Icon and its status item (Cinder and Spoil Canister, Pestilence and Plague's Visage, Stillness and
+  Special Snowflake, Tempest and Jacob's Ladder) and Explosive Surprise and The Bomb add +6 to a damage type tag together
+  (both items' tag bonus doubled). They count as tag points, so the card says `Turns on the Fire 10-tag effect` when they
+  take a type to 10.
+- **Bleeding Edge and Slingshot pair with each other.** Their texts name Bloody Axe and Nine Inch Nails, but the game's own
+  data links Bleeding Edge to Slingshot and Slingshot to Bleeding Edge (+6 Slashing and +6 Kinetic with both held), and
+  nothing to Bloody Axe or Nine Inch Nails. The Companion follows the game.
+- **Both effects**: with both items of a conversion pair held, a damage type applies both statuses - as the game's code does
+  it, which differs from two of the texts. Fire with Fire Extinguisher and Warm Ice Cream (Burn and Freeze), Chemical with
+  Biofuel Energy and Battery Leakage (Toxify and Electrify), Kinetic and Slashing with Nail Bat and Expired Sushi. Battery
+  Leakage's Electric still causes Toxify only (its text says both), so `No Electrify while you hold Battery Leakage` still
+  shows with the pair held; Warm Ice Cream's Ice applies both with Biofuel Energy, not with Fire Extinguisher (its text
+  names Fire Extinguisher). A pair is worth as much as your squad deals the damage type it changes; a status item counts
+  every cause it has, and Boiling Pot counts both statuses.
+
+### Items worth more
+
+- Where the update made an item much stronger and no guide rates it, the Companion's own estimate went up (still at most
+  like a guide B item, still marked `(unrated)`): Suspicious Pendrive, ACME Anvil, Annoying Trumpet, Barrel Roll, Power of
+  Friendship, Treasure Finder, Camping Set, Crowbar, Quick Buck, A Cookie, Hit Tracks, Broken Glass, Rock And Roll, MedKit
+  and Mouse Trap. +10 luck counts the same on every item (Ban Hammer's, Teddy Bear's, Rock And Roll's; Power of
+  Friendship's +20 twice that). Items a guide rates keep that rating (Accumulator, Fishing Pole, Frozen Heart, Detective's
+  Pipe, Power Glove, Heavy Metal, Pickup Pick, Mana Potion ...): the guides have not rated the update yet.
+
+### How it was checked, and what was not seen
+
+- Compiled with 0 warnings; bench (full, `--strict`, `--no-data`) all as wanted, with the new cases IB10 (every number on
+  the cards, every stated pair and every changed rule held to the item texts the game draws, from its own data files),
+  IB11 (the changed rules, each new pair at its worth, Teddy Bear's either, the tag points), IB12 (where the game's own
+  code and data differ from the texts: the conversion pairs, Bleeding Edge and Slingshot) and CV8 (both effects); the item
+  table of the four reference squads refreshed for the changes above only; the public API unchanged (`api_v3.txt`). The
+  bench's game data is now the updated build's: its data files and a live probe of it. `[Debug] Probe` now also writes
+  each item's partner as the game links it, and the bench holds the pairs to it.
+- Not seen in the game yet: a chest with one of the changed items, a new pair, a held conversion pair.
+
 ## 0.16.3 (2026-10-12) - the REROLL line placed once, rows that only show a value
 
 The first test build (Beta updates On). Three small fixes from the PC sessions of 10-11 and 10-12; the advice and everything

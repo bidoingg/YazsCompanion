@@ -1,6 +1,10 @@
 // 0.16.0 (C16-02, C16-12): the item book (ItemBook.cs) - a rule per chest item of game 1.0.2: IB1 coverage against the probe's pool,
 // IB2 the rows themselves, IB3 the table in four reference squads against itembook_expected.txt, IB4 the 0.15.0 mis-hits guarded,
-// IB5 the needs, IB6 pairs / clashes / the mixed effect, IB7 the logged chest offers, IB8 the keyword fallback, IB9 the revive need.
+// IB5 the needs, IB6 pairs / clashes / the mixed effect, IB7 the logged chest offers, IB8 the keyword fallback, IB9 the revive need;
+// 0.16.4 (the game's content patch of 2026-10-16): IB10 the book against the texts the game draws (gamedata.json - the probe's asset
+// texts kept their 10-02 words), IB11 the rules that patch changed (Zugzwang, Toilet Paper, Walkie Talkie, Stretcher, Crowbar, the
+// pairs each at its worth, Teddy Bear's either, the tag synergies), IB12 the game's own wiring where it differs from the texts (the
+// conversion partners of the 10-16 code, the assets' tag synergies, TextOnly).
 // RunPure (IB2, IB8a, IB9, IB9b, the [ctx] tail, the sources - no game data) runs in the full bench (from Run) and in --no-data
 // (Verdict.DataFree); Run adds the data cases over the probe's items; WriteExpected is 'ItemBench --write-itembook' (Program.cs).
 // The four reference squads (A SWAT + Engineer 10:00, B Pyro + Medic + Mechanic 05:00, C Huntress + Ghost 05:00, D Tank solo 18:30)
@@ -129,6 +133,7 @@ namespace YazsCompanion.Bench
                     if (it.TryGetProperty("inPool", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.InPool = e.GetBoolean();
                     if (it.TryGetProperty("animal", out e) && (e.ValueKind == JsonValueKind.True || e.ValueKind == JsonValueKind.False)) pi.Animal = e.GetBoolean();
                     if (it.TryGetProperty("stats", out e)) foreach (var t in e.EnumerateArray()) pi.Stats.Add(t.GetString());
+                    ProbeItem.ReadSynergy(it, pi);
                     items.Add(pi);
                 }
             return items;
@@ -154,7 +159,7 @@ namespace YazsCompanion.Bench
         {
             int bad = RunPure();
             _bad = 0;
-            Console.WriteLine("\n=== 0.16.0: the item book over the 1.0.2 probe's items - IB1, IB3 - IB7, IB8b (C16-02, C16-12)");
+            Console.WriteLine("\n=== 0.16.0: the item book over the 1.0.2 probe's items - IB1, IB3 - IB7, IB8b (C16-02, C16-12); 0.16.4: IB10 against the 10-16 texts");
             var byName = new Dictionary<string, ProbeItem>(StringComparer.Ordinal);
             foreach (var it in items) byName[it.Name] = it;
             Coverage(items, byName);
@@ -164,6 +169,8 @@ namespace YazsCompanion.Bench
             PairsClashes(byName);
             Offers(byName);
             Keywords(byName);
+            Texts1016();
+            WiringProbe(items);
             Console.WriteLine("  item book (probe): " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return bad + _bad;
         }
@@ -310,16 +317,20 @@ namespace YazsCompanion.Bench
             Need(b, "Boiling Pot", "the same, Brave Toaster held", c => { c.Tags = Prof(new[] { "Rocket Launcher", "Explosive" }, new[] { "Shotgun", "Kinetic" }); c.Held.Add("Brave Toaster"); }, 1.60, "Needs 3 status effects, the squad has 2");
             Need(b, "Boiling Pot", "Flamethrower + Nitro-Gun", c => c.Tags = Prof(new[] { "Flamethrower", "Fire" }, new[] { "Nitro-Gun", "Ice" }), 1.60, "Needs 3 status effects, the squad has 2");
             Need(b, "Boiling Pot", "the same, Fire Extinguisher held", c => { c.Tags = Prof(new[] { "Flamethrower", "Fire" }, new[] { "Nitro-Gun", "Ice" }); c.Held.Add("Fire Extinguisher"); }, 1.25, "Needs 3 status effects, the squad has 1");
-            Need(b, "Mouse Trap", "as is (the squad owns a taunt)", c => { }, 2.40, "Boosts your taunts");
-            Need(b, "Mouse Trap", "no taunt on the squad", c => c.OwnedTags.Remove("Taunt"), 1.00, "Nothing on the squad taunts");
+            // 0.16.4: Mouse Trap 0.8 -> 0.9 (the 10-16 text: taunts and fears also reach further and last longer)
+            Need(b, "Mouse Trap", "as is (the squad owns a taunt)", c => { }, 2.50, "Boosts your taunts");
+            Need(b, "Mouse Trap", "no taunt on the squad", c => c.OwnedTags.Remove("Taunt"), 1.03, "Nothing on the squad taunts");
             Need(b, "Jailbroken Phone", "no taunt on the squad", c => c.OwnedTags.Remove("Taunt"), 1.23, "Nothing on the squad taunts");
-            Need(b, "MedKit", "health 100%", c => { }, 1.98);
-            Need(b, "MedKit", "health 30%", c => c.Ctx.Health = 0.3, 2.84, null, "you are low on health");
+            // 0.16.4: MedKit 0.6 -> 0.7 (every fourth Healthpak heals fully, every fifth up to the 10-16 patch)
+            Need(b, "MedKit", "health 100%", c => { }, 2.08);
+            Need(b, "MedKit", "health 30%", c => c.Ctx.Health = 0.3, 2.94, null, "you are low on health");
             Need(b, "Nuclear Fusion", "health 30%", c => c.Ctx.Health = 0.3, 2.75, null, "you are low on health");
             Need(b, "Vampire Survivor", "solo Huntress", c => c.Squad = new[] { "Huntress" }, 2.38, "Solo: its healing doubles");
             Need(b, "Vampire Survivor", "Huntress, Ghost, Tank", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.88);
             Need(b, "Walkie Talkie", "Huntress, Ghost, Tank (a full squad)", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.32, "Halved in a full squad");
-            Need(b, "Power of Friendship", "Huntress, Ghost, Tank", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 1.93);
+            // 0.16.4: Power of Friendship 0.4 -> 0.6, its luck weight 0.3 -> 1.0 (15% a survivor and +20 Luck since 10-16; 10% and +10 before;
+            // +10 luck is economy:0.5 on every row)
+            Need(b, "Power of Friendship", "Huntress, Ghost, Tank", c => c.Squad = new[] { "Huntress", "Ghost", "Tank" }, 2.37);
             Need(b, "Combat Knife", "as is (Normal)", c => { }, 1.70, "+30% damage to basic enemies (unrated)");
             Need(b, "Combat Knife", "Boss Rush", c => { c.Ctx.Mode = "BossRush"; c.Ctx.Goal = 600; }, 1.35, "Boss Rush: few basic enemies");
             Need(b, "Sugar Rush", "Boss Rush", c => { c.Ctx.Mode = "BossRush"; c.Ctx.Goal = 600; }, 1.40);
@@ -330,7 +341,7 @@ namespace YazsCompanion.Bench
             Need(b, "Metal Gear", "pickup range 1.5", c => c.Pickup = 1.5, 2.17, "+25% duration from your pickup range");
             Need(b, "Wrench", "pickup range 1.0", c => c.Pickup = 1.0, 1.42, "Ability area from pickup range (unrated)");
             Need(b, "Compass", "speed 150", c => c.MoveSpeed = 150, 1.87, "+12% ability power from your speed");
-            Need(b, "Toilet Paper", "speed 150, no Chemical on the squad", c => c.MoveSpeed = 150, 1.15, "+20 speed; speed adds Chemical damage (unrated)");
+            Need(b, "Toilet Paper", "speed 150, no Chemical on the squad", c => c.MoveSpeed = 150, 1.15, "+30 speed; speed adds Chemical damage (unrated)");
             Need(b, "Devil's Deal", "health 30%, 18:20", c => { c.Ctx.Health = 0.3; c.Ctx.Seconds = 1100; }, 1.85);
             Need(b, "Accumulator", "as is (no Electric points)", c => { }, 4.29);
             Need(b, "Accumulator", "Electric 10 points", c => c.Tags.Points["Electric"] = 10, 4.79, null, "your 10 Electric tags raise its damage");
@@ -361,7 +372,7 @@ namespace YazsCompanion.Bench
             Held(b, "99'th Balloon", "Devil's Deal", 2.25, 1.35, "Clashes with your Devil's Deal");
             Held(b, "Devil's Deal", "T-Pose Doll", 1.94, 1.04, "Clashes with your T-Pose Doll");
             Held(b, "Access Keycard", "Black Box", 2.61, 3.51, "Pairs with your Black Box");
-            Held(b, "Mouse Trap", "Jailbroken Phone", 2.40, 2.40, "Boosts your taunts");      // no clash: Mouse Trap's bonus reads taunted OR feared
+            Held(b, "Mouse Trap", "Jailbroken Phone", 2.50, 2.50, "Boosts your taunts");      // no clash: Mouse Trap's bonus reads taunted OR feared
             Held(b, "Hyperactivity", "Smooth Moves", 2.33, 1.93, "Halved by your Smooth Moves; shots miss");
             Held(b, "Smooth Moves", "Hyperactivity", 2.21, 2.21, "Halves your Hyperactivity; shots miss", "More dodge - suits Ghost");
             // the union: a pair (or a clash) that knowledge.json names as well counts once; the player's own clash works like the book's
@@ -439,6 +450,7 @@ namespace YazsCompanion.Bench
             DeckChest();
             CtxLine();
             Sources();
+            Patch1016();
             Console.WriteLine("  item book (pure): " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
         }
@@ -476,10 +488,18 @@ namespace YazsCompanion.Bench
             Check("IB2", "no untiered Value over 1.0 (B: Q02's default), every tiered Value its knowledge tier", overB.Count == 0 && tierOff.Count == 0,
                 tiered + " tiered, " + (ItemBook.All.Length - tiered) + " untiered; over B: " + Show(overB) + "; tier differs: " + Show(tierOff));
             var names = new HashSet<string>(ItemBook.All.Select(e => e.Name), StringComparer.Ordinal);
-            var refs = ItemBook.Pairs.SelectMany(p => p).Concat(ItemBook.Clashes.SelectMany(p => p)).Concat(ItemBook.Mixed.SelectMany(m => new[] { m.Offered, m.Held })).Concat(ItemBook.Converts.Select(cv => cv[0]));
+            var refs = ItemBook.Pairs.SelectMany(p => p).Concat(ItemBook.Clashes.SelectMany(p => p)).Concat(ItemBook.Mixed.SelectMany(m => new[] { m.Offered, m.Held }))
+                .Concat(ItemBook.Converts.SelectMany(cv => cv.Length > 3 ? new[] { cv[0], cv[3] } : new[] { cv[0] })).Concat(ItemBook.EitherPairs.SelectMany(p => p))
+                .Concat(ItemBook.PairWorths.SelectMany(p => new[] { p[0], p[1] })).Concat(ItemBook.TagPairs.SelectMany(t => new[] { t[0], t[2] })).Concat(ItemBook.TextOnly.SelectMany(p => p));
             var stray = refs.Where(n => !names.Contains(n)).Distinct().ToList();
-            Check("IB2", "every name in Pairs / Clashes / Mixed / Converts is a book row", stray.Count == 0,
-                ItemBook.Pairs.Length + " pairs, " + ItemBook.Clashes.Length + " clashes, " + ItemBook.Mixed.Length + " mixed, " + ItemBook.Converts.Length + " conversions; stray: " + Show(stray));
+            // 0.16.4: an EitherPairs row's pairs are Pairs rows too (ItemRules.Pairs pays them once), and so is every PairWorths row (it only
+            // weighs a pair of Pairs)
+            Func<string, string, bool> inPairs = (a, o) => ItemBook.Pairs.Any(p => (p[0] == a && p[1] == o) || (p[1] == a && p[0] == o));
+            var eitherOff = ItemBook.EitherPairs.SelectMany(e => e.Skip(1).Where(o => !inPairs(e[0], o)).Select(o => e[0] + " + " + o))
+                .Concat(ItemBook.PairWorths.Where(w => !inPairs(w[0], w[1])).Select(w => w[0] + " + " + w[1])).ToList();
+            Check("IB2", "every name in Pairs / Clashes / Mixed / Converts (and their partners) / EitherPairs / PairWorths / TagPairs / TextOnly is a book row; an either row's and a PairWorths row's pairs are in Pairs", stray.Count == 0 && eitherOff.Count == 0,
+                ItemBook.Pairs.Length + " pairs, " + ItemBook.Clashes.Length + " clashes, " + ItemBook.Mixed.Length + " mixed, " + ItemBook.Converts.Length + " conversions, " + ItemBook.EitherPairs.Length + " either, "
+                + ItemBook.PairWorths.Length + " weighed, " + ItemBook.TagPairs.Length + " tag synergies, " + ItemBook.TextOnly.Length + " text only; stray: " + Show(stray) + "; not in Pairs: " + Show(eitherOff));
             var dup = ItemBook.All.GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
             Check("IB2", "one row per name", dup.Count == 0, Show(dup));
             var revive = ItemBook.All.Where(e => ItemBook.Revive(e.Name)).Select(e => e.Name).ToList();
@@ -597,6 +617,245 @@ namespace YazsCompanion.Bench
             Check("IB9", "[ctx] ends '..., health 55%, survive quest)' at health 0.55 with a followed survive quest", hurt.EndsWith(" level-ups to come, health 55%, survive quest)", StringComparison.Ordinal), hurt);
             Check("IB9", "[ctx] at full health and no such quest ends as 0.15.0 wrote it ('... level-ups to come)')", full.EndsWith(" level-ups to come)", StringComparison.Ordinal) && !full.Contains("health ") && !full.Contains("survive quest"), full);
             Check("IB9", "[ctx] floors the health (0.599 reads 59%), the quest alone adds ', survive quest'", edge.EndsWith(", health 59%)", StringComparison.Ordinal) && quest.EndsWith(" level-ups to come, survive quest)", StringComparison.Ordinal), edge + " | " + quest);
+        }
+
+        // ---------------------------------------------------------------- IB11 (0.16.4): the rules the 10-16 patch changed (pure)
+        /// <summary>The pairs of the 10-16 texts (the second block of ItemBook.Pairs, from Annoying Trumpet + Barrel Roll on).</summary>
+        static List<string[]> NewPairs()
+        {
+            int from = Array.FindIndex(ItemBook.Pairs, p => p[0] == "Annoying Trumpet" && p[1] == "Barrel Roll");
+            return from < 0 ? new List<string[]>() : ItemBook.Pairs.Skip(from).ToList();
+        }
+
+        static void Patch1016()
+        {
+            // Zugzwang Hypergaster XD: +5 below 6, doubled at exactly 6, -2 above (the 10-16 text; -2 at 6 up to then)
+            Check("IB11", "Zugzwang's grant: +5 at 0 and 5, +6 at exactly 6 (doubled), -2 at 7 and 20",
+                ItemRules.ZugzwangGrant(0) == 5 && ItemRules.ZugzwangGrant(5) == 5 && ItemRules.ZugzwangGrant(6) == 6 && ItemRules.ZugzwangGrant(7) == -2 && ItemRules.ZugzwangGrant(20) == -2);
+            var zb = Pure("Zugzwang Hypergaster XD", Squad(1));
+            Check("IB11", "Zugzwang in squad B (Fire 12, Ice 6, Chemical 2): the Ice 6 doubles and reaches the 10-tag effect - 'Turns on the Ice 10-tag effect' (0.16.3: Ice -2, 1.00)",
+                zb.Why.Contains("+6 Ice reaches the special (10)") && zb.Line == "Turns on the Ice 10-tag effect", F(zb.Score) + " '" + zb.Line + "' | " + string.Join("; ", zb.Why));
+            // Toilet Paper: its own +30 speed counts (+20 up to the patch): at 150 a squad dealing Chemical gets (150 + 30 - 100) / 2 = +40%
+            var tp = Squad(1); tp.MoveSpeed = 150; var tpc = Pure("Toilet Paper", tp);
+            Check("IB11", "Toilet Paper at speed 150, squad B (it deals Chemical): '+40% Chemical damage from your speed' ((150 + 30 - 100) / 2; +35% with the old +20), ToiletPaperSpeed 30",
+                ItemRules.ToiletPaperSpeed == 30 && tpc.Line == "+40% Chemical damage from your speed", F(tpc.Score) + " '" + tpc.Line + "'");
+            // Walkie Talkie in a full squad: halved, but not while Power of Friendship is held (10-16) - the pair's only effect, so no pair
+            // weight (review M2): the Walkie Talkie card is whole, a Power of Friendship card gets the half it gives back; with 1 or 2
+            // survivors nothing is halved and nothing moves
+            Func<string, string[], string[], Cell> sq = (name, squad, held) => { var c = Squad(2); c.Squad = squad; foreach (var x in held) c.Held.Add(x); return Pure(name, c); };
+            string[] full = { "Huntress", "Ghost", "Tank" }, duo = { "Huntress", "Ghost" }, none = new string[0];
+            var w0 = sq("Walkie Talkie", full, none); var w1 = sq("Walkie Talkie", full, new[] { "Power of Friendship" });
+            var wd0 = sq("Walkie Talkie", duo, none); var wd1 = sq("Walkie Talkie", duo, new[] { "Power of Friendship" });
+            Check("IB11", "Walkie Talkie in a full squad: 'Halved in a full squad' " + F(w0.Score) + "; with Power of Friendship held " + F(w1.Score) + " 'Not halved: you hold Power of Friendship' (+0.20, the halving back - no pair weight); two survivors " + F(wd0.Score) + " either way",
+                w0.Line == "Halved in a full squad" && w1.Line == "Not halved: you hold Power of Friendship" && !w1.Why.Any(w => w.StartsWith("pairs with", StringComparison.Ordinal)) && Near(w1.Score - w0.Score, 0.2)
+                && Near(wd1.Score, wd0.Score) && wd1.Line == wd0.Line && ItemRules.WalkieKeeps == "Power of Friendship" && ItemRules.WalkieWhole == 0.2,
+                F(w0.Score) + " '" + w0.Line + "' -> " + F(w1.Score) + " '" + w1.Line + "'; two survivors " + F(wd0.Score) + " '" + wd0.Line + "' -> " + F(wd1.Score) + " '" + wd1.Line + "'");
+            var f0 = sq("Power of Friendship", full, none); var f1 = sq("Power of Friendship", full, new[] { "Walkie Talkie" });
+            var fd0 = sq("Power of Friendship", duo, none); var fd1 = sq("Power of Friendship", duo, new[] { "Walkie Talkie" });
+            Check("IB11", "Power of Friendship with Walkie Talkie held: a full squad " + F(f0.Score) + " -> " + F(f1.Score) + " 'Keeps your Walkie Talkie whole' (+0.20); two survivors " + F(fd0.Score) + " -> " + F(fd1.Score) + " (nothing is halved there)",
+                Near(f1.Score - f0.Score, 0.2) && f1.Line == "Keeps your Walkie Talkie whole" && f1.Why.Contains("keeps your Walkie Talkie whole in a full squad") && Near(fd1.Score, fd0.Score) && fd1.Line == fd0.Line,
+                "'" + f1.Line + "' | two survivors '" + fd1.Line + "'");
+            // Stretcher: the -1% dodge a stack is gone (10-16): no cost, in every squad
+            var st = ItemBook.Of("Stretcher"); var stHurt = new List<string>();
+            for (int i = 0; i < 4; i++) { var cell = Pure("Stretcher", Squad(i)); stHurt.AddRange(cell.Why.Where(w => w.StartsWith("costs ", StringComparison.Ordinal) || w.StartsWith("hurts ", StringComparison.Ordinal) || w.Contains("dodge"))); }
+            Check("IB11", "Stretcher costs nothing (its -1% dodge a stack is gone): no cost on its row, no 'costs' / 'hurts' / dodge reason in the four squads", st != null && st.Costs == null && stHurt.Count == 0, Show(stHurt));
+            // Crowbar: +30% damage below half HP (10-16) - an estimate, no guide note any more
+            var cb = ItemBook.Of("Crowbar"); var cbA = Pure("Crowbar", Squad(0));
+            Check("IB11", "Crowbar: +30% damage below half HP - its row 0.3 with weapons and abilities, the guide note 'saves time, nothing else' gone from knowledge.json: '" + cbA.Line + "'",
+                cb != null && Math.Abs(cb.Value - 0.3) < 1e-9 && cb.Gains == "weapons:0.5, abilities:0.5" && !K.ItemNote.ContainsKey("Crowbar") && cbA.Line == "+30% damage below half HP; quick chests (unrated)" && cbA.Score > 1.0, F(cbA.Score) + " '" + cbA.Line + "'");
+            // the pairs of the 10-16 texts, each worth what it does (review M2 - M4). The one pair weight both ways in squad C for the four
+            // that double an item or add an effect of its size ('Pairs with your ...')
+            Func<string[], bool> weighed = p => ItemBook.PairWorths.Any(w => (w[0] == p[0] && w[1] == p[1]) || (w[0] == p[1] && w[1] == p[0]));
+            var whole = NewPairs().Where(p => !weighed(p)).ToList(); var off = new List<string>();
+            foreach (var p in whole)
+                foreach (var dir in new[] { new[] { p[0], p[1] }, new[] { p[1], p[0] } })
+                {
+                    var a = Pure(dir[0], Squad(2)); var c = Squad(2); c.Held.Add(dir[1]); var h = Pure(dir[0], c);
+                    if (!Near(h.Score - a.Score, ItemRules.PairWeight) || h.Line != Wording.Cap("pairs with " + ItemRules.Your(dir[1]))) off.Add(dir[0] + " with " + dir[1] + ": " + F(a.Score) + " -> " + F(h.Score) + " '" + h.Line + "'");
+                }
+            Check("IB11", "the " + whole.Count + " pairs of the 10-16 texts at the one pair weight (" + string.Join(", ", whole.Select(p => p[0] + " + " + p[1])) + "): each +0.90 both ways in squad C, the card 'Pairs with your <item>'",
+                whole.Count == 4 && off.Count == 0, Show(off));
+            // ... an extra +20% (ItemBook.PairWorths): its worth on the item's own clock, under the item's own row (Quick Buck 0.3, Teddy Bear 0.6)
+            var sc = Squad(2); double cashW = Math.Min(1.2, 2 * sc.Ctx.Cash), econW = Math.Max(0.3, Math.Min(1.15, 0.3 + 0.7 * sc.Ctx.Economy)); var small = new List<string>();
+            foreach (var pw in ItemBook.PairWorths)
+                foreach (var dir in new[] { new[] { pw[0], pw[1] }, new[] { pw[1], pw[0] } })
+                {
+                    double want = double.Parse(pw[2], CultureInfo.InvariantCulture) * (pw[3] == "cash" ? cashW : econW);
+                    var a = Pure(dir[0], Squad(2)); var c = Squad(2); c.Held.Add(dir[1]); var h = Pure(dir[0], c);
+                    if (!Near(h.Score - a.Score, want) || h.Line != Wording.Cap("pairs with " + ItemRules.Your(dir[1]))) small.Add(dir[0] + " with " + dir[1] + ": " + F(a.Score) + " -> " + F(h.Score) + " (want +" + F(want) + ") '" + h.Line + "'");
+                }
+            Check("IB11", "the extra +20% pairs (Quick Buck + Farming Tools: 0.2 on the cash clock, x" + F(cashW) + " in squad C; Teddy Bear + Rock And Roll / Ban Hammer: 0.24 = 0.6 x 20 / 50 on the economy clock, x" + F(econW) + "), both ways, each under its item's own Value",
+                ItemBook.PairWorths.Length == 3 && small.Count == 0 && ItemBook.PairWorths.All(w => double.Parse(w[2], CultureInfo.InvariantCulture) < ItemBook.Of(w[0]).Value), Show(small));
+            // Teddy Bear "When equipped with either Rock And Roll or Ban Hammer": one of them is enough, the second adds nothing
+            Func<string, string[], double> with = (name, held) => { var c = Squad(2); foreach (var x in held) c.Held.Add(x); return Pure(name, c).Score; };
+            double t0 = with("Teddy Bear", new string[0]), t1 = with("Teddy Bear", new[] { "Rock And Roll" }), t2 = with("Teddy Bear", new[] { "Rock And Roll", "Ban Hammer" });
+            double b0 = with("Ban Hammer", new string[0]), b1 = with("Ban Hammer", new[] { "Teddy Bear" }), b2 = with("Ban Hammer", new[] { "Teddy Bear", "Rock And Roll" });
+            Check("IB11", "Teddy Bear's either: Teddy Bear " + F(t0) + " -> " + F(t1) + " with Rock And Roll, " + F(t2) + " with Ban Hammer as well (once); Ban Hammer " + F(b0) + " -> " + F(b1) + " with Teddy Bear, " + F(b2) + " while Rock And Roll already sets it off",
+                Near(t1 - t0, 0.24 * econW) && Near(t2, t1) && Near(b1 - b0, 0.24 * econW) && Near(b2, b0));
+            // the tag synergies (ItemBook.TagPairs, review H2 / M4): tag points, no pair weight - each item with its partner held names the
+            // partner and the points ('pairs with your Spoil Canister: +6 Fire'), and the partner of a held item switches that one's on
+            var tagOff = new List<string>();
+            foreach (var syn in ItemBook.TagPairs)
+                foreach (var dir in new[] { new[] { syn[0], syn[2] }, new[] { syn[2], syn[0] } })
+                {
+                    var c = Squad(2); c.Held.Add(dir[1]); var h = Pure(dir[0], c);
+                    string want = "pairs with " + ItemRules.Your(dir[1]) + ": +" + syn[3] + " " + syn[1];
+                    if (!h.Why.Contains(want) || h.Why.Contains("pairs with " + ItemRules.Your(dir[1]))) tagOff.Add(dir[0] + " with " + dir[1] + ": " + string.Join("; ", h.Why));
+                }
+            Check("IB11", "the " + ItemBook.TagPairs.Length + " tag synergies both ways in squad C: 'pairs with your <partner>: +6 <type>' on the card, never the pair weight", ItemBook.TagPairs.Length == 7 && tagOff.Count == 0, Show(tagOff));
+            // the review's example: Spoil Canister ('+4 to Fire damage type tag') at Fire 3 with Icon of Cinder held grants +4 and +6 = +10 and
+            // turns on the Fire 10-tag effect; without the Icon +4 (7: not yet); Icon of Cinder at Fire 1 with Spoil Canister held: +2 and +6 = +8
+            Func<string, string, string, int, Cell> spoil = (name, desc, held, fire) => { var c = Squad(1); c.Tags.Points["Fire"] = fire; if (held != null) c.Held.Add(held); return Eval(name, desc, null, false, c); };
+            var s0 = spoil("Spoil Canister", "Burn status lasts twice as long. +4 to Fire damage type tag.", null, 3);
+            var s1 = spoil("Spoil Canister", "Burn status lasts twice as long. +4 to Fire damage type tag.", "Icon of Cinder", 3);
+            var i1 = spoil("Icon of Cinder", "Burning enemies have a chance to explode. +2 to Fire damage type tag.", "Spoil Canister", 1);
+            Check("IB11", "Spoil Canister at Fire 3: alone +4 (no special, " + F(s0.Score) + "); with Icon of Cinder held +10 Fire reaches the special - 'Turns on the Fire 10-tag effect' " + F(s1.Score) + "; Icon of Cinder at Fire 1 with Spoil Canister held: +8 (+2 and +6), under the special",
+                !s0.Why.Any(w => w.Contains("reaches the special")) && s1.Why.Contains("+10 Fire reaches the special (10)") && s1.Line == "Turns on the Fire 10-tag effect" && s1.Why.Contains("pairs with your Icon of Cinder: +6 Fire")
+                && i1.Why.Contains("pairs with your Spoil Canister: +6 Fire") && !i1.Why.Any(w => w.Contains("reaches the special")) && i1.Line == "Pairs with your Spoil Canister",
+                string.Join("; ", s1.Why) + " | " + string.Join("; ", i1.Why));
+            // Bleeding Edge and Slingshot: each other's synergy (the game data) - with Slingshot held a Bleeding Edge card gains +6 Slashing
+            // (its own) and +6 Kinetic (Slingshot's, now on); Bloody Axe held (its text's partner) moves nothing
+            var be = Squad(2); be.Held.Add("Slingshot"); var beS = Pure("Bleeding Edge", be); var beA = Squad(2); beA.Held.Add("Bloody Axe"); var beB = Pure("Bleeding Edge", beA); var be0 = Pure("Bleeding Edge", Squad(2));
+            var slA = Squad(2); slA.Held.Add("Nine Inch Nails"); var sl0 = Pure("Slingshot", Squad(2)); var slN = Pure("Slingshot", slA);
+            Check("IB11", "Bleeding Edge with Slingshot held (squad C, Slashing 9): '+6 Slashing' and '+6 Kinetic', Slashing reaches the special - " + F(be0.Score) + " -> " + F(beS.Score) + " '" + beS.Line + "'; with Bloody Axe held " + F(beB.Score) + ", Slingshot with Nine Inch Nails held " + F(slN.Score) + " (the texts' partners: nothing)",
+                beS.Why.Contains("pairs with your Slingshot: +6 Slashing") && beS.Why.Contains("pairs with your Slingshot: +6 Kinetic") && beS.Why.Contains("+6 Slashing reaches the special (10)")
+                && Near(beB.Score, be0.Score) && beB.Line == be0.Line && Near(slN.Score, sl0.Score) && slN.Line == sl0.Line, string.Join("; ", beS.Why));
+            GameWiring();
+        }
+
+        // ---------------------------------------------------------------- IB12 (0.16.4, review H1 / H2): the game's own wiring (pure)
+        /// <summary>The pairs whose effect the 10-16 game data and code define apart from the texts: ItemBook.Converts' fourth column (the six
+        /// status application sites of the 10-16 GameAssembly), ItemBook.TagPairs (the assets' synergyItem / synergyTagBonus) and TextOnly -
+        /// pinned here so a later game build that changes either side is a bench change, not a silent one (IB10 holds the texts).</summary>
+        static void GameWiring()
+        {
+            Func<string, string> partner = n => { var cv = ItemBook.Converts.FirstOrDefault(r => r[0] == n); return cv == null ? "?" : cv.Length > 3 ? cv[3] : "none"; };
+            string conv = string.Join(", ", ItemBook.Converts.Select(cv => cv[0] + " -> " + partner(cv[0])));
+            Check("IB12", "Converts' fourth column is the 10-16 code's partner: " + conv + " (ApplyFrozen tests Biofuel Energy; ApplyElectrified no partner)",
+                partner("Fire Extinguisher") == "Warm Ice Cream" && partner("Warm Ice Cream") == "Biofuel Energy" && partner("Battery Leakage") == "none"
+                && partner("Biofuel Energy") == "Battery Leakage" && partner("Nail Bat") == "Expired Sushi" && partner("Expired Sushi") == "Nail Bat" && ItemBook.Converts.Length == 6);
+            Func<string, string[], string> of = (type, names) => string.Join(",", HeldRules.StatusesOfType(type, HeldRules.ConversionsHeld(null, new HashSet<string>(names))));
+            Check("IB12", "what the code applies: Electric with Battery Leakage + Biofuel Energy " + of("Electric", new[] { "Battery Leakage", "Biofuel Energy" }) + ", Chemical " + of("Chemical", new[] { "Battery Leakage", "Biofuel Energy" })
+                + "; Ice with Warm Ice Cream + Fire Extinguisher " + of("Ice", new[] { "Warm Ice Cream", "Fire Extinguisher" }) + ", + Biofuel Energy " + of("Ice", new[] { "Warm Ice Cream", "Biofuel Energy" }) + "; Fire with both " + of("Fire", new[] { "Warm Ice Cream", "Fire Extinguisher" }),
+                of("Electric", new[] { "Battery Leakage", "Biofuel Energy" }) == "Toxify" && of("Chemical", new[] { "Battery Leakage", "Biofuel Energy" }) == "Toxify,Electrify"
+                && of("Ice", new[] { "Warm Ice Cream", "Fire Extinguisher" }) == "Burn" && of("Ice", new[] { "Warm Ice Cream", "Biofuel Energy" }) == "Freeze,Burn" && of("Fire", new[] { "Warm Ice Cream", "Fire Extinguisher" }) == "Burn,Freeze");
+            string tags = string.Join(", ", ItemBook.TagPairs.Select(t => t[0] + " (" + t[1] + ") <- " + t[2] + " +" + t[3]));
+            Check("IB12", "TagPairs are the 10-16 assets' synergies, +6 each, Bleeding Edge and Slingshot each other's: " + tags,
+                ItemBook.TagPairs.Length == 7 && ItemBook.TagPairs.All(t => t[3] == "6" && TagProfile.Names.Contains(t[1]) && ItemBook.Of(t[0]) != null && ItemBook.Of(t[2]) != null)
+                && ItemBook.TagPairs.Any(t => t[0] == "Bleeding Edge" && t[1] == "Slashing" && t[2] == "Slingshot") && ItemBook.TagPairs.Any(t => t[0] == "Slingshot" && t[1] == "Kinetic" && t[2] == "Bleeding Edge")
+                && !ItemBook.TagPairs.Any(t => t[2] == "Bloody Axe" || t[2] == "Nine Inch Nails"));
+            // what a text states that the game does not do pays nothing anywhere: not a pair, not a synergy, not its item's conversion partner
+            Func<string, string, bool> paid = (a, b2) => ItemBook.Pairs.Any(p => (p[0] == a && p[1] == b2) || (p[0] == b2 && p[1] == a))
+                || ItemBook.TagPairs.Any(t => t[0] == a && t[2] == b2) || ItemBook.Converts.Any(cv => cv[0] == a && cv.Length > 3 && cv[3] == b2);
+            var paidText = ItemBook.TextOnly.Where(t => paid(t[0], t[1])).Select(t => t[0] + " + " + t[1]).ToList();
+            Check("IB12", "TextOnly (" + string.Join(", ", ItemBook.TextOnly.Select(t => t[0] + " + " + t[1])) + "): none is paid as a pair, a synergy or its item's conversion partner; no ItemBook.Pairs row is a tag synergy or a conversion pair",
+                ItemBook.TextOnly.Length == 4 && paidText.Count == 0
+                && !ItemBook.Pairs.Any(p => ItemBook.TagPairs.Any(t => (t[0] == p[0] && t[2] == p[1]) || (t[0] == p[1] && t[2] == p[0])) || (ItemBook.Converts.Any(cv => cv[0] == p[0]) && ItemBook.Converts.Any(cv => cv[0] == p[1]))),
+                Show(paidText));
+        }
+
+        /// <summary>IB12 over the probe (review L7): the game's own synergyItem of every item the [Debug] Probe dumps it for (0.16.4 on) - each
+        /// TagPairs row is the probe's (partner, points, type), and every wiring between two book items is a pair the book knows (Pairs,
+        /// TagPairs, the mixed effect, knowledge.json's, the Walkie Talkie rule). A probe dumped before 0.16.4 has no such field: said, not
+        /// judged (re-run the probe after a game update).</summary>
+        static void WiringProbe(List<ProbeItem> items)
+        {
+            var wired = items.Where(i => i.Synergy != null).ToList();
+            if (wired.Count == 0) { Console.WriteLine("  IB12 (probe): no item carries a 'synergy' field (a probe dumped before 0.16.4) - re-run [Debug] Probe to hold TagPairs and the pairs to the game's own wiring"); return; }
+            // the points and type where the asset holds them (the Icons, Bleeding Edge, Slingshot); Explosive Surprise's 6.0 is in its code
+            var tagOff = ItemBook.TagPairs.Where(t => !wired.Any(i => i.Name == t[0] && i.Synergy == t[2]
+                && (i.SynergyType == null || (i.SynergyTags.ToString(CultureInfo.InvariantCulture) == t[3] && i.SynergyType == t[1])))).Select(t => t[0] + " -> " + t[2]).ToList();
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            Action<string, string> know = (a, b2) => { known.Add(a + "|" + b2); known.Add(b2 + "|" + a); };
+            foreach (var p in ItemBook.Pairs) know(p[0], p[1]);
+            foreach (var t in ItemBook.TagPairs) know(t[0], t[2]);
+            foreach (var m in ItemBook.Mixed) know(m.Offered, m.Held);
+            foreach (var kp in K.ItemPairs) know(kp.Key, kp.Value);
+            know("Walkie Talkie", ItemRules.WalkieKeeps);
+            var unknown = wired.Where(i => ItemBook.Of(i.Name) != null && ItemBook.Of(i.Synergy) != null && !known.Contains(i.Name + "|" + i.Synergy)).Select(i => i.Name + " -> " + i.Synergy).Distinct().ToList();
+            Check("IB12", "the probe's synergyItem (" + wired.Select(i => i.Name).Distinct().Count() + " items): every TagPairs row is the game's, every wiring between two book items a pair the book knows",
+                tagOff.Count == 0 && unknown.Count == 0, "TagPairs not the probe's: " + Show(tagOff) + "; wired, not known: " + Show(unknown));
+        }
+
+        // ---------------------------------------------------------------- IB10 (0.16.4): the book against the texts the game draws
+        // numbers of the book's words that are worked out from the text, not quoted: a third status, 5 stacks of +15%, 25 stacks of +2%
+        static readonly Dictionary<string, string> Worked = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { "Boiling Pot", "3" }, { "Camping Set", "75" }, { "T-Pose Doll", "50" },
+        };
+        static readonly System.Text.RegularExpressions.Regex Number = new System.Text.RegularExpressions.Regex(@"\d+(?:[.,]\d+)?");
+        static readonly System.Text.RegularExpressions.Regex Equipped = new System.Text.RegularExpressions.Regex(@"When equipped with (?:either )?(.+?)(?: or (.+?))?:");
+
+        static void Texts1016()
+        {
+            var texts = Checks.GameText;
+            if (texts.Count == 0) { Check("IB10", "the texts the game draws (gamedata.json) are loaded", false, "none"); return; }
+            Func<string, string> plain = t => System.Text.RegularExpressions.Regex.Replace(ItemRules.RichTag.Replace(t ?? "", ""), @"\s+", " ");
+            // every number of a row's words (and its short form) stands in the item's text
+            var off = new List<string>(); int quoted = 0;
+            foreach (var e in ItemBook.All)
+            {
+                string t; if (!texts.TryGetValue(e.Name, out t)) { off.Add(e.Name + ": no text"); continue; }
+                var have = new HashSet<string>(Number.Matches(t).Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value.Replace(",", "")));
+                foreach (var w in new[] { e.Say, e.Brief }.Where(x => x != null))
+                    foreach (System.Text.RegularExpressions.Match m in Number.Matches(w))
+                    {
+                        string n = m.Value.Replace(",", ""); string worked; quoted++;
+                        if (!have.Contains(n) && !(Worked.TryGetValue(e.Name, out worked) && worked == n)) off.Add(e.Name + " '" + w + "': " + n + " not in '" + plain(t) + "'");
+                    }
+            }
+            Check("IB10", "every number the item book's words quote (" + quoted + ") is in the item's 10-16 text (gamedata.json: the I2 text the game draws), or worked out from it (Boiling Pot's third, Camping Set's 5 x 15%, T-Pose Doll's 25 x 2%)",
+                off.Count == 0 && quoted > 20, Show(off));
+            // every 'When equipped with' of the texts is a pair, a mixed effect, knowledge.json's pair, a tag synergy, a conversion partner,
+            // the Walkie Talkie rule - or a text the game does not follow (ItemBook.TextOnly)
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            Action<string, string> know = (a, b2) => { known.Add(a + "|" + b2); known.Add(b2 + "|" + a); };
+            foreach (var p in ItemBook.Pairs) know(p[0], p[1]);
+            foreach (var m in ItemBook.Mixed) know(m.Offered, m.Held);
+            foreach (var kp in K.ItemPairs) know(kp.Key, kp.Value);
+            foreach (var tp in ItemBook.TagPairs) know(tp[0], tp[2]);
+            foreach (var cv in ItemBook.Converts.Where(cv => cv.Length > 3)) know(cv[0], cv[3]);
+            foreach (var t in ItemBook.TextOnly) know(t[0], t[1]);
+            know("Walkie Talkie", ItemRules.WalkieKeeps);
+            var unknown = new List<string>(); int stated = 0;
+            foreach (var kv in texts)
+                foreach (System.Text.RegularExpressions.Match m in Equipped.Matches(plain(kv.Value)))
+                    foreach (var other in new[] { m.Groups[1].Value, m.Groups[2].Value }.Where(x => x.Length > 0))
+                    { stated++; if (!known.Contains(kv.Key + "|" + other.Trim())) unknown.Add(kv.Key + " + " + other.Trim()); }
+            Check("IB10", "every 'When equipped with' pair of the 10-16 texts (" + stated + ") is a book pair, the mixed effect, a knowledge.json pair, a tag synergy, a conversion partner, the Walkie Talkie rule or a TextOnly row", unknown.Count == 0 && stated >= 25, Show(unknown));
+            // ... every pair the book pays for the 10-16 patch (the 0.16.4 block of Pairs, TagPairs, the conversion partners) is stated by one of
+            // its two texts - but the two the game's own data and code wire where no text says so: Bleeding Edge + Slingshot (their
+            // synergyItem), Warm Ice Cream + Biofuel Energy (ApplyFrozen). A text that comes to state them, or a third, shows here
+            Func<string, string, bool> says = (a, b2) => texts.ContainsKey(a) && plain(texts[a]).Contains("equipped with") && plain(texts[a]).Contains(b2);
+            var paidPairs = NewPairs().Select(p => new[] { p[0], p[1] }).Concat(ItemBook.TagPairs.Select(t => new[] { t[0], t[2] })).Concat(ItemBook.Converts.Where(cv => cv.Length > 3).Select(cv => new[] { cv[0], cv[3] }));
+            var unstated = paidPairs.Where(p => !says(p[0], p[1]) && !says(p[1], p[0])).Select(p => string.CompareOrdinal(p[0], p[1]) <= 0 ? p[0] + " + " + p[1] : p[1] + " + " + p[0]).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList();
+            Check("IB10", "every pair the book pays for the 10-16 patch is stated by one of its two texts, but the two the game wires without a text (Bleeding Edge + Slingshot, Biofuel Energy + Warm Ice Cream): " + Show(unstated),
+                unstated.SequenceEqual(new[] { "Biofuel Energy + Warm Ice Cream", "Bleeding Edge + Slingshot" }));
+            // the rules' numbers against the texts
+            Func<string, string> tx = n => texts.ContainsKey(n) ? plain(texts[n]) : "";
+            var rules = new List<Tuple<string, bool>>
+            {
+                Tuple.Create("Toilet Paper '+" + ItemRules.ToiletPaperSpeed + " Movement Speed'", tx("Toilet Paper").Contains("+" + ItemRules.ToiletPaperSpeed + " Movement Speed")),
+                Tuple.Create("Zugzwang 'Double points if at 6'", tx("Zugzwang Hypergaster XD").Contains("Double points if at 6") && tx("Zugzwang Hypergaster XD").Contains("Lose -2 points if above 6")),
+                Tuple.Create("Walkie Talkie 'When equipped with " + ItemRules.WalkieKeeps + ": The total bonus is no longer reduced'", tx("Walkie Talkie").Contains("When equipped with " + ItemRules.WalkieKeeps + ": The total bonus is no longer reduced")),
+                Tuple.Create("Stretcher without 'Dodge'", tx("Stretcher").Length > 0 && tx("Stretcher").IndexOf("Dodge", StringComparison.OrdinalIgnoreCase) < 0),
+                Tuple.Create("A Cookie '" + (HeldRules.CookieShare * 100) + "% of total Health Points'", tx("A Cookie").Contains((HeldRules.CookieShare * 100).ToString(CultureInfo.InvariantCulture) + "% of total Health Points")),
+                Tuple.Create("Crowbar '+30% damage when below half life points'", tx("Crowbar").Contains("+30% damage when below half life points")),
+                Tuple.Create("Quick Buck 'When equipped with Farming Tools: Gain additional +20% Cash modifier'", tx("Quick Buck").Contains("When equipped with Farming Tools: Gain additional +20% Cash modifier")),
+                Tuple.Create("Teddy Bear 'either Rock And Roll or Ban Hammer: Chance is further increased by +20%'", tx("Teddy Bear").Contains("either Rock And Roll or Ban Hammer: Chance is further increased by +20%")),
+            };
+            // a conversion row's partner where its text names that partner; TextOnly where the code differs (the text names another, or none)
+            foreach (var cv in ItemBook.Converts)
+            {
+                var only = ItemBook.TextOnly.FirstOrDefault(t => t[0] == cv[0]);
+                string named = only != null ? only[1] : cv.Length > 3 ? cv[3] : null;
+                rules.Add(Tuple.Create(cv[0] + " 'When equipped with " + named + ": " + cv[1] + " damage applies both effects'" + (only != null ? " (TextOnly: the code " + (cv.Length > 3 ? "tests " + cv[3] : "tests none") + ")" : ""),
+                    named != null && tx(cv[0]).Contains("When equipped with " + named + ": " + cv[1] + " damage applies both effects")));
+            }
+            foreach (var t in ItemBook.TextOnly.Where(t => !ItemBook.Converts.Any(cv => cv[0] == t[0])))
+                rules.Add(Tuple.Create(t[0] + " 'When equipped with " + t[1] + "' (TextOnly: the data names another)", tx(t[0]).Contains("When equipped with " + t[1] + ":")));
+            var wrong = rules.Where(r => !r.Item2).Select(r => r.Item1).ToList();
+            Check("IB10", "the numbers of the changed rules stand in the 10-16 texts: " + string.Join("; ", rules.Select(r => r.Item1)), wrong.Count == 0, Show(wrong));
         }
 
         // ---------------------------------------------------------------- the sources

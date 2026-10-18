@@ -14,19 +14,26 @@
 //            a level-up per 2 minutes since the last join (rescue cards, Liberate, the PLAN SOS row, the rescue reroll hint).
 //   C16-01d  Hijacked Signal held: Liberate gives two level-ups (the card, the PLAN SOS row); a chest item pays the skip's cash too.
 //   C16-01e  Life Savings held: granted cash heals instead - the skip's and Liberate's cash read as a heal, cash items are weighed as healing.
-//   C16-01f  A Cookie (a skip heals 500 more) and Skip Rope (a skip pays points toward a Military Training and XP) raise the skip's worth.
+//   C16-01f  A Cookie (a skip heals half the max HP more; 500 up to the game's 10-16 patch) and Skip Rope (a skip pays points toward a
+//            Military Training and XP) raise the skip's worth.
 //   C16-01c  Wooden Stick / Empty Chest held: an item that fills an empty slot costs 10% XP (1.6 x economy) / 10% weapon and ability
 //            damage (2.0) - the card's net decides AVOID and SKIP, its merit (before the cost) decides REROLL (ScreenCall).
 //   C16-01i  Last Unicorn counts the animal items held (the game's own isAnimalItem flag, itself included): +0.9 per animal item held (two at
 //            most) on its card, and an animal item pairs with a held Last Unicorn (ItemRules.Pairs).
 //   C16-01j  the status conversions (Fire Extinguisher ... Expired Sushi, ItemBook.Converts): a status item is judged by what still causes
 //            its status on this squad (StatusFit), and a conversion item card by what it would stop or feed of the status items held.
+//            0.16.4: with its partner held as well (the 10-16 texts' "When equipped with ...: Fire damage applies both effects") the
+//            item's type applies both statuses (StatusesOfType) - as the game's code does it (ItemBook.Converts' fourth column): Fire with
+//            Fire Extinguisher + Warm Ice Cream, Chemical with Biofuel Energy + Battery Leakage, Kinetic and Slashing with Nail Bat +
+//            Expired Sushi, Ice with Warm Ice Cream + BIOFUEL ENERGY (the code's partner; its text names Fire Extinguisher); Battery
+//            Leakage's Electric never does (its text says it would). Every rule below follows.
 // Held items with no rule (C16-01g, each checked in machine code - they change no pick the Companion advises):
-//   Black Box (its level-up arrives when the chest opens, its cash on any rescue pick), Ring Of Power (every rescue card applied
-//   stacks it, Liberate included), Ban Hammer and Rock And Roll (the game's FREE banish / reroll labels, read already), Teddy Bear
-//   (a 50% chance not to spend a reroll - no card value changes), Jailbroken Phone with Mouse Trap (no conflict: Mouse Trap reads a
-//   taunted OR a feared enemy), Treasure Finder, Pawn Shop Receipt, Nuclear Fusion and Easter Egg's first clause (the item replace
-//   and swap screens, not advised yet), Gold Medal (folded into the skip and level-up grants).
+//   Black Box (its level-up arrives when the chest opens, its cash on any rescue pick), Ring Of Power (every rescue card applied stacks
+//   it, Liberate included), Ban Hammer and Rock And Roll (the game's FREE banish / reroll labels, read already), Teddy Bear (a 50%
+//   chance not to spend a reroll, 70% with Rock And Roll or Ban Hammer since 10-16 - no card value changes; the pair is
+//   ItemRules.Pairs'), Jailbroken Phone with Mouse Trap (no conflict: Mouse Trap reads a taunted OR a feared enemy), Treasure Finder,
+//   Pawn Shop Receipt, Nuclear Fusion and Easter Egg's first clause (the item replace and swap screens, not advised yet), Gold Medal
+//   (folded into the skip and level-up grants).
 // [Debug] HeldPretend (Plugin.cs) names items the advice treats as held - only HeldFacts.Pretend and ItemContext.Held see them, never
 // the game; a Warning once a session (PretendWarning) and every [held] line led by 'PRETEND (debug): <names> - ' make a leftover
 // visible.
@@ -212,12 +219,12 @@ namespace YazsCompanion
                         + (h.SinceJoin < 0 || double.IsNaN(h.SinceJoin) || double.IsInfinity(h.SinceJoin) ? "? (the time since the last join not read)" : RecruitLevelUps(h).ToString(IC) + " (" + MinSec(h.SinceJoin) + " since the last join)");
                 case "HijackedSignal": return "Hijacked Signal: Liberate gives two level-ups; chest items pay cash";      // C16-01d
                 case "LifeSavings": return "Life Savings: cash heals instead";                    // C16-01e
-                case "ACookie": return "A Cookie: a skip heals " + CookieHeal.ToString(IC) + " more";                     // C16-01f
+                case "ACookie": return "A Cookie: a skip also heals half your max HP";                                   // C16-01f (0.16.4: was 500)
                 case "SkipRope": return "Skip Rope: a skip pays " + RopeBig.ToString(IC) + " points (" + RopeSmall.ToString(IC) + " on a level-up)";   // C16-01f
                 case "WoodenStick": return SlotPart(i, h, "XP", Math.Round(WoodenStickCost * Economy(ctx), 2), " now");             // C16-01c
                 case "EmptyChest": return SlotPart(i, h, "damage", EmptyChestCost, "");                                           // C16-01c
                 case "FireExtinguisher": case "WarmIceCream": case "BatteryLeakage": case "BiofuelEnergy": case "NailBat": case "ExpiredSushi":
-                    return ConvertPart(i);                                                                                      // C16-01j
+                    return ConvertPart(i, h);                                                                                   // C16-01j
                 default: return null;
             }
         }
@@ -488,23 +495,37 @@ namespace YazsCompanion
             return h != null && h.Has(HijackedSignal) && screen == "Chest";
         }
 
-        // ---- C16-01f the skip extras. A Cookie (Item_ACookie, an ItemEventActivated on 21 SkipLevelUp, 22 SkipMilitaryTraining, 23
-        // SkipItemChest, 31 SkipSOSSignal - not 40 SkipHashtagEvent): 'every use of Skip additionally restores at least +500 Health Points'
-        // (500 is the game's floor; how it picks more is not read). Skip Rope (ItemSkipRope.OnApply, dis_skiprope.txt): AddPoint1 on 21
-        // SkipLevelUp, AddPoint5 on 31 / 22 / 23 / 40; REQ_MILITARY_TRAINING = 5 points per Military Training Point; a Military Training
-        // needs 4 points, 3 with Gold Medal (CollectibleLevelUp.get_RequiredPerLevelUp, dis_reqmt.txt). 'Every 2 points: +1% XP'.
-        public const int CookieHeal = 500, RopeBig = 5, RopeSmall = 1, RopePerTraining = 5;
+        // ---- C16-01f the skip extras. A Cookie: 'every use of Skip function additionally restores 50% of total Health Points' since the
+        // game's 10-16 patch (0.16.4; 'at least +500 Health Points' up to then). Up to then an ItemEventActivated on 21 SkipLevelUp, 22
+        // SkipMilitaryTraining, 23 SkipItemChest, 31 SkipSOSSignal - not 40 SkipHashtagEvent; since 10-16 its own class ItemCookie, whose
+        // OnApply hands OnSkip to every event of its static SkipEvents = (21, 22, 23, 31, 40) - the Research Pod's skip too (ItemCookie
+        // ..cctor's array, a fieldDefaultValues entry of the 10-16 metadata). OnSkip: Health.Refill(GetMaxHealth() x skipHealingFraction
+        // 0.5). The skip's own heal (GetSkipBonusHp = stat 10 x 0.2, re-read in the 10-16 code) is a fifth of the max HP -
+        // ScreenCall.SkipWorth reads the max HP from it so -, which makes A Cookie's half 2.5 times that heal. Skip Rope
+        // (ItemSkipRope.OnApply, dis_skiprope.txt): AddPoint1 on 21 SkipLevelUp, AddPoint5 on 31 / 22 / 23 / 40; REQ_MILITARY_TRAINING = 5
+        // points per Military Training Point; a Military Training needs 4 points, 3 with Gold Medal
+        // (CollectibleLevelUp.get_RequiredPerLevelUp, dis_reqmt.txt). 'Every 2 points: +1% XP'.
+        public const double CookieShare = 0.5, SkipHealShare = 0.2;
+        public const int RopeBig = 5, RopeSmall = 1, RopePerTraining = 5;
         /// <summary>A Military Training's worth on the cards' scale: the median #1 card of 98 logged training offers (levelup_value_out.txt).</summary>
         public const double MilitaryWorth = 3.40;
         /// <summary>A Skip Rope point's XP on the cards' scale per unit of economy: half of a 1% XP (0.16 x economy; a Common Operation Planning's
         /// +10% XP is 1.6 x economy, C16-01c).</summary>
         public const double RopeXpPoint = 0.08;
 
-        /// <summary>C16-01f: health a skip restores beyond its own heal (A Cookie: 500 on LevelUp, Military, Chest - and the rescue screen;
-        /// never a Research Pod).</summary>
-        public static int SkipExtraHeal(HeldFacts h, string screen)
+        /// <summary>C16-01f: A Cookie pays on <paramref name="screen"/> (LevelUp, Military, Chest, the rescue screen - and since the game's
+        /// 10-16 patch a Research Pod, 0.16.4 after review).</summary>
+        static bool CookieOn(HeldFacts h, string screen)
         {
-            return h != null && h.Has(ACookie) && (screen == "LevelUp" || screen == "Military" || screen == "Chest" || screen == "SOS") ? CookieHeal : 0;
+            return h != null && h.Has(ACookie) && (screen == "LevelUp" || screen == "Military" || screen == "Chest" || screen == "SOS" || screen == "Hashtag");
+        }
+
+        /// <summary>C16-01f: health a skip restores beyond its own heal <paramref name="skipHeal"/> (the skip's GetSkipBonusHp): A Cookie's
+        /// half of the max HP = skipHeal x 0.5 / 0.2, rounded; 0 without the item or while the skip heals nothing.</summary>
+        public static int SkipExtraHeal(HeldFacts h, string screen, int skipHeal)
+        {
+            if (!CookieOn(h, screen) || skipHeal <= 0) return 0;
+            return (int)Math.Round(skipHeal * CookieShare / SkipHealShare, MidpointRounding.AwayFromZero);
         }
 
         /// <summary>C16-01f: the points a skip on <paramref name="screen"/> pays with Skip Rope held (1 on a level-up, 5 on a training, a chest, a
@@ -538,7 +559,7 @@ namespace YazsCompanion
         public static string SkipBy(HeldFacts h, string screen)
         {
             var by = new List<string>();
-            if (SkipExtraHeal(h, screen) > 0) by.Add(ACookie.Name);
+            if (CookieOn(h, screen)) by.Add(ACookie.Name);
             if (SkipRopePoints(h, screen) > 0) by.Add(SkipRope.Name);
             return by.Count == 0 ? null : string.Join(" and ", by);
         }
@@ -701,7 +722,8 @@ namespace YazsCompanion
         /// <summary>C16-01j: a conversion item is held (or pretended).</summary>
         public static bool AnyConversion(HeldFacts h) { return ConversionsHeld(h, null).Count > 0; }
 
-        /// <summary>The status a damage type causes with <paramref name="convs"/> held (the default without them); null for a type no row names.</summary>
+        /// <summary>The status a damage type causes with <paramref name="convs"/> held (the default without them; the converted one with a
+        /// conversion of the type held, its partner or not - <see cref="StatusesOfType"/> has both); null for a type no row names.</summary>
         public static string StatusOfType(string type, IList<string[]> convs)
         {
             string s = null;
@@ -711,14 +733,45 @@ namespace YazsCompanion
             return s;
         }
 
+        /// <summary>0.16.4: the statuses a damage type causes with <paramref name="convs"/> held - its own (no conversion of it held), the
+        /// converted one (a conversion held alone), or both (the conversion and its partner held: "applies both effects", ItemBook.Converts'
+        /// fourth column). Empty for a type no row names.</summary>
+        public static List<string> StatusesOfType(string type, IList<string[]> convs)
+        {
+            var list = new List<string>();
+            string own = StatusOfType(type, null);
+            if (own == null) return list;
+            string[] conv = null;
+            if (convs != null) foreach (var cv in convs) if (Is(cv[1], type)) conv = cv;
+            if (conv == null) { list.Add(own); return list; }
+            if (Both(conv, convs)) list.Add(own);
+            list.Add(conv[2]);
+            return list;
+        }
+
+        /// <summary>0.16.4: the conversion row <paramref name="cv"/>'s partner is among <paramref name="convs"/> (both held).</summary>
+        static bool Both(string[] cv, IList<string[]> convs)
+        {
+            return cv != null && cv.Length > 3 && convs != null && convs.Any(x => Is(x[0], cv[3]));
+        }
+
+        /// <summary>0.16.4: <paramref name="type"/> no longer causes its own status with <paramref name="convs"/> held (a conversion of it held
+        /// without its partner).</summary>
+        public static bool TypeConverted(string type, IList<string[]> convs)
+        {
+            string own = StatusOfType(type, null);
+            return own != null && !StatusesOfType(type, convs).Any(x => Is(x, own));
+        }
+
         /// <summary>The damage type that causes <paramref name="status"/> without a conversion (ItemBook.StatusOf).</summary>
         public static string DefaultType(string status) { foreach (var st in ItemBook.StatusOf) if (Is(st[1], status)) return st[0]; return null; }
 
-        /// <summary>C16-01j: the damage types whose (converted) status is <paramref name="status"/> with <paramref name="convs"/> held.</summary>
+        /// <summary>C16-01j: the damage types that cause <paramref name="status"/> with <paramref name="convs"/> held (0.16.4: each type of a
+        /// conversion pair held causes both of its statuses, StatusesOfType).</summary>
         public static List<string> StatusSources(string status, IList<string[]> convs)
         {
             var list = new List<string>();
-            foreach (var st in ItemBook.StatusOf) if (Is(StatusOfType(st[0], convs), status)) list.Add(st[0]);
+            foreach (var st in ItemBook.StatusOf) if (StatusesOfType(st[0], convs).Any(x => Is(x, status))) list.Add(st[0]);
             return list;
         }
 
@@ -769,7 +822,8 @@ namespace YazsCompanion
             if (src.Count == 1 && Is(src[0], type)) return false;          // no held conversion touches this status
             oldFit = c.Tags.Fit(type);
             newFit = StatusFit(si.Status, convs, c.Tags);
-            string lost = null; foreach (var cv in convs) if (Is(cv[1], type)) lost = cv[0];        // the item that took the default type away
+            string lost = null;                                                                      // the item that took the default type away
+            if (TypeConverted(type, convs)) foreach (var cv in convs) if (Is(cv[1], type)) lost = cv[0];
             string gained = null, by = null; double best = -1;                                       // the new cause the squad deals most, its item
             foreach (var t in src)
             {
@@ -828,11 +882,19 @@ namespace YazsCompanion
             return Math.Max(StatusCardMin, Math.Min(StatusCardMax, v));
         }
 
-        /// <summary>C16-01j: the [held] part of a conversion item - 'Battery Leakage: Electric causes Toxify, not Electrify'.</summary>
-        static string ConvertPart(HeldItem i)
+        /// <summary>C16-01j: the [held] part of a conversion item - 'Battery Leakage: Electric causes Toxify, not Electrify'; 0.16.4, with the
+        /// partner the game's code tests held too (ItemBook.Converts' fourth column): 'Biofuel Energy: Chemical causes Electrify and Toxify
+        /// (with Battery Leakage)'.</summary>
+        static string ConvertPart(HeldItem i, HeldFacts h)
         {
             foreach (var cv in ItemBook.Converts)
-                if (Is(cv[0], i.Name)) return cv[0] + ": " + cv[1] + " causes " + cv[2] + ", not " + (StatusOfType(cv[1], null) ?? "?");
+            {
+                if (!Is(cv[0], i.Name)) continue;
+                string own = StatusOfType(cv[1], null) ?? "?";
+                var partner = cv.Length > 3 ? ConvItem(cv[3]) : null;
+                if (h != null && partner != null && h.Has(partner)) return cv[0] + ": " + cv[1] + " causes " + cv[2] + " and " + own + " (with " + partner.Name + ")";
+                return cv[0] + ": " + cv[1] + " causes " + cv[2] + ", not " + own;
+            }
             return null;
         }
     }

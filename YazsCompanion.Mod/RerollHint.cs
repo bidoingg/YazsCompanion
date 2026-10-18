@@ -194,7 +194,7 @@ namespace YazsCompanion
             x.SkipLevelUps = HeldRules.SkipLevelUps(held, x.Screen);                 // C16-01b Reserve Bench
             x.CashHeals = HeldRules.CashHeals(held);                                  // C16-01e Life Savings
             x.CashAlsoOnPick = HeldRules.CashAlsoOnPick(held, x.Screen);             // C16-01d Hijacked Signal
-            x.ExtraHeal = HeldRules.SkipExtraHeal(held, x.Screen);                   // C16-01f A Cookie
+            x.ExtraHeal = HeldRules.SkipExtraHeal(held, x.Screen, x.SkipHeal);       // C16-01f A Cookie (0.16.4: half the max HP, from the skip's heal)
             x.Economy = s.Ctx.Economy;
             x.SkipBonus = HeldRules.SkipRopeWorth(held, x.Screen, s.Ctx.Economy);    // C16-01f Skip Rope
             x.SkipBy = HeldRules.SkipBy(held, x.Screen);

@@ -17,7 +17,8 @@
 //   C16-01i  Last Unicorn: LU1 the animal count, LU2 an animal item with Last Unicorn held, LU3 the named pairs, LU4 the words; LU5 (Run)
 //            every animal item of the probe pairs with a held Last Unicorn
 //   C16-01j  the status conversions: CV1 the tables, CV2 rule A in Tank + SWAT + Engineer, CV3 rule A in Pyro + Medic + Mechanic, CV4 rule B,
-//            CV5 only the status items move, CV6 the words, the [held] parts and the sources; CV7 (Run) the tables against the probe
+//            CV5 only the status items move, CV6 the words, the [held] parts and the sources; CV7 (Run) the tables against the probe; CV8
+//            (0.16.4) a conversion pair held applies both statuses, as the game's 10-16 code does (not as two of its texts say)
 // Game names only (the repository is public); 'Bench Widget' is the bench's own made-up item.
 using System;
 using System.Collections.Generic;
@@ -86,6 +87,8 @@ namespace YazsCompanion.Bench
             LuCount(); LuPairs(); LuNamed(); LuWords();
             Console.WriteLine("  -- C16-01j the status conversions: a status item by what still causes its status");
             CvTables(); CvRuleA(); CvFire(); CvRuleB(); CvOnly(); CvWords();
+            Console.WriteLine("  -- 0.16.4: a conversion pair held applies both statuses (the game's 10-16 code)");
+            CvBoth();
             HeldRules.ResetRun();
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
@@ -298,7 +301,7 @@ namespace YazsCompanion.Bench
             bool lib = HeldRules.LiberateScore(0.3, 1, false, 1) == 1.0 + 3.2 * (1 - 0.3) + 0.4 * 1 && HeldRules.LiberateScore(0.9, 0, true, 1) == 5 && HeldRules.LiberateLevelUps(empty) == 1;
             Check("H9", "the plumbing with nothing held: a recruit unchanged, Liberate's 0.15.0 formula (5 with a full squad), no skip or slot term",
                 rh == 2.37 && n == 0 && lib && HeldRules.SkipLevelUps(empty, "Chest") == 0 && !HeldRules.CashHeals(empty) && !HeldRules.CashAlsoOnPick(empty, "Chest")
-                && HeldRules.SkipExtraHeal(empty, "LevelUp") == 0 && HeldRules.SkipRopeWorth(empty, "Chest", 1.36) == 0 && HeldRules.SkipBy(empty, "Chest") == null && HeldRules.SlotBy(empty) == null);
+                && HeldRules.SkipExtraHeal(empty, "LevelUp", 292) == 0 && HeldRules.SkipRopeWorth(empty, "Chest", 1.36) == 0 && HeldRules.SkipBy(empty, "Chest") == null && HeldRules.SlotBy(empty) == null);
             var x = new ScreenCallIn();
             Check("H9", "ScreenCallIn's held fields default to nothing (the 0.15.0 decisions); HintCard.HeldCost 0",
                 x.SkipLevelUps == 0 && x.SkipLevelUpBy == "Reserve Bench" && !x.CashHeals && !x.CashAlsoOnPick && x.ExtraHeal == 0 && x.SkipBonus == 0 && x.SkipBy == null && x.SlotBy == null && new HintCard().HeldCost == 0);
@@ -533,7 +536,7 @@ namespace YazsCompanion.Bench
         static ScreenCallIn With(ScreenCallIn x, HeldFacts h)
         {
             x.SkipLevelUps = HeldRules.SkipLevelUps(h, x.Screen); x.CashHeals = HeldRules.CashHeals(h); x.CashAlsoOnPick = HeldRules.CashAlsoOnPick(h, x.Screen);
-            x.ExtraHeal = HeldRules.SkipExtraHeal(h, x.Screen); x.SkipBonus = HeldRules.SkipRopeWorth(h, x.Screen, x.Economy); x.SkipBy = HeldRules.SkipBy(h, x.Screen);
+            x.ExtraHeal = HeldRules.SkipExtraHeal(h, x.Screen, x.SkipHeal); x.SkipBonus = HeldRules.SkipRopeWorth(h, x.Screen, x.Economy); x.SkipBy = HeldRules.SkipBy(h, x.Screen);
             x.RopePoints = HeldRules.SkipRopePoints(h, x.Screen); x.RopeReq = HeldRules.TrainingReq(h);
             return x;
         }
@@ -839,11 +842,15 @@ namespace YazsCompanion.Bench
         static void SrCookie()
         {
             var cookie = Held("A Cookie");
-            Check("SR2", "SkipWorth with A Cookie's 500: (675, 292, 0.6, 1.3, 0.32) 3.16 (2.11 plain); at health 0.85 / survival 0.82 1.08 (no gain: the plain heal covers the 15% missing)",
-                Near(ScreenCall.SkipWorth(675, 292, 0.6, 1.3, 0.32, 500), 3.16, 1e-9) && Near(ScreenCall.SkipWorth(675, 292, 0.85, 0.82, 0.32, 500), 1.08, 1e-9) && Near(ScreenCall.SkipWorth(675, 292, 0.85, 0.82, 0.32), 1.08, 1e-9));
-            Check("SR2", "SkipExtraHeal: 500 on a level-up, a training, a chest; none on a Research Pod (event 40 is not A Cookie's); 0 without the item",
-                HeldRules.SkipExtraHeal(cookie, "LevelUp") == 500 && HeldRules.SkipExtraHeal(cookie, "Military") == 500 && HeldRules.SkipExtraHeal(cookie, "Chest") == 500
-                && HeldRules.SkipExtraHeal(cookie, "Hashtag") == 0 && HeldRules.SkipExtraHeal(new HeldFacts(), "Chest") == 0);
+            // 0.16.4 (the game's 10-16 texts): A Cookie's skip heals 50% of the max HP, 2.5 times the skip's own heal (a fifth of it) - 730 on the
+            // logged skip's +292 (500 up to then); the worth below is the same (the missing health caps it either way)
+            Check("SR2", "SkipWorth with A Cookie's 730: (675, 292, 0.6, 1.3, 0.32) 3.16 (2.11 plain); at health 0.85 / survival 0.82 1.08 (no gain: the plain heal covers the 15% missing)",
+                Near(ScreenCall.SkipWorth(675, 292, 0.6, 1.3, 0.32, 730), 3.16, 1e-9) && Near(ScreenCall.SkipWorth(675, 292, 0.85, 0.82, 0.32, 730), 1.08, 1e-9) && Near(ScreenCall.SkipWorth(675, 292, 0.85, 0.82, 0.32), 1.08, 1e-9));
+            // ... and on a Research Pod too since 10-16 (ItemCookie's SkipEvents hold 40 SkipHashtagEvent; review M1 - none up to 0.16.3)
+            Check("SR2", "SkipExtraHeal (0.16.4): half the max HP = 2.5 x the skip's heal - 730 on a level-up, a training, a chest, a Research Pod with the skip's +292, 250 with +100; none while the skip heals nothing or without the item",
+                HeldRules.SkipExtraHeal(cookie, "LevelUp", 292) == 730 && HeldRules.SkipExtraHeal(cookie, "Military", 292) == 730 && HeldRules.SkipExtraHeal(cookie, "Chest", 292) == 730
+                && HeldRules.SkipExtraHeal(cookie, "SOS", 100) == 250 && HeldRules.SkipExtraHeal(cookie, "Hashtag", 292) == 730 && HeldRules.SkipExtraHeal(cookie, "Chest", 0) == 0
+                && HeldRules.SkipExtraHeal(new HeldFacts(), "Chest", 292) == 0 && HeldRules.CookieShare == 0.5);
         }
 
         static void SrScreens()
@@ -859,8 +866,8 @@ namespace YazsCompanion.Bench
             Check("SR3", "a level-up at 1.40 with Skip Rope: worth 0.44 -> no hint", !lv.Show && Near(lv.SkipValue, 0.44, 1e-9), Said(lv));
             Func<HeldFacts, ScreenCallIn> low = h => { var x = With(Sk("Chest", 0.5, 0, 1.20, 1.00), h); x.Health = 0.6; x.Survival = 0.5; return x; };
             var cp = D(low(new HeldFacts())); var cc = D(low(cookie));
-            Check("SR3", "a chest at 60 % (survival 0.5) whose best is 1.20: the plain skip 0.91 -> no hint; with A Cookie 1.66 -> SKIP 'the skip heals 500 more (A Cookie) - worth more than these cards'",
-                !cp.Show && Near(cp.SkipValue, 0.91, 1e-9) && cc.Show && Near(cc.SkipValue, 1.66, 1e-9) && cc.Words == "the skip heals 500 more (A Cookie) - worth more than these cards", Said(cc));
+            Check("SR3", "a chest at 60 % (survival 0.5) whose best is 1.20: the plain skip 0.91 -> no hint; with A Cookie 1.66 -> SKIP 'the skip heals 730 more (A Cookie) - worth more than these cards'",
+                !cp.Show && Near(cp.SkipValue, 0.91, 1e-9) && cc.Show && Near(cc.SkipValue, 1.66, 1e-9) && cc.Words == "the skip heals 730 more (A Cookie) - worth more than these cards", Said(cc));
             var hurt = With(Sk("Chest", 0.6, 0, 1.30, 1.10), cookie); hurt.Health = 0.6; hurt.Survival = 1.3; var hh = D(hurt);
             Check("SR3", "where the plain skip already wins, its own words ('the heal and the cash ...'), worth 3.16 with A Cookie", hh.Show && hh.Words == "the heal and the cash are worth more than these cards" && Near(hh.SkipValue, 3.16, 1e-9), Said(hh));
             var both = D(With(Sk("Chest", 0.5, 0, 1.40, 1.10), Held("Skip Rope", "A Cookie")));
@@ -872,13 +879,13 @@ namespace YazsCompanion.Bench
             var r = ScreenCall.Decide(With(Sk("Chest", 0.5, 0, 1.40, 1.10), Held("Skip Rope")));
             Check("SR4", "the log's Why: ' | Skip Rope: +5 points (a quarter of a Military Training) worth 1.39'", r.Why.EndsWith(" | Skip Rope: +5 points (a quarter of a Military Training) worth 1.39"), r.Why);
             var low = With(Sk("Chest", 0.5, 0, 1.20, 1.00), Held("A Cookie")); low.Health = 0.6; low.Survival = 0.5; var c = ScreenCall.Decide(low);
-            Check("SR4", "... and ' | A Cookie: +500 health'", c.Why.EndsWith(" | A Cookie: +500 health"), c.Why);
+            Check("SR4", "... and ' | A Cookie: +730 health'", c.Why.EndsWith(" | A Cookie: +730 health"), c.Why);
             Check("SR4", "RopeNote: a quarter (4 per training), a third (Gold Medal), a level-up's twentieth / fifteenth",
                 HeldRules.RopeNote(5, 4) == "+5 points (a quarter of a Military Training)" && HeldRules.RopeNote(5, 3) == "+5 points (a third of a Military Training)"
                 && HeldRules.RopeNote(1, 4) == "+1 point (a twentieth of a Military Training)" && HeldRules.RopeNote(1, 3) == "+1 point (a fifteenth of a Military Training)" && HeldRules.RopeNote(0, 4) == null);
             var both = Held("Skip Rope", "A Cookie");
-            Check("SR4", "SkipBy: 'A Cookie and Skip Rope' on a chest, 'Skip Rope' on a Research Pod, null without; never Reserve Bench; the log's ', with A Cookie and Skip Rope'",
-                HeldRules.SkipBy(both, "Chest") == "A Cookie and Skip Rope" && HeldRules.SkipBy(both, "Hashtag") == "Skip Rope" && HeldRules.SkipBy(Held("Reserve Bench"), "Chest") == null
+            Check("SR4", "SkipBy: 'A Cookie and Skip Rope' on a chest and (0.16.4, the game's 10-16 A Cookie) a Research Pod, null without; never Reserve Bench; the log's ', with A Cookie and Skip Rope'",
+                HeldRules.SkipBy(both, "Chest") == "A Cookie and Skip Rope" && HeldRules.SkipBy(both, "Hashtag") == "A Cookie and Skip Rope" && HeldRules.SkipBy(Held("Reserve Bench"), "Chest") == null
                 && ScreenCall.SkipNote(With(Sk("Chest", 0.5, 0, 1.4), both)) == ", with A Cookie and Skip Rope");
             var lr = With(Sk("LevelUp", 0.7, 0, 1.30, 1.10), Held("Skip Rope")); lr.Health = 0.65; lr.Survival = 0.7;
             var l = D(lr);
@@ -886,7 +893,7 @@ namespace YazsCompanion.Bench
                 l.Show && l.Words == "the skip pays a Skip Rope point - worth more than these cards" && l.Why.EndsWith("| Skip Rope: +1 point (a twentieth of a Military Training) worth 0.28"), Said(l));
             string all = HeldRules.Line(Held("Reserve Bench", "Hijacked Signal", "Life Savings", "A Cookie", "Skip Rope"), null);
             Check("SR4", "the [held] parts in the table's order: '" + all + "'",
-                all == "[held] Reserve Bench: a chest or training skip is a level-up; recruiting gives ? (the time since the last join not read) | Hijacked Signal: Liberate gives two level-ups; chest items pay cash | Life Savings: cash heals instead | A Cookie: a skip heals 500 more | Skip Rope: a skip pays 5 points (1 on a level-up)");
+                all == "[held] Reserve Bench: a chest or training skip is a level-up; recruiting gives ? (the time since the last join not read) | Hijacked Signal: Liberate gives two level-ups; chest items pay cash | Life Savings: cash heals instead | A Cookie: a skip also heals half your max HP | Skip Rope: a skip pays 5 points (1 on a level-up)");
         }
 
         // ---------------------------------------------------------------- CH2's rails and sources
@@ -1227,7 +1234,9 @@ namespace YazsCompanion.Bench
                 && ItemBook.Converts.Length == 6 && ItemBook.Converts.All(cv => HeldRules.All.Any(i => i.Name == cv[0])));
             var bl = Convs("Battery Leakage");
             string e0 = string.Join(",", HeldRules.StatusSources("Electrify", null)), t1 = string.Join(",", HeldRules.StatusSources("Toxify", bl)), e2 = string.Join(",", HeldRules.StatusSources("Electrify", Convs("Battery Leakage", "Biofuel Energy")));
-            Check("CV1", "the causes: Electrify <- " + e0 + " without a conversion; Battery Leakage: Toxify <- " + t1 + ", Electrify <- none; + Biofuel Energy: Electrify <- " + e2,
+            // 0.16.4: with both held, Chemical applies both statuses, Electric still Toxify alone - the 10-16 code (ApplyElectrified tests no
+            // partner), though Battery Leakage's text says "When equipped with Biofuel Energy: Electric damage applies both effects"
+            Check("CV1", "the causes: Electrify <- " + e0 + " without a conversion; Battery Leakage: Toxify <- " + t1 + ", Electrify <- none; + Biofuel Energy: Electrify <- " + e2 + " (Electric still Toxify alone: the code)",
                 e0 == "Electric" && t1 == "Electric,Chemical" && HeldRules.StatusSources("Electrify", bl).Count == 0 && e2 == "Chemical");
             var t = TseTags(); var p = PmmTags();
             Check("CV1", "StatusFit = min(1, 1.6 x the combined share): Electrify 0.48 (Electric 1.5 of 5), with Battery Leakage 0 and Toxify 0.48; Pyro + Medic + Mechanic with Fire Extinguisher: Freeze 1.00 (Fire + Ice); an unknown profile 0",
@@ -1255,7 +1264,8 @@ namespace YazsCompanion.Bench
                 && pa.Why.Contains("no Chemical damage on the squad") && !pb.Why.Contains("no Chemical damage on the squad") && !pb.Say.Nobody.Contains("Chemical"), "'" + pb.Line + "' | " + string.Join("; ", pb.Why));
             var both = Held("Battery Leakage", "Biofuel Energy");
             var jb = Eval("Jacob's Ladder", On(TseTags(), TseSquad, both)); var j1 = Eval("Jacob's Ladder", On(TseTags(), TseSquad, bl)); var pvb = Eval("Plague's Visage", On(TseTags(), TseSquad, both));
-            Check("CV2", "Battery Leakage + Biofuel Energy held: Electrify <- Chemical (none here) - Jacob's Ladder still dead, Plague's Visage still fed",
+            // 0.16.4 (review H1): as in 0.16.3 - the 10-16 code gives Battery Leakage's Electric no "both effects" (its text does)
+            Check("CV2", "Battery Leakage + Biofuel Energy held: Electrify <- Chemical (none here; Electric still Toxify alone, the 10-16 code) - Jacob's Ladder still dead, Plague's Visage still fed",
                 Near(jb.Score, j1.Score, 1e-9) && jb.Line == "No Electrify while you hold Battery Leakage" && Near(pvb.Score, pb.Score, 1e-9) && pvb.Line == pb.Line, "'" + jb.Line + "' / '" + pvb.Line + "'");
             var pre = new HeldFacts(); pre.Pretend.Add("Battery Leakage");
             var unk = Eval("Jacob's Ladder", On(new TagProfile(), TseSquad, bl)); var unk0 = Eval("Jacob's Ladder", On(new TagProfile(), TseSquad, none));
@@ -1279,8 +1289,12 @@ namespace YazsCompanion.Bench
             var two = Held("Fire Extinguisher", "Warm Ice Cream");
             var dead = HeldRules.StatusItems.Select(s => Tuple.Create(s.Item.Name, Eval(s.Item.Name, On(PmmTags(), PmmSquad, two)))).Where(x => x.Item2.Say.LeadForms != null && x.Item2.Say.LeadForms[0].StartsWith("no ")).Select(x => x.Item1).ToList();
             var sc0 = Eval("Spoil Canister", On(PmmTags(), PmmSquad, none)); var sc = Eval("Spoil Canister", On(PmmTags(), PmmSquad, two)); var ss = Eval("Special Snowflake", On(PmmTags(), PmmSquad, two));
-            Check("CV3", "Fire Extinguisher + Warm Ice Cream: Burn <- Ice, Freeze <- Fire - no status item dead; Spoil Canister " + F(sc0.Score) + " -> " + F(sc.Score) + " ('Burn comes from your Ice now', a log reason), Special Snowflake fed by Fire",
-                dead.Count == 0 && Near(sc.Score - sc0.Score, (t.Fit("Ice") - t.Fit("Fire")) * 0.6, 0.006) && sc.Why.Contains("Burn comes from your Ice now") && sc.Say.LeadForms == null && ss.Line == "Your Fire now causes Freeze (Fire Extinguisher)",
+            // 0.16.4 (both effects, the 10-16 code): Fire applies Burn and Freeze, Ice Burn alone (Warm Ice Cream's both needs Biofuel Energy) -
+            // Burn <- Fire and Ice, Freeze <- Fire: Spoil Canister keeps its Fire and is fed by the Ice (0.16.0 - 0.16.3: Burn <- Ice alone,
+            // 'Burn comes from your Ice now')
+            double fireIce = Math.Min(1.0, 1.6 * (t.Share("Fire") + t.Share("Ice")));
+            Check("CV3", "Fire Extinguisher + Warm Ice Cream (0.16.4, both effects on Fire): Burn <- Fire and Ice, Freeze <- Fire - no status item dead; Spoil Canister " + F(sc0.Score) + " -> " + F(sc.Score) + " (fit " + F(t.Fit("Fire")) + " -> " + F(fireIce) + ", 'Your Ice now causes Burn (Warm Ice Cream)'), Special Snowflake fed by Fire",
+                dead.Count == 0 && Near(sc.Score - sc0.Score, (fireIce - t.Fit("Fire")) * 0.6, 0.006) && sc.Line == "Your Ice now causes Burn (Warm Ice Cream)" && sc.Why.Any(w => w.EndsWith(": fire")) && ss.Line == "Your Fire now causes Freeze (Fire Extinguisher)",
                 "dead: " + string.Join(", ", dead) + " | " + string.Join("; ", sc.Why));
         }
 
@@ -1324,16 +1338,73 @@ namespace YazsCompanion.Bench
 
         static void CvOnly()
         {
+            // 0.16.4: and the held item's pair: Icon of Tempest with Jacob's Ladder (its +6 Electric synergy), Warm Ice Cream with Fire Extinguisher
+            // (Fire applies both); Biofuel Energy with Battery Leakage does not move here (the pair is Chemical's, the squad deals none)
             var m1 = Movers(TseSquad, TseTags, Held("Battery Leakage"));
-            Check("CV5", "Battery Leakage held (Tank + SWAT + Engineer): only the Electrify and Toxify items move (" + string.Join(", ", m1) + ")",
+            Check("CV5", "Battery Leakage held (Tank + SWAT + Engineer): only the Electrify and Toxify items move - not Biofuel Energy, whose pair needs Chemical (" + string.Join(", ", m1) + ")",
                 m1.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "Icon of Pestilence", "Icon of Tempest", "Jacob's Ladder", "Plague's Visage" }.OrderBy(x => x, StringComparer.Ordinal)));
             var m2 = Movers(TseSquad, TseTags, Held("Jacob's Ladder"));
-            Check("CV5", "Jacob's Ladder held: only the Battery Leakage card moves (" + string.Join(", ", m2) + ")", m2.SequenceEqual(new[] { "Battery Leakage" }));
+            Check("CV5", "Jacob's Ladder held: only the Battery Leakage card moves, and its tag synergy Icon of Tempest (" + string.Join(", ", m2) + ")", m2.SequenceEqual(new[] { "Battery Leakage", "Icon of Tempest" }));
             var m3 = Movers(PmmSquad, PmmTags, Held("Fire Extinguisher"));
-            Check("CV5", "Fire Extinguisher held (Pyro + Medic + Mechanic): the Burn and Freeze items move, and Boiling Pot by the item book's own status count (C16-02: " + string.Join(", ", m3) + ")",
-                m3.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "Boiling Pot", "Icon of Cinder", "Icon of Stillness", "Spoil Canister", "Special Snowflake" }.OrderBy(x => x, StringComparer.Ordinal)));
+            Check("CV5", "Fire Extinguisher held (Pyro + Medic + Mechanic): the Burn and Freeze items move, Boiling Pot by the item book's own status count (C16-02), and its pair Warm Ice Cream (" + string.Join(", ", m3) + ")",
+                m3.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "Boiling Pot", "Icon of Cinder", "Icon of Stillness", "Spoil Canister", "Special Snowflake", "Warm Ice Cream" }.OrderBy(x => x, StringComparer.Ordinal)));
             var m4 = Movers(HgSquad, HgTags, Held("Homing Pigeon", "Torchlight"));
             Check("CV5", "no conversion held and none offered against a status item: nothing moves (" + string.Join(", ", m4) + ")", m4.Count == 0);
+        }
+
+        // ---------------------------------------------------------------- CV8 (0.16.4): both effects, as the game's 10-16 code applies them
+        static void CvBoth()
+        {
+            // the code (ItemBook.Converts' fourth column, review H1): Fire both with Fire Extinguisher + Warm Ice Cream, Chemical with Biofuel
+            // Energy + Battery Leakage, Kinetic / Slashing with Nail Bat + Expired Sushi, Ice with Warm Ice Cream + BIOFUEL ENERGY; Battery
+            // Leakage's Electric never (the texts of Warm Ice Cream and Battery Leakage say otherwise: ItemBook.TextOnly)
+            Func<string, string[], string> of = (type, names) => string.Join(",", HeldRules.StatusesOfType(type, Convs(names)));
+            Check("CV8", "StatusesOfType: Fire " + of("Fire", new string[0]) + "; with Fire Extinguisher " + of("Fire", new[] { "Fire Extinguisher" }) + "; with Warm Ice Cream as well " + of("Fire", new[] { "Fire Extinguisher", "Warm Ice Cream" })
+                + " (Ice " + of("Ice", new[] { "Fire Extinguisher", "Warm Ice Cream" }) + ", with Warm Ice Cream + Biofuel Energy " + of("Ice", new[] { "Warm Ice Cream", "Biofuel Energy" }) + "); Electric with Battery Leakage + Biofuel Energy " + of("Electric", new[] { "Battery Leakage", "Biofuel Energy" })
+                + "; TypeConverted only without the code's partner; every partner is a conversion item",
+                of("Fire", new string[0]) == "Burn" && of("Fire", new[] { "Fire Extinguisher" }) == "Freeze" && of("Fire", new[] { "Fire Extinguisher", "Warm Ice Cream" }) == "Burn,Freeze"
+                && of("Ice", new[] { "Fire Extinguisher", "Warm Ice Cream" }) == "Burn" && of("Ice", new[] { "Warm Ice Cream", "Biofuel Energy" }) == "Freeze,Burn" && of("Ice", new[] { "Fire Extinguisher" }) == "Freeze"
+                && of("Kinetic", new[] { "Nail Bat", "Expired Sushi" }) == "Injured,Bleed" && of("Electric", new[] { "Battery Leakage", "Biofuel Energy" }) == "Toxify" && of("Chemical", new[] { "Battery Leakage", "Biofuel Energy" }) == "Toxify,Electrify"
+                && HeldRules.TypeConverted("Fire", Convs("Fire Extinguisher")) && !HeldRules.TypeConverted("Fire", Convs("Fire Extinguisher", "Warm Ice Cream")) && !HeldRules.TypeConverted("Ice", Convs("Fire Extinguisher"))
+                && HeldRules.TypeConverted("Ice", Convs("Fire Extinguisher", "Warm Ice Cream")) && HeldRules.TypeConverted("Electric", Convs("Battery Leakage", "Biofuel Energy"))
+                && HeldRules.StatusesOfType("Holy", null).Count == 0
+                && ItemBook.Converts.Where(cv => cv.Length > 3).All(cv => ItemBook.Converts.Any(o => o[0] == cv[3])) && ItemBook.Converts.Count(cv => cv.Length > 3) == 5);
+            // rule A: Bleeding Edge with Nail Bat + Expired Sushi held (Huntress + Ghost: Slashing 1.5, Kinetic 0.5 of 3.0) - Bleed from Slashing AND
+            // Kinetic now (0.16.0 - 0.16.3: Kinetic alone, 'Bleed comes from your Kinetic now')
+            var nbes = Held("Nail Bat", "Expired Sushi"); var be0 = Eval("Bleeding Edge", On(HgTags(), HgSquad, new HeldFacts())); var be = Eval("Bleeding Edge", On(HgTags(), HgSquad, nbes));
+            var t = HgTags(); double sk = Math.Min(1.0, 1.6 * (t.Share("Slashing") + t.Share("Kinetic")));
+            Check("CV8", "rule A: Bleeding Edge with Nail Bat + Expired Sushi held (Huntress + Ghost): Bleed <- Slashing and Kinetic, fit " + F(t.Fit("Slashing")) + " -> " + F(sk) + " (" + F(be0.Score) + " -> " + F(be.Score) + "), 'Your Kinetic now causes Bleed (Nail Bat)', its Slashing fit kept",
+                Near(be.Score - be0.Score, (sk - t.Fit("Slashing")) * 0.6, 0.006) && be.Line == "Your Kinetic now causes Bleed (Nail Bat)" && be.Why.Any(w => w.EndsWith(": slashing")), "'" + be.Line + "' | " + string.Join("; ", be.Why));
+            // rule B as in 0.16.3: a Battery Leakage card with Biofuel Energy and Jacob's Ladder held (Tank + SWAT + Engineer, no Chemical) -
+            // Electric would still cause Toxify alone (the code), so it would stop the Electrify; the pair is Chemical's, worth nothing here
+            var b0 = Eval("Battery Leakage", On(TseTags(), TseSquad, new HeldFacts())); var b1 = Eval("Battery Leakage", On(TseTags(), TseSquad, Held("Biofuel Energy")));
+            var b2 = Eval("Battery Leakage", On(TseTags(), TseSquad, Held("Biofuel Energy", "Jacob's Ladder")));
+            Check("CV8", "rule B: a Battery Leakage card with Biofuel Energy held (no Chemical on the squad): " + F(b0.Score) + " -> " + F(b1.Score) + ", no pair; with Jacob's Ladder held too " + F(b2.Score) + " (-0.90) 'Would stop your Jacob's Ladder's Electrify'",
+                Near(b1.Score, b0.Score, 1e-9) && !b1.Why.Any(w => w.StartsWith("pairs with", StringComparison.Ordinal)) && Near(b2.Score - b1.Score, -0.9, 1e-9) && b2.Line == "Would stop your Jacob's Ladder's Electrify", "'" + b2.Line + "' | " + string.Join("; ", b2.Why));
+            // the pair's worth (review H1): the pair weight x the fit of the type(s) the two make apply both - Pyro + Medic + Mechanic (Fire,
+            // Chemical, Ice), Huntress + Ghost (Kinetic, Slashing)
+            Func<TagProfile> pmm = PmmTags; var p = PmmTags(); var h = HgTags();
+            Func<string, string, string[], Func<TagProfile>, Tuple<double, string>> gain = (card, held, squad, tags) =>
+            { var a = Eval(card, On(tags(), squad, new HeldFacts())); var w = Eval(card, On(tags(), squad, Held(held))); return Tuple.Create(w.Score - a.Score, w.Line); };
+            var g1 = gain("Battery Leakage", "Biofuel Energy", PmmSquad, pmm); var g2 = gain("Warm Ice Cream", "Fire Extinguisher", PmmSquad, pmm); var g3 = gain("Warm Ice Cream", "Biofuel Energy", PmmSquad, pmm);
+            var g4 = gain("Biofuel Energy", "Warm Ice Cream", PmmSquad, pmm); var g5 = gain("Nail Bat", "Expired Sushi", HgSquad, HgTags);
+            Check("CV8", "the conversion pairs' worth: Battery Leakage with Biofuel Energy +" + F(g1.Item1) + " (Chemical " + F(p.Fit("Chemical")) + "), Warm Ice Cream with Fire Extinguisher +" + F(g2.Item1) + " (Fire " + F(p.Fit("Fire")) + ") and with Biofuel Energy +" + F(g3.Item1)
+                + " (Ice " + F(p.Fit("Ice")) + ", the code's partner), Biofuel Energy with Warm Ice Cream +" + F(g4.Item1) + ", Nail Bat with Expired Sushi +" + F(g5.Item1) + " (Kinetic + Slashing, 1 at most); each 'Pairs with your <item>'",
+                Near(g1.Item1, 0.9 * p.Fit("Chemical"), 1e-9) && g1.Item2 == "Pairs with your Biofuel Energy" && Near(g2.Item1, 0.9 * p.Fit("Fire"), 1e-9) && g2.Item2 == "Pairs with your Fire Extinguisher"
+                && Near(g3.Item1, 0.9 * p.Fit("Ice"), 1e-9) && g3.Item2 == "Pairs with your Biofuel Energy" && Near(g4.Item1, 0.9 * p.Fit("Ice"), 1e-9) && g4.Item2 == "Pairs with your Warm Ice Cream"
+                && Near(g5.Item1, 0.9 * Math.Min(1.0, h.Fit("Kinetic") + h.Fit("Slashing")), 1e-9) && g5.Item2 == "Pairs with your Expired Sushi");
+            // Boiling Pot's status count: Flamethrower + Nitro-Gun 2; Fire Extinguisher alone 1 (Freeze from both), Warm Ice Cream as well 2 (Fire
+            // both, Ice Burn); Nitro-Gun alone with Warm Ice Cream + Fire Extinguisher 1 (Burn), with Warm Ice Cream + Biofuel Energy 2
+            Func<bool, string[], int> kinds = (fire, names) => { var tp = new TagProfile(); if (fire) tp.Deals("Fire", "Flamethrower", 1); tp.Deals("Ice", "Nitro-Gun", 1); var c = On(tp, PmmSquad, Held(names)); return ItemRules.StatusKinds(c); };
+            Check("CV8", "Boiling Pot's count (Flamethrower + Nitro-Gun): " + kinds(true, new string[0]) + " with nothing held, " + kinds(true, new[] { "Fire Extinguisher" }) + " with Fire Extinguisher, " + kinds(true, new[] { "Fire Extinguisher", "Warm Ice Cream" })
+                + " with Warm Ice Cream as well; Nitro-Gun alone: " + kinds(false, new[] { "Warm Ice Cream", "Fire Extinguisher" }) + " with Warm Ice Cream + Fire Extinguisher, " + kinds(false, new[] { "Warm Ice Cream", "Biofuel Energy" }) + " with Warm Ice Cream + Biofuel Energy",
+                kinds(true, new string[0]) == 2 && kinds(true, new[] { "Fire Extinguisher" }) == 1 && kinds(true, new[] { "Fire Extinguisher", "Warm Ice Cream" }) == 2
+                && kinds(false, new[] { "Warm Ice Cream", "Fire Extinguisher" }) == 1 && kinds(false, new[] { "Warm Ice Cream", "Biofuel Energy" }) == 2);
+            string line = HeldRules.Line(Held("Battery Leakage", "Biofuel Energy"), null), fire = HeldRules.Line(Held("Fire Extinguisher", "Warm Ice Cream"), null), ice = HeldRules.Line(Held("Warm Ice Cream", "Biofuel Energy"), null);
+            Check("CV8", "the [held] parts of a pair, as the code applies it: '" + line + "' / '" + fire + "' / '" + ice + "'",
+                line == "[held] Battery Leakage: Electric causes Toxify, not Electrify | Biofuel Energy: Chemical causes Electrify and Toxify (with Battery Leakage)"
+                && fire == "[held] Fire Extinguisher: Fire causes Freeze and Burn (with Warm Ice Cream) | Warm Ice Cream: Ice causes Burn, not Freeze"
+                && ice.Contains("Warm Ice Cream: Ice causes Burn and Freeze (with Biofuel Energy)") && ice.Contains("Biofuel Energy: Chemical causes Electrify, not Toxify"));
         }
 
         static void CvWords()

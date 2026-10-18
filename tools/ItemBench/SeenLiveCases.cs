@@ -162,7 +162,7 @@ namespace YazsCompanion.Bench
             return t;
         }
 
-        // the game's text backs every word of each row's noun (data\probe.json, game 1.0.2)
+        // the game's text backs every word of each row's noun (the text the game draws: gamedata.json; 0.16.1 read data\probe.json, game 1.0.2)
         static readonly Dictionary<string, Regex> Backs = new Dictionary<string, Regex>
         {
             { "XP", new Regex(@"\bXP\b|experience", RegexOptions.IgnoreCase) }, { "luck", new Regex(@"\bluck\b", RegexOptions.IgnoreCase) },
@@ -175,13 +175,17 @@ namespace YazsCompanion.Bench
             foreach (var e in ItemBook.All.Where(x => !string.IsNullOrEmpty(x.Econ)))
             {
                 ProbeItem it; if (!by.TryGetValue(e.Name, out it)) { bad.Add(e.Name + ": not in the probe"); continue; }
-                string text = ItemRules.RichTag.Replace(it.Desc ?? "", "");
+                // 0.16.4: the text the game draws (gamedata.json's I2 text) where the extract has the item - the probe's asset text kept its 10-02
+                // words through the 10-16 patch (Rock And Roll's '+10 Luck' is only in the drawn text)
+                string drawn; if (!Checks.GameText.TryGetValue(e.Name, out drawn)) drawn = it.Desc;
+                string text = ItemRules.RichTag.Replace(drawn ?? "", "");
                 n++;
                 foreach (var p in Parts(e.Econ)) { Regex re; if (!Backs.TryGetValue(p, out re) || !re.IsMatch(text)) bad.Add(e.Name + ": '" + p + "' not in its text"); }
             }
-            Check("SL1", "the game's own text backs every word of each row's noun (" + n + " rows: Power of Friendship '+10 Luck' -> luck, Black Box 'a level-up' -> level-ups, Skip Rope 'XP' and 'Military Training Point')",
+            Check("SL1", "the game's own text backs every word of each row's noun (" + n + " rows: Power of Friendship '+20 Luck' -> luck, Rock And Roll '+10 Luck' -> luck, Black Box 'a level-up' -> level-ups, Skip Rope 'XP' and 'Military Training Point')",
                 bad.Count == 0 && n >= 15, string.Join("; ", bad));
-            var pof = by.ContainsKey("Power of Friendship") ? ItemRules.RichTag.Replace(by["Power of Friendship"].Desc ?? "", "") : "";
+            string pofDrawn; if (!Checks.GameText.TryGetValue("Power of Friendship", out pofDrawn)) pofDrawn = by.ContainsKey("Power of Friendship") ? by["Power of Friendship"].Desc : null;
+            var pof = ItemRules.RichTag.Replace(pofDrawn ?? "", "");
             Check("SL1", "the live fault's ground truth: Power of Friendship's 1.0.2 text gives Luck and no XP", Backs["luck"].IsMatch(pof) && !Backs["XP"].IsMatch(pof), pof.Replace("\n", " "));
         }
 

@@ -21,7 +21,7 @@
 // 0.16.0: the items the squad holds change the skip (HeldRules, C16-01b / d / e / f): with Reserve Bench the skip of a chest or a
 // training is a level-up - REROLL first, then (no reroll left, or reroll hints off) SKIP when the best card is under the floor, the
 // level-up worth a card at the floor; Life Savings turns the skip's cash into a heal, Hijacked Signal pays a chest item the same cash
-// (the skip's cash is no gain there), A Cookie heals 500 more, Skip Rope pays points toward a Military Training (they speak once no
+// (the skip's cash is no gain there), A Cookie heals half the max HP too, Skip Rope pays points toward a Military Training (they speak once no
 // reroll is left, in the weak-cards SKIP). The revive guard (C16-13, DK-C01): while a card holds a second life and the quest asks to
 // survive the run or the squad is under 60 % health, no REROLL and no SKIP sends it away ('held back: ...' / '| revive guard: ...' in
 // the log; the no-item quest's SKIP keeps its place), and a BANISH never names a second life. With Wooden Stick / Empty Chest held (C16-01c)

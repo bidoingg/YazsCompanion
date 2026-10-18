@@ -389,15 +389,15 @@ BANISH  -  Medical Drone - the Rifleman build skips it
   game's skip grants cash (`(money multiplier + enemy scaling - 1) x 300`) and heals 20 % of the team's max health
   (read in its machine code: `GetSkipBonusMoney` / `GetSkipBonusHp`); the heal counts as much as the squad is missing
   of it, the cash as the run goal values it.
-- **Held items and the skip** (0.16.0). With **Reserve Bench** held the skip of an Item Chest or a Military Training
-  is a level-up (the game's own grant, read in machine code), worth at least a card at the screen's floor: a weak
-  chest or training still says REROLL while a reroll is left (the Skip button stays after a reroll, and its level-up
-  with it) and, once none is left, `SKIP - the skip is a level-up (Reserve Bench) - worth more than these`.
-  **Life Savings** turns the skip's cash into a heal (`the heal is worth more than these cards`; a skip at full health
-  is worth nothing then); with **Hijacked Signal** a chest item pays the same cash as the skip, so on a chest only the
-  heal speaks for the skip. **A Cookie** heals at least 500 more on a skip (not on a Research Pod) and **Skip Rope**
-  pays 5 points (1 on a level-up; 5 make a Military Training point, every 2 a +1 % XP): once no reroll is left they
-  can tip a weak screen to `SKIP - the skip pays a training point (Skip Rope)` / `the skip heals 500 more (A Cookie)`.
+- **Held items and the skip** (0.16.0). With **Reserve Bench** held the skip of an Item Chest or a Military Training is
+  a level-up (the game's own grant), worth a card at the screen's floor or more: a weak chest or training still says
+  REROLL while a reroll is left (the Skip button and its level-up stay after a reroll) and, once none is left, `SKIP -
+  the skip is a level-up (Reserve Bench) - worth more than these`. **Life Savings** turns the skip's cash into a heal
+  (`the heal is worth more than these cards`; a skip at full health is worth nothing then); with **Hijacked Signal** a
+  chest item pays the same cash as the skip, so on a chest only the heal speaks for the skip. **A Cookie** heals half
+  your max HP more on a skip (a Research Pod's too since the 10-16 update; 500 up to it) and **Skip Rope** pays 5 points
+  (1 on a level-up; 5 make a Military Training point, every 2 a +1 % XP): with no reroll left they can tip a weak screen
+  to `SKIP - the skip pays a training point (Skip Rope)` / `the skip heals 730 more (A Cookie)`.
 - **Empty slots** (0.16.0). With Wooden Stick or Empty Chest held every chest card that fills an empty slot carries the
   slot's cost, so early in a run every chest card can show AVOID. The REROLL hint is judged on the best card BEFORE that
   cost (a reroll brings items with the same cost - it would burn every reroll otherwise): a chest whose best card is
@@ -577,90 +577,90 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   crowd control counts x1.6 instead. The game already withholds what is pointless per mode (no health, armor or
   dodge cards in One Hit; no XP, luck or pickup range in Extermination), so the mode only steers what is left.
 - **Chests** (`ItemBook.cs` + `ItemRules.cs`, pure). Since 0.16.0 every chest item of game 1.0.2 is read by a rule
-  written from its own text - the item book, 134 rules (the 133 pool items and Jewel of Death): what the item gives and
-  takes, what it needs to work, whether its worth follows the run's clock or grows, and the card's words. The keyword
-  reading of 0.15.0 is only the fallback for an item a newer game build adds (`[items] no rule for '<name>' - keyword
-  reading`, once). Guide tier first (S +3, A +2, B +1, C -1.5; 59 items tiered, unchanged); an item no guide rates gets
-  a value from its own numbers (0.03 per 1 % of the squad's damage, so a guide B = about +33 %), never shown as a tier
-  (the card says `(unrated)`, 0.16.1) and capped at B for now (no unrated item ranks above a guide B pick). An item
-  that ends under 1 without a cost to the squad - only weak for it - is held at 1.00, no AVOID (0.16.1); a gain for
-  the run's economy is named as the item gives it (`More luck`, `More XP`, `level-ups`). Then the fit: damage types by
-  the squad's share (an item that deals damage of its own is raised by the squad's tags of its type, never cut for a type
-  nobody deals);
-  turret / melee / taunt / deployable / grenade by whether the squad OWNS such a powerup (the game's powerup tags, not a
-  class table); Silencer and Dartboard by the squad's weapons' own range modifiers; Magazine Clip and Last Round by
-  clip sizes; Glass Cannon by an owned Energy Shield. Items whose worth depends on the run are scored from it: Empty
-  Chest and Wooden Stick by the item slots left empty, Jade Amulet by your luck, Metal Gear and Wrench by your pickup
-  range, Compass and Toilet Paper by your speed, the gems by how many damage types reach 3 tags, Boiling Pot by the
-  status effects the squad applies (it needs 3), MedKit and Nuclear Fusion more while the squad is low, Combat Knife
-  less in Boss Rush. Jewel of Life and Plot Armor - second lives - rank at least like an A-tier item, more while your
-  quest asks to survive the run or the squad is under 60 % health (`A second life - the squad is at 55%`, `A second
-  life - survive the run (quest)`); this floor also lifts a tier you edit lower in knowledge.json. Items that grant tag
-  points are judged from the run's live points (+1.2 when a +N reaches the special; Ultra Instinct needs a tag at 30 and
-  is judged by what pooling the tags gains against the stack and the specials it wipes, -1.5 .. +3.0; One For All is a
-  malus on a stacked type). Pairs and clashes the item texts state are built in (Omnigeode with Ruby or Sapphire Gem,
-  The Word with Pocket Watch, Devil's Deal with Frozen Heart, Positive Attitude, Retaliation and Annoying Trumpet;
-  Devil's Deal clashes with 99'th Balloon and T-Pose Doll, whose bonus a hit ends), +0.9 / -0.9 each (`Pairs with The
-  Word`, `Clashes with your Devil's Deal`), with the pairs the items name (Accumulator and the magnet items, Golden Key
-  and Silver Padlock, the Parca set); Last Unicorn pairs with every animal item (the game's own flag - see Held items);
-  Hyperactivity offered with Smooth Moves held is worth less (`Halved by your Smooth Moves; shots miss`).
-  knowledge.json's `itemPairs` and the new `itemClashes` add your own, each pair counted once. What your builds want
-  adds +0.5. An item with a line per squad size (Duct Tape) is scored by the line for the squad as it is. +3 for the
-  quest target, -1 for a single-slot item already held. The GRAB row only lists what can still drop
+  written from its own text - the item book, 134 rules: what the item gives and takes, what it needs to work, whether
+  its worth follows the run's clock or grows, and the card's words; since 0.16.4 the game's 10-16 texts (47 items
+  changed, see the CHANGELOG). The keyword reading of 0.15.0 is the fallback for an item a newer build adds (`[items] no
+  rule for '<name>'`). Guide tier first (S +3, A +2, B +1, C -1.5; 59 items tiered); an item no guide rates gets a value
+  from its own numbers (0.03 per 1 % of the squad's damage, so a guide B = about +33 %), never shown as a tier (the card
+  says `(unrated)`, 0.16.1) and capped at B. An item that ends under 1 without a cost to the squad - only weak for it -
+  is held at 1.00, no AVOID (0.16.1); a gain for the run's economy is named as the item gives it (`More luck`, `More
+  XP`, `level-ups`). Then the fit: damage types by the squad's share (an item that deals damage of its own is raised by
+  the squad's tags of its type, never cut for a type nobody deals); turret / melee / taunt / deployable / grenade by
+  whether the squad OWNS such a powerup (the game's powerup tags, not a class table); Silencer and Dartboard by the
+  squad's weapons' own range modifiers; Magazine Clip and Last Round by clip sizes; Glass Cannon by an owned Energy
+  Shield. Items whose worth depends on the run are scored from it: Empty Chest and Wooden Stick by the item slots left
+  empty, Jade Amulet by your luck, Metal Gear and Wrench by your pickup range, Compass and Toilet Paper by your speed,
+  the gems by how many damage types reach 3 tags, Boiling Pot by the status effects the squad applies (it needs 3),
+  MedKit and Nuclear Fusion more while the squad is low, Combat Knife less in Boss Rush. Jewel of Life and Plot Armor -
+  second lives - rank at least like an A-tier item, more while your quest asks to survive the run or the squad is under
+  60 % health (`A second life - the squad is at 55%`, `A second life - survive the run (quest)`); this floor also lifts
+  a tier you edit lower in knowledge.json. Items that grant tag points are judged from the run's live points (+1.2 when
+  a +N reaches the special; Ultra Instinct needs a tag at 30 and is judged by what pooling the tags gains against the
+  stack and the specials it wipes, -1.5 .. +3.0; One For All is a malus on a stacked type; Zugzwang doubles a tag at
+  exactly 6). Pairs and clashes the item texts state are built in (Omnigeode with Ruby or Sapphire Gem, The Word with
+  Pocket Watch, Devil's Deal with Frozen Heart, Positive Attitude, Retaliation and Annoying Trumpet; Devil's Deal
+  clashes with 99'th Balloon and T-Pose Doll, whose bonus a hit ends), +0.9 / -0.9 each (`Pairs with The Word`, `Clashes
+  with your Devil's Deal`); a 10-16 pair counts what it does (an extra +20 % less, the Icons' +6 tags as tag points;
+  Bleeding Edge pairs with Slingshot, as the game's data has it); with the pairs the items name (Accumulator and the
+  magnet items, Golden Key and Silver Padlock, the Parca set); Last Unicorn pairs with every animal item (the game's own
+  flag - see Held items); Hyperactivity offered with Smooth Moves held is worth less (`Halved by your Smooth Moves;
+  shots miss`). knowledge.json's `itemPairs` and `itemClashes` add your own, each pair counted once. What your builds
+  want adds +0.5. An item with a line per squad size (Duct Tape) is scored by the line for the squad as it is. +3 for
+  the quest target, -1 for a single-slot item already held. The GRAB row only lists what can still drop
   (`stillAvailableItems`). `[Debug] ItemKeywords = true` scores every chest item the 0.15.0 way, for comparison.
 - **Held items** (`HeldRules.cs`, pure; read once a snapshot by `HeldRead.cs`; 0.16.0). What the items the squad holds
   change is asked of one table, and every rule was read in the game's machine code first. **Mana Potion held** switches
-  every ability cooldown reduction stat bonus off (the game returns 0 for it while the potion is held): a Chem-Light
-  Battery training card - and the level-up's Endless one - does nothing and shows AVOID (0.80, under every live stat
-  card) with `Does nothing while you hold Mana Potion`; Chick Magnet keeps half of its worth (its +30 % cooldown
-  reduction after a magnet is the stat; the pickup range stays), Hyperactivity three quarters (only the ability half of
-  its cooldown bonus is lost), Devil's Deal 90 % (one of its 11 stats - a WHY reason only); Grenade Trail: Shrapnel,
-  whose drops scale with the cooldown reduction, -0.3 (it can only decide between the two Grenade Trail evolutions when
-  no build names one). Nuts & Bolts keeps its worth (its halved cooldown is its own roll, not the stat). **The Mana
-  Potion card** keeps its guide tier as the anchor and weighs the trade from the squad's live cooldowns: it resets an
-  ability every 4 s, picked at random among the abilities with a cooldown - the ability fires at once and a fresh
-  cooldown starts, so a reset is not a free cast - and it switches the squad's cooldown reduction off. Casts with it
-  over casts now: 1.3 or more -> the tier x1.25 (`Resets an ability every 4s - 55% more casts here`); 1.0 - 1.3 -> the
-  tier; 0.7 - 1.0 -> the tier scaled down to 0 (`Would switch off 40% cooldown reduction`); under 0.7 -> AVOID
-  (`Switches off your 60% ability cooldown reduction`); no ability with a cooldown on the squad -> a fifth of the tier.
-  **Reserve Bench held** gives a level-up for each skip of an Item Chest or a Military Training (not a level-up or a
-  Research Pod skip), and a recruit brings one level-up for every 2 minutes since the last survivor joined: every
-  recruit card gets the same lift (`held: recruiting gives 3 level-ups (Reserve Bench)`), so the recruits' order stays
-  and only recruit against Liberate moves - late in a run the recruit still beats Liberate and its card says
-  `Recruiting gives 3 level-ups (Reserve Bench)`; the PLAN's SOS row keeps naming recruits. **Hijacked Signal held**
-  makes a Liberate two level-ups and cash (`Two level-ups and cash (Hijacked Signal)`, one level-up more in its score),
-  so Liberate wins over weak recruits about two level-ups earlier; the SOS row says `Liberate - two level-ups` once it
-  outscores every recruit that could still come. **Life Savings held** turns every cash the game grants into a heal
-  (read in its machine code: no cash is added, the main survivor is healed by the amount): Liberate's card says `A
-  level-up and a heal instead of a recruit`, and items whose rule pays cash (Quick Buck, Farming Tools, and in part
+  every ability cooldown reduction stat bonus off: a Chem-Light Battery training card - and the level-up's Endless one -
+  does nothing and shows AVOID (0.80, under every live stat card) with `Does nothing while you hold Mana Potion`; Chick
+  Magnet keeps half of its worth (its +30 % cooldown reduction after a magnet is the stat; the pickup range stays),
+  Hyperactivity three quarters (only the ability half of its cooldown bonus is lost), Devil's Deal 90 % (one of its 11
+  stats - a WHY reason only); Grenade Trail: Shrapnel, whose drops scale with the cooldown reduction, -0.3 (it can only
+  decide between the two Grenade Trail evolutions when no build names one). Nuts & Bolts keeps its worth (its halved
+  cooldown is its own roll, not the stat). **The Mana Potion card** keeps its guide tier as the anchor and weighs the
+  trade from the squad's live cooldowns: it resets an ability every 4 s, picked at random among the abilities with a
+  cooldown - the ability fires at once and a fresh cooldown starts, so a reset is not a free cast - and it switches the
+  squad's cooldown reduction off. Casts with it over casts now: 1.3 or more -> the tier x1.25 (`Resets an ability every
+  4s - 55% more casts here`); 1.0 - 1.3 -> the tier; 0.7 - 1.0 -> the tier scaled down to 0 (`Would switch off 40%
+  cooldown reduction`); under 0.7 -> AVOID (`Switches off your 60% ability cooldown reduction`); no ability with a
+  cooldown on the squad -> a fifth of the tier. **Reserve Bench held** gives a level-up for each skip of an Item Chest
+  or a Military Training (not a level-up or a Research Pod skip), and a recruit brings one level-up for every 2 minutes
+  since the last survivor joined: every recruit card gets the same lift (`held: recruiting gives 3 level-ups (Reserve
+  Bench)`), so the recruits' order stays and only recruit against Liberate moves - late in a run the recruit still beats
+  Liberate and its card says `Recruiting gives 3 level-ups (Reserve Bench)`; the PLAN's SOS row keeps naming recruits.
+  **Hijacked Signal held** makes a Liberate two level-ups and cash (`Two level-ups and cash (Hijacked Signal)`, one
+  level-up more in its score), so Liberate wins over weak recruits about two level-ups earlier; the SOS row says
+  `Liberate - two level-ups` once it outscores every recruit that could still come. **Life Savings held** turns every
+  cash the game grants into a heal for the main survivor, no cash added (read in its machine code): Liberate's card says
+  `A level-up and a heal instead of a recruit`, and items whose rule pays cash (Quick Buck, Farming Tools, and in part
   Emerald Gem, Access Keycard, Black Box, Hijacked Signal) are weighed as healing - Quick Buck and Farming Tools say
-  `Its cash heals you instead (Life Savings)`. **A Cookie** and **Skip Rope** (and Reserve Bench, Life Savings,
-  Hijacked Signal) change what a skip is worth - see the action hints. **Wooden Stick or Empty Chest held** (+10 % XP /
-  +10 % weapon and ability damage for every empty item slot, up to 8 - read in the game's data): an item that would fill
-  an empty slot costs that 10 % - 1.6 x the run's economy for Wooden Stick (a Common Operation Planning's worth: 2.17
-  two minutes into a 20-minute run, 0.59 at 16:00), 2.0 for Empty Chest (one +10 % damage training). The card shows
-  AVOID `Fills an empty slot: -10% XP (Wooden Stick)` where the cost takes it under 1, else the cost is a WHY reason;
-  no cost for an item you already hold (a second copy takes no slot), with no empty slot or more than 8, and Well
-  Prepped says `Adds the slot it takes - keeps your empty slots`. The PLAN's GRAB row counts the same cost. **Last
-  Unicorn** counts the animal items you hold, itself included (the game's own animal flag, so a later animal item joins
-  by itself): +0.9 for each animal item held, two at most, and its card says `Counts 3 animal items: +30 Luck, +15%
-  damage`; with Last Unicorn held, an animal item pairs with it (`Pairs with your Last Unicorn`). **A status
-  conversion held** (Fire Extinguisher, Warm Ice Cream, Battery Leakage, Biofuel Energy, Nail Bat, Expired Sushi -
-  "Electric damage now causes Toxify instead of Electrify") judges each status item by what still causes its status on
-  this squad: with Battery Leakage, Jacob's Ladder and Icon of Tempest lose their Electric fit (`No Electrify while you
-  hold Battery Leakage`) while Plague's Visage and Icon of Pestilence gain it (`Your Electric now causes Toxify (Battery
-  Leakage)`); a conversion item offered while a status item is held says what it would do to it - `Would stop your
-  Jacob's Ladder's Electrify` (-0.9) or `Would feed your Plague's Visage's Toxify` (+0.6). The WHY band lists a held
-  item's reason first (`held: ...` in the log), right after a quest's. `[Debug] HeldPretend` (docs/INTERNALS.md) makes
-  the advice treat named items as held, for a test.
-  **Held items with no rule** - each checked in the game's machine code; none changes a pick the Companion advises:
-  Black Box (its level-up arrives when the chest opens, its cash on any rescue pick), Ring Of Power (every rescue card
-  applied stacks it, Liberate included), Ban Hammer and Rock And Roll (the game's FREE banish / reroll labels, which the
-  hints read already), Teddy Bear (a 50 % chance not to spend a reroll - the "(2 rerolls left)" words stay literal),
-  Jailbroken Phone with Mouse Trap (no conflict: Mouse Trap's bonus reads a taunted OR a feared enemy), Gold Medal (its
-  x1.1 is in the game's own level-up grants; Skip Rope's training points count it); Treasure Finder, Pawn Shop Receipt,
-  Nuclear Fusion and Easter Egg's first clause act on the item replace and swap screens, which the Companion does not
-  advise yet.
+  `Its cash heals you instead (Life Savings)`. **A Cookie** and **Skip Rope** (and Reserve Bench, Life Savings, Hijacked
+  Signal) change what a skip is worth - see the action hints. **Wooden Stick or Empty Chest held** (+10 % XP / +10 %
+  weapon and ability damage for every empty item slot, up to 8 - read in the game's data): an item that would fill an
+  empty slot costs that 10 % - 1.6 x the run's economy for Wooden Stick (a Common Operation Planning's worth: 2.17 two
+  minutes into a 20-minute run, 0.59 at 16:00), 2.0 for Empty Chest (one +10 % damage training). The card shows AVOID
+  `Fills an empty slot: -10% XP (Wooden Stick)` where the cost takes it under 1, else the cost is a WHY reason; no cost
+  for an item you already hold (a second copy takes no slot), with no empty slot or more than 8, and Well Prepped says
+  `Adds the slot it takes - keeps your empty slots`. The PLAN's GRAB row counts the same cost. **Last Unicorn** counts
+  the animal items you hold, itself included (the game's own animal flag, so a later animal item joins by itself): +0.9
+  for each animal item held, two at most, and its card says `Counts 3 animal items: +30 Luck, +15% damage`; with Last
+  Unicorn held, an animal item pairs with it (`Pairs with your Last Unicorn`). **A status conversion held** (Fire
+  Extinguisher, Warm Ice Cream, Battery Leakage, Biofuel Energy, Nail Bat, Expired Sushi - "Electric damage now causes
+  Toxify instead of Electrify") judges each status item by what still causes its status on this squad: with Battery
+  Leakage, Jacob's Ladder and Icon of Tempest lose their Electric fit (`No Electrify while you hold Battery Leakage`)
+  while Plague's Visage and Icon of Pestilence gain it (`Your Electric now causes Toxify (Battery Leakage)`); a
+  conversion item offered while a status item is held says what it would do to it - `Would stop your Jacob's Ladder's
+  Electrify` (-0.9) or `Would feed your Plague's Visage's Toxify` (+0.6). A pair held makes a type apply both statuses
+  as the game's code does (10-16): Fire, Chemical, Kinetic and Slashing with their two items, Ice with Warm Ice Cream
+  and Biofuel Energy, never Battery Leakage's Electric. The WHY band lists a held item's reason first (`held: ...` in
+  the log), right after a quest's. `[Debug] HeldPretend` (docs/INTERNALS.md) makes the advice treat named items as held,
+  for a test. **Held items with no rule** - each checked in the game's machine code; none changes a pick the Companion
+  advises: Black Box (its level-up arrives when the chest opens, its cash on any rescue pick), Ring Of Power (every
+  rescue card applied stacks it, Liberate included), Ban Hammer and Rock And Roll (the game's FREE banish / reroll
+  labels, which the hints read already), Teddy Bear (a 50 % chance not to spend a reroll, 70 % with Rock And Roll or Ban
+  Hammer - the "(2 rerolls left)" words stay literal), Jailbroken Phone with Mouse Trap (no conflict: Mouse Trap's bonus
+  reads a taunted OR a feared enemy), Gold Medal (its x1.1 is in the game's own level-up grants; Skip Rope's training
+  points count it); Treasure Finder, Pawn Shop Receipt, Nuclear Fusion and Easter Egg's first clause act on the item
+  replace and swap screens, which the Companion does not advise yet.
 - **Research Pod rewards**: 1 + 0.15 per point, +2.5 scaled by the squad's share of that type, +1.0 for the type you
   stack (or the type fixed on the ADVICE tab; nothing with "Spread"), +1.5 x that same fit when the card reaches the
   10-tag effect (nothing for a type nobody on the squad deals: each effect works through its own type's status or
@@ -943,7 +943,7 @@ entry). A sent log answers most of them - the lines to look for are named below 
 11. **The hint's line drawn once, live** (0.16.3): the gold frame on the Reroll button with the cards was seen on 10-11
    (`[badge] ... REROLL advised - the gold frame on the Reroll button`, 7 of 7 hints); owed: the line placed once,
    `..., 0.60 s after the cards` at the end of its `drawn over the Reroll button` line, and no `as the screen settled`.
-12. **The chest words of 0.16.1, live**: `(unrated)` on the cards of items no guide rates and `Unrated by the guides -
-   ...` first in their WHY (on the Deck: whether another reason still fits), `C-tier in the guides` in grey where AVOID
-   stood, and an economy item's own gain (`More luck - pays off all run` under Power of Friendship). The chest advice
-   itself was seen live on 10-10 (5 chests, `items` PASS).
+12. **The chest words of 0.16.1 and 0.16.4, live**: `(unrated)` on the cards of items no guide rates and `Unrated by the
+   guides - ...` first in their WHY (on the Deck: whether another reason still fits), `C-tier in the guides` in grey
+   where AVOID stood, and an economy item's own gain (`More luck - pays off all run` under Power of Friendship). 0.16.4:
+   the 10-16 words (`+40 speed, slows on you halved`), a new pair (`Pairs with your Barrel Roll`).
