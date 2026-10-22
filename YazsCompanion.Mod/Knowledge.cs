@@ -279,8 +279,7 @@ namespace YazsCompanion
     ""Experiment 21"": ""A"",
     ""Cooling Mods"": ""A"",
     ""Ice Turret"": ""A"",
-    ""Transmitter"": ""C"",
-    ""Remote Control Car"": ""C""
+    ""Transmitter"": ""C""
   },
   // item tiers. S / A from the wiki list where a human source agrees or is silent; [human] marks items the forum
   // and guide writers name as go-to picks. The mod adds the fit with the squad, the run clock and what is held on top.

@@ -13,7 +13,8 @@ extracted `data\gamedata.json` (from `tools\extract_gamedata.py` in the project 
 path if it lives elsewhere) and the `[Debug] Probe` dump `probe.json` (by default next to it). Use it before changing a
 rule or a tier. After a game update both are refreshed (0.16.4, the game's content patch of 10-16: the extract of the
 patched build, and a live probe of it made the way the 10-06 fixture was - fields as dumped, the powerup sprite names
-another mod's icons replaced set back to the vanilla ones); the item texts the game draws are only in the extract, the
+another mod's icons replaced set back to the vanilla ones; 0.16.5, the game's rebuild of 10-20: the extract only - that build changed
+four item texts' wording and no live field); the item texts the game draws are only in the extract, the
 probe's item `desc` is the asset's own English text, which the game does not always update. Since 0.16.4 the probe also
 dumps each item's `synergy` (the item its "When equipped with" bonus waits for, the game's synergyItem, and a tag
 synergy's points and type), which IB12 holds the book to. One file per round of cases (`Checks.cs`, `AdviceFixCases.cs`,

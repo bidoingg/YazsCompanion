@@ -126,7 +126,7 @@ namespace YazsCompanion
             new ItemRule("deployable", @"deployable|\btrap", "Mechanic:.8,Engineer:.6,Huntress:.6,Tank:.4", powerTag: "Deployable"),
             new ItemRule("dodge", @"dodge|parry", "Ghost:.8,SWAT:.3", stats: "DodgeChance"),
             new ItemRule("armor", @"armor", "Tank:.8", survival: .5, stats: "TeamArmor", axis: "survival"),
-            new ItemRule("healing", @"\bheal(?!th)|healthpa|max health|max hp|\bhp\b|regenerat", "Medic:.8", survival: .8, stats: "MaxHealth,HealthRegen,HealthBonuses", axis: "survival"),
+            new ItemRule("healing", @"\bheal(?!th)|healthpa|max health|max hp|(?<!(?:below|above|under|over) \d+% )\bhp\b|regenerat", "Medic:.8", survival: .8, stats: "MaxHealth,HealthRegen,HealthBonuses", axis: "survival"),
             new ItemRule("status effects", @"status effect|\bstun", "Pyro:.4,Engineer:.4,Medic:.4,Huntress:.4,Mechanic:.4,Ghost:.3"),
             new ItemRule("weapons", @"weapon|reload|\bclip|bullet|(?<!enemy )projectile(?! attacks)", weapon: .6, generic: .2, stats: "WeaponDamage,WeaponCDRed,WeaponFireRate"),
             new ItemRule("abilities", @"abilit|(?<!weapon )(?<!\ds )cooldown", ability: .6, generic: .2, stats: "AbilityDamage,AbilityCDRed,AbilitySize,AbilityDuration,Multicast"),

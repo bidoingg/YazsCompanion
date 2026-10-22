@@ -5,6 +5,47 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.16.5 (2026-10-22) - the survivors' balance pass of the 10-16 update
+
+A test build. The game's patch notes for the 10-16 update (published with the 10-20 rebuild) list a balance pass over
+every survivor's weapons and abilities, the badges, Military Training and the missions, besides the items 0.16.4 already
+followed. The Companion reads almost all of it from the game while it runs - each mission's objectives and counts, the
+Military Training values per rarity, each badge's values, the skill tree's nodes, each weapon's range bonus - so that
+advice was already right. What was written by hand before the update is updated here.
+
+### Presets
+
+- **New: Venom Archer** (Huntress, an alternative read from the game's data): Toxic Arrows, which the update raised to the
+  other arrows' damage while it cut Explosive and Freezing Arrows. Poison on one chemical tag, next to a chemical Medic
+  (Plague Doctor).
+- **Windcutter** (Ghost) takes Kunai Dance last: the update cut its damage by about a third and the Holo-bait got stronger.
+- Texts that quoted a view from before the update now say so: Bombardier (Explosive Arrows' "highest recorded damage"),
+  Shotgunner (the shotguns were cut), Inferno (the Flamethrower was raised), Cold Chain (the car got more cars and more
+  range), Ripper (the Chainsaw's damage was doubled).
+
+### Abilities on Auto
+
+- The Remote Control Car is no longer marked down as a guide "C" ability: the update gives it up to 4 cars, more range
+  and a stronger Nemesis. It now counts like any ability no guide singles out. The Mechanic's Training Yard plan buys it
+  first among the starting abilities (the Transmitter stays "C"). An unedited knowledge.json is refreshed at the first
+  start (the old copy is kept as knowledge.json.bak); if you edited yours, delete the car's line under `abilities`.
+
+### The 10-20 rebuild's item texts
+
+- The 10-20 rebuild changed the wording of four item texts (Crowbar, Annoying Trumpet, Barrel Roll, Devil's Deal) and a
+  stray full stop (Mana Potion). The advice of all five is unchanged (they have rows in the item book). With the book
+  off, Crowbar's new "below 50% HP" no longer reads as a healing item: a health share is not a heal.
+
+### How it was checked, and what was not seen
+
+- The patch notes line by line against the game's data of the 10-20 build (its extract and code), the Companion's code,
+  its knowledge defaults and its docs; the bench's game data is now the 10-20 extract (the item texts the game draws), and
+  IB10 holds Crowbar's card to the new words. Bench (full, `--strict`, `--no-data`) all as wanted; the Mechanic's Yard
+  plan in `yard_015_expected.txt` changes for the car above only.
+- Not seen in the game yet: the new preset, the Mechanic's Yard plan.
+- Not modelled (no measured data yet): Hardcore's more frequent Military Training points, and main bosses' 300-900 damage
+  hits that pass through the invincibility after a hit.
+
 ## 0.16.4 (2026-10-17) - the items of the game's 10-16 update
 
 A test build. On 2026-10-16 the game was updated without a new version number (still 1.0.2): 47 chest items got new

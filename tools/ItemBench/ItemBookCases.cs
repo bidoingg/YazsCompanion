@@ -840,7 +840,7 @@ namespace YazsCompanion.Bench
                 Tuple.Create("Walkie Talkie 'When equipped with " + ItemRules.WalkieKeeps + ": The total bonus is no longer reduced'", tx("Walkie Talkie").Contains("When equipped with " + ItemRules.WalkieKeeps + ": The total bonus is no longer reduced")),
                 Tuple.Create("Stretcher without 'Dodge'", tx("Stretcher").Length > 0 && tx("Stretcher").IndexOf("Dodge", StringComparison.OrdinalIgnoreCase) < 0),
                 Tuple.Create("A Cookie '" + (HeldRules.CookieShare * 100) + "% of total Health Points'", tx("A Cookie").Contains((HeldRules.CookieShare * 100).ToString(CultureInfo.InvariantCulture) + "% of total Health Points")),
-                Tuple.Create("Crowbar '+30% damage when below half life points'", tx("Crowbar").Contains("+30% damage when below half life points")),
+                Tuple.Create("Crowbar '30% more damage while below 50% HP' (the 10-20 words)", tx("Crowbar").Contains("30% more damage while below 50% HP")),
                 Tuple.Create("Quick Buck 'When equipped with Farming Tools: Gain additional +20% Cash modifier'", tx("Quick Buck").Contains("When equipped with Farming Tools: Gain additional +20% Cash modifier")),
                 Tuple.Create("Teddy Bear 'either Rock And Roll or Ban Hammer: Chance is further increased by +20%'", tx("Teddy Bear").Contains("either Rock And Roll or Ban Hammer: Chance is further increased by +20%")),
             };

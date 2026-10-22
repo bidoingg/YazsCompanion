@@ -57,7 +57,7 @@ namespace YazsCompanion
                     new[] { "Sawblade Drone", "Minefield", "Fury Unleashed", "Bombing Strike" }, new[] { "Slashing", "melee", "taunt", "abilities", "armor" },
                     "Sawblade Drone", "Sawblade Drone: Cogwheels", "Minefield", "Minefield: Taunt"),
                 B("tank-shotgunner", "Tank", "Shotgunner", Guides, "bullets", BuildStyle.Weapon, "Super Shotgun",
-                    "The shotgun line to the Super Shotgun (forum: the top damage in hour-long runs). Close range: shotguns fall off sharply with distance. Fury Unleashed keeps you in the fight.",
+                    "The shotgun line to the Super Shotgun (the forum once rated it the top damage in hour-long runs; the 10-16 balance pass cut both shotguns). Close range: shotguns fall off sharply with distance. Fury Unleashed keeps you in the fight.",
                     new[] { "Fury Unleashed", "Sawblade Drone", "Bombing Strike", "Minefield" }, new[] { "weapons", "Kinetic", "armor", "healing" }),
 
                 // ---------------------------------------------------------------- Engineer
@@ -73,13 +73,16 @@ namespace YazsCompanion
 
                 // ---------------------------------------------------------------- Huntress
                 B("huntress-bombardier", "Huntress", "Bombardier", Guides, "blast", BuildStyle.Weapon, "Explosive Arrows",
-                    "Explosive Arrows with weapon cooldown: the highest recorded Huntress damage. Arrow Rain first (Downpour), Zombie Decoy once.",
+                    "Explosive Arrows with weapon cooldown: the highest recorded Huntress damage before the 10-16 balance pass cut it. Arrow Rain first (Downpour), Zombie Decoy once.",
                     new[] { "Arrow Rain", "Arrow Penetration", "Zombie Decoy", "Bear Trap" }, new[] { "weapons", "critical", "Explosive", "Kinetic" },
                     "Arrow Rain", "Arrow Rain: Downpour"),
                 B("huntress-frost", "Huntress", "Frost Warden", Guides, "snow", BuildStyle.Weapon, "Freezing Arrows",
                     "Freezing Arrows ('take Frost in any case'): the horde never arrives. Arrow Rain first; pairs with Mechanic and a freezing Medic on one ice tag.",
                     new[] { "Arrow Rain", "Bear Trap", "Arrow Penetration", "Zombie Decoy" }, new[] { "Ice", "critical", "slow", "weapons" },
                     "Arrow Rain", "Arrow Rain: Downpour"),
+                B("huntress-venom", "Huntress", "Venom Archer", Data, "flask", BuildStyle.Weapon, "Toxic Arrows",
+                    "Toxic Arrows: the 10-16 balance pass raised them to the damage of the other two while it cut Explosive Arrows and Freezing Arrows. Poison on one chemical tag; pairs with a chemical Medic. Not a guide build yet.",
+                    new[] { "Arrow Rain", "Zombie Decoy", "Arrow Penetration", "Bear Trap" }, new[] { "Chemical", "status effects", "critical", "weapons" }),
                 B("huntress-trapper", "Huntress", "Trapper", Data, "diamond", BuildStyle.Balanced, "",
                     "Taunts and traps under Trap Expertise: Zombie Decoy and Bear Trap hold the horde, the bow finishes it. The guides rate her traps below Arrow Rain.",
                     new[] { "Zombie Decoy", "Bear Trap", "Arrow Rain", "Arrow Penetration" }, new[] { "taunt", "deployable", "abilities" }),
@@ -90,7 +93,7 @@ namespace YazsCompanion
                     new[] { "Pulsar", "Shuriken", "Holo-bait", "Kunai Dance" }, new[] { "Slashing", "melee", "critical", "dodge" }),
                 B("ghost-windcutter", "Ghost", "Windcutter", Guides, "up", BuildStyle.Weapon, "Windcutter",
                     "The ranged blade: the largest area and range, the slowest swing, more damage the further it flies. Holo-bait keeps the horde at that distance.",
-                    new[] { "Shuriken", "Holo-bait", "Kunai Dance", "Pulsar" }, new[] { "Slashing", "critical", "weapons" }),
+                    new[] { "Shuriken", "Holo-bait", "Pulsar", "Kunai Dance" }, new[] { "Slashing", "critical", "weapons" }),
 
                 // ---------------------------------------------------------------- Medic (the guides describe one build)
                 B("medic-field", "Medic", "Field Medic", Guides, "cross", BuildStyle.Ability, "Freezing Flasks",
@@ -110,16 +113,16 @@ namespace YazsCompanion
                     "The forum's easy mode: Infernax with Fire Walk and No Pain, No Gain, fully levelled before recruiting. Weapon cooldown, not attack speed. Keep long-range mates away.",
                     new[] { "Fire Walk", "No Pain, No Gain", "Molotov Cocktail", "Makeshift Bomb" }, new[] { "melee", "Fire", "Slashing", "weapons", "armor" }),
                 B("pyro-inferno", "Pyro", "Inferno", Guides, "flame", BuildStyle.Weapon, "Flamethrower",
-                    "Flamethrower, Fire Walk and Molotov (Spray): everything burns on one fire tag and Backdraft grows with it. Guides: strong early, fades after 25 minutes.",
+                    "Flamethrower, Fire Walk and Molotov (Spray): everything burns on one fire tag and Backdraft grows with it. Guides (before the 10-16 balance pass raised the Flamethrower): strong early, fades after 25 minutes.",
                     new[] { "Fire Walk", "Molotov Cocktail", "Makeshift Bomb", "No Pain, No Gain" }, new[] { "Fire", "status effects", "abilities" },
                     "Molotov Cocktail", "Molotov Cocktail: Spray"),
 
                 // ---------------------------------------------------------------- Mechanic (the guides describe one build)
                 B("mechanic-coldchain", "Mechanic", "Cold Chain", Guides, "snow", BuildStyle.Balanced, "Nitro-Gun",
-                    "The guides' one Mechanic build: Nitro-Gun, Ice Turret and Cooling Mods on a single ice tag. They rate the car weak and the Transmitter a trap (you must stand in it).",
+                    "The guides' one Mechanic build: Nitro-Gun, Ice Turret and Cooling Mods on a single ice tag. They rate the Transmitter a trap (you must stand in it); their low view of the car predates its 10-16 buff (more cars, more range).",
                     new[] { "Ice Turret", "Cooling Mods", "Remote Control Car", "Transmitter" }, new[] { "Ice", "slow", "turret", "deployable", "abilities" }),
                 B("mechanic-ripper", "Mechanic", "Ripper", Data, "gear", BuildStyle.Weapon, "Chainsaw",
-                    "Chainsaw up close with the car as a second blade (Nemesis). The guides rate the Chainsaw poorly - this only earns its place next to Ghost (melee synergy).",
+                    "Chainsaw up close with the car as a second blade (Nemesis). The 10-16 balance pass doubled the damage of the Chainsaw; the guides' poor rating predates it. Melee synergy with Ghost on top.",
                     new[] { "Remote Control Car", "Cooling Mods", "Ice Turret", "Transmitter" }, new[] { "melee", "Slashing", "weapons" },
                     "Remote Control Car", "Remote Control Car: Nemesis"),
 
