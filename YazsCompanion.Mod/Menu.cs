@@ -1626,6 +1626,8 @@ namespace YazsCompanion
         // 0.16.1 (C-3): before the tour, the hint preview (RerollHint.DebugPreviewDue: a REROLL and a SKIP hint drawn in turn as real ones draw
         // them - the frame on the button, the best card's 'IF YOU KEEP' - with a 'hint_reroll' / 'hint_skip' shot each; the walk's level-ups
         // are strong, so no real hint would show them).
+        // 0.17.0 (C16-06a): after the tour, with [Debug] PauseWalkLock on, the lock proof (Advisor.DebugLockDue -> Lockdown.DebugDue: card #2 locked
+        // the game's way, the screen rerolled once - the new cards must hold the lock), stages 1 and 61 only.
         static bool _ppDone, _ppResumed, _ppWindowed; static int _ppStage; static float _ppAt = -1f, _ppStarted;
         static PanelDetailLevel _ppDetail; static float _ppSize; static bool _ppChanged;
         static WideMode _ppWide; static bool _ppWideChanged, _ppWideWas; static int _ppRestores;      // 0.15.0 (C15-08): the wide Off / back step
@@ -1920,6 +1922,7 @@ namespace YazsCompanion
                             bool more = t < 30f || (Advisor.DebugPicks == 0 && t < 40f);
                             if (playing && RerollHint.DebugPreviewDue(now)) { _ppAt = now + 0.1f; return; }      // 0.16.1 (C-3): the first offer's hint preview (REROLL, SKIP), before the hover tour
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }      // the first offer's hover tour holds the pick (the run clock stands)
+                            if (playing && Advisor.DebugLockDue(now)) { _ppAt = now + 0.1f; return; }      // 0.17.0 (C16-06a): [Debug] PauseWalkLock's lock proof, after the tour
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 0.5f; return; }      // an offer that is up is always answered
                             // the game opens its pause menu by itself when its window is not the focused one as the run comes
                             // up (a launch from a script): the clock then stands at 0 until somebody resumes - do that, once
@@ -2048,6 +2051,7 @@ namespace YazsCompanion
                             if (playing) DebugFirstLevelUp(t, now);      // series r1 fix round: still no offer at 36 s (20 s with the recruit) - the game's Debug_LevelUp
                             if (playing && RerollHint.DebugPreviewDue(now)) { _ppAt = now + 0.1f; return; }      // 0.16.1 (C-3): the first offer's hint preview (REROLL, SKIP), before the hover tour
                             if (playing && Advisor.DebugTourDue(now)) { _ppAt = now + 0.1f; return; }
+                            if (playing && Advisor.DebugLockDue(now)) { _ppAt = now + 0.1f; return; }      // 0.17.0 (C16-06a)
                             if (playing && Advisor.DebugPickDue(now)) { _ppLastPick = now; _ppAt = now + 1.0f; return; }
                             bool waiting = Advisor.DebugPicks == 0 && t < PauseRecruit.PlayBound && now - _ppResumeAt < 20f;
                             if (waiting || now - _ppLastPick < 1.0f) { _ppAt = now + 0.25f; return; }

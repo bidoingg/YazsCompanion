@@ -107,9 +107,11 @@ namespace YazsCompanion
         // were read from ('team', 'leader', 'max - equipped'; '?' until read)
         public double FreeSlots = double.NaN, Luck = double.NaN, Pickup = double.NaN, MoveSpeed = double.NaN;
         public string FreeFrom = "?";
-        // 0.16.0 (C16-02 section 8): LOCKDOWN on the run and advised by its rule - read by the item book's 'lockdown' need; both stay
-        // false in 0.16.0 (the LOCKDOWN lane, 0.16.1, sets them)
-        public bool LockdownOn, LockdownAdvised;
+        // 0.16.0 (C16-02 section 8): LOCKDOWN on the run and advised by its rule - read by the item book's 'lockdown' need. 0.17.0 (C16-06a):
+        // LockdownOn = the Training Yard's Lockdown unlock as the game tests it (Lockdown.Unlocked: null = not read, treated as unlocked);
+        // LockdownAdvised stays false until the LOCKDOWN hint (C16-06b)
+        public bool? LockdownOn;
+        public bool LockdownAdvised;
         public bool SquadFull { get { return Squad.Count >= 3; } }
         public Survivor Find(CT t) { foreach (var s in Squad) if (s.Type == t) return s; return null; }
         public bool OnSquad(CT t) { return Find(t) != null; }
@@ -524,6 +526,9 @@ namespace YazsCompanion
             // 0.16.0 (C16-12): the active quest asks to survive the run and is followed - the item book's revive rule reads it through
             // the context (cached quest state only: no game reads)
             try { c.SurviveQuest = YazsCompanion.Quest.SurviveFollowed(); } catch { c.SurviveQuest = false; }
+            // 0.17.0 (C16-09): ... and its caution factor (RunContext.QuestCautionOn gates it: a hard mode, 30 % of the run; the first snapshot of a
+            // run may miss the quest - the gate starts at 30 % anyway). QuestRules.SurviveCaution is 1.0 since the replay of 10-25: no factor
+            try { c.QuestCaution = c.SurviveQuest ? QuestRules.SurviveCaution : 1.0; } catch { c.QuestCaution = 1.0; }
         }
 
         // the team passives (Grenade / Turret / Trap Expertise, Cold Chain) that are bought and whose owner is on the squad
@@ -676,6 +681,8 @@ namespace YazsCompanion
             {
                 try { HeldRead.Fill(master, s); }
                 catch (Exception e) { if (!_heldSaid) { _heldSaid = true; Plugin.Logger.LogInfo("[held] held items not read (" + e.GetType().Name + ": " + e.Message + ")"); } }
+                // 0.17.0 (C16-06a): the Training Yard's Lockdown unlock, as the game tests it (cached for the session's runs; never throws)
+                s.LockdownOn = Lockdown.Unlocked();
             }
             return s;
         }

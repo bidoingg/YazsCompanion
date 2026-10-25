@@ -35,7 +35,9 @@
 // info-only QUEST row (QuestStory in QuestRules.cs; [General] QuestProgress). 0.16.1 (C16-04a): every counted kind has a row, in the game's
 // own words ('Broken Vials 3 of 5', 'Liberate Survivors 1 of 3'; QuestStory.Decode takes the quest's name for the Boss Rush boss's), a long
 // count rebuilding the readout once per tenth of the way (StoryHash); EventCount RerollItemChecOncePerView and SOSLiberate get rules of their
-// own in 0.17.0 (C16-04b / c, on QuestStory's gates). Every game member is read through a small NoInlining accessor inside a try, as in
+// own in 0.17.0 (C16-04b: the chest's REROLL and the rerolls kept - RerollHint / ScreenCall; C16-04c: Liberate first when the SOS signals
+// left run short - Story sets QuestStory.Sos, Ranker.ScoreSos and the PLAN's SOS row read it), and a Survive objective on a hard mode gets a
+// QUEST row from 30 % of the run (C16-09: Rules sets it; RunContext.QuestCautionOn gates the caution factor too - dropped by its replay, 1.0). Every game member is read through a small NoInlining accessor inside a try, as in
 // LoadoutState: a member a game patch took away costs that one reading, not the run.
 using System;
 using System.Collections.Generic;
@@ -89,7 +91,16 @@ namespace YazsCompanion
         {
             _quest = IntPtr.Zero; _none = false; _team = null; _said = null; _warned = false; _clock = -1f;
             _rules = null; _defs.Clear(); _runtimes.Clear(); _runtimesByName.Clear(); _runtimeCount = -1; _rulesSaid = null; _progressWarned = false; _healthPathSaid = false;
-            _story = null; _counts.Clear(); _storySaid = null; _countWarned = false;
+            _story = null; _counts.Clear(); _storySaid = null; _countWarned = false; _teamDecidesSaid = false;
+        }
+
+        // 0.17.0 (C16-04c): the quest's team rule and its Liberate rule both want the rescue cards - the team rule decides; said once a run
+        static bool _teamDecidesSaid;
+        internal static void TeamRuleDecides()
+        {
+            if (_teamDecidesSaid) return;
+            _teamDecidesSaid = true;
+            Plugin.Logger.LogInfo("[quest] the team rule decides the rescue cards (the Liberate rule waits while it is active)");
         }
 
         /// <summary>[Advice] QuestSteer as set now (On when the setting cannot be read).</summary>
@@ -341,7 +352,11 @@ namespace YazsCompanion
             if (o.TryCast<GameHubQuestObjectiveSurvive>() != null || o.TryCast<GameHubQuestObjectiveSurviveTime>() != null || o.TryCast<GameHubQuestObjectiveCompleteRun>() != null)
             {
                 rules.Survive = true;       // 0.16.0 (C16-12): the quest asks to survive the run - the item book's revive rule (SurviveFollowed)
-                return "the run's own goal - advice unchanged";
+                // 0.17.0 (C16-09): and on a hard mode the QUEST row from 30 % of the run - with the caution factor while it is kept (RunContext.QuestCautionOn;
+                // the replay of 10-25 dropped it: SurviveCaution 1.0)
+                string from = (int)Math.Round(QuestRules.SurviveFrom * 100) + "% of the run";
+                return QuestRules.CautionKept ? "the run's own goal - on Hardcore or difficulty 3+ survival picks x" + QuestRules.SurviveCaution.ToString("0.00", IC) + " from " + from
+                    : "the run's own goal - advice unchanged; on Hardcore or difficulty 3+ the QUEST row says 'survive the run' from " + from;
             }
             return null;
         }
@@ -580,7 +595,16 @@ namespace YazsCompanion
             var steer = Steer();
             rules.Steer = steer; rules.AnyOf = team.AnyOf; rules.Failed = team.Failed; rules.NotThisRun = team.NotThisRun;
             rules.TeamWords = steer == QuestSteer.InfoOnly && team.HasRule && !team.AnyOf && !team.Failed && team.NotThisRun == null ? team.Words : null;
-            if (rules.List.Count == 0 && rules.TeamWords == null) return null;
+            // 0.17.0 (C16-09): a survive quest on a hard mode - the QUEST row's item and the log's words, from the one gate (RunContext.QuestCautionOn)
+            rules.SurviveRow = null; rules.SurviveSaid = null;
+            if (rules.Survive && s != null)
+            {
+                var ctx = s.Ctx;
+                bool hard = QuestRules.Hard(ctx.Mode, ctx.Difficulty), on = ctx.QuestCautionOn;
+                rules.SurviveRow = QuestRules.SurviveText(true, rules.Follows, steer, hard, ctx.QuestProgress, on);
+                rules.SurviveSaid = QuestRules.SurviveLog(true, hard, on, rules.SurviveRow, ctx.Mode, ctx.Difficulty);
+            }
+            if (rules.List.Count == 0 && rules.TeamWords == null && rules.SurviveRow == null) return null;
             try { Progress(rules, s); }
             catch (Exception e) { if (!_progressWarned) { _progressWarned = true; Plugin.Logger.LogWarning("[quest] progress not read: " + e.GetType().Name + " " + e.Message + " - the rules as first read (said once a run)"); } }
             string key = rules.Key();
@@ -617,6 +641,8 @@ namespace YazsCompanion
                 foreach (var d in _counts) ReadCount(d);
             }
             catch (Exception e) { if (!_countWarned) { _countWarned = true; Plugin.Logger.LogWarning("[quest] counts not read: " + e.GetType().Name + " " + e.Message + " (said once a run)"); } }
+            // 0.17.0 (C16-04c): the Liberate rule on this snapshot (QuestRules.cs: the squad, the mode, the seconds of play to come)
+            try { story.Sos = s == null ? null : story.Liberate(s.Squad.Count, s.Ctx.Kind, s.Ctx.Remaining); } catch { story.Sos = null; }
             string key = story.Key();
             if (key != _storySaid)
             {

@@ -62,9 +62,44 @@ namespace YazsCompanion.Bench
             ReviveSources();
             ShortWords();
             ShortSources();
+            LockSources();                                  // 0.17.0 (C16-06a)
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             int bad = _bad; _bad = was;
             return bad;
+        }
+
+        // ---------------------------------------------------------------- LK1: the LOCKDOWN read (0.17.0, C16-06a) - its sources (Lockdown.cs uses game types:
+        // the bench reads its text, never compiles it). The traps it guards: the base ProcessLockdown (every override jumps into it - one lock seen twice),
+        // the Research Pod's (an empty body 4,075 methods share), the rescue screen's (unreachable), G.NodeLevel (swallows every exception into 'level 0')
+        static string Between(string s, string from, string to)
+        {
+            if (s == null) return null;
+            int a = s.IndexOf(from, StringComparison.Ordinal); if (a < 0) return null;
+            int b = s.IndexOf(to, a + from.Length, StringComparison.Ordinal); return b < 0 ? s.Substring(a) : s.Substring(a, b - a);
+        }
+        static void LockSources()
+        {
+            string lk = Src("Lockdown.cs"), adv = Src("Advisor.cs"), menu = Src("Menu.cs"), ranker = Src("Ranker.cs"), state = Src("GameState.cs"), plugin = Src("Plugin.cs"), hint = Src("RerollHint.cs");
+            string proj = File.Exists(Proj()) ? File.ReadAllText(Proj()) : "";
+            string locked = Between(lk, "static class P_Locked", "static void Prefix");
+            Check("LK1", "Lockdown.cs patches ProcessLockdown on exactly UIGameplayLevelUp, UIGameplayChestOpened and UIGameplayMilitaryTraining (DeclaredMethod), and ClickLockdown on UIGameplayUpgradeSelection",
+                lk != null && locked != null && locked.Contains("new[] { typeof(UIGameplayLevelUp), typeof(UIGameplayChestOpened), typeof(UIGameplayMilitaryTraining) }")
+                && locked.Contains("AccessTools.DeclaredMethod(t, nameof(UIGameplayUpgradeSelection.ProcessLockdown), new[] { typeof(UIPowerupButtonBase) })")
+                && lk.Contains("[HarmonyPatch(typeof(UIGameplayUpgradeSelection), nameof(UIGameplayUpgradeSelection.ClickLockdown))]"));
+            Check("LK1", "Lockdown.cs: no UIGameplayHashtagEvent / UIGameplayCharacterRescue target, no ProcessLockdown patch on the base, no G.NodeLevel( (the game's own test: levelCurrent and IsUnlocked)",
+                lk != null && !lk.Contains("typeof(UIGameplayHashtagEvent)") && !lk.Contains("typeof(UIGameplayCharacterRescue)") && !lk.Contains("typeof(UIGameplayUpgradeSelection), nameof(UIGameplayUpgradeSelection.ProcessLockdown)")
+                && !lk.Contains("G.NodeLevel(") && lk.Contains("r.levelCurrent") && lk.Contains("r.IsUnlocked()") && Regex.Matches(lk, @"\[MethodImpl\(MethodImplOptions\.NoInlining\)\]").Count >= 11);
+            Check("LK1", "Advisor: Lockdown.Mark( after Ranker.Rank(, Lockdown.LogOffer( before RerollHint.OnOffer(, Lockdown.Forget() with the run, ' - the lock is spent' on the pick line",
+                adv != null && adv.IndexOf("Ranker.Rank(", StringComparison.Ordinal) >= 0 && adv.IndexOf("Ranker.Rank(", StringComparison.Ordinal) < adv.IndexOf("Lockdown.Mark(", StringComparison.Ordinal)
+                && adv.IndexOf("Lockdown.LogOffer(", StringComparison.Ordinal) >= 0 && adv.IndexOf("Lockdown.LogOffer(", StringComparison.Ordinal) < adv.IndexOf("RerollHint.OnOffer(", StringComparison.Ordinal)
+                && adv.Contains("Lockdown.Forget();") && adv.Contains("\" - the lock is spent\""));
+            Check("LK1", "Menu.cs calls Advisor.DebugLockDue(now) exactly twice (stages 1 and 61), between the hover tour and the pick",
+                menu != null && Regex.Matches(menu, Regex.Escape("Advisor.DebugLockDue(now)")).Count == 2
+                && Regex.Matches(menu, @"Advisor\.DebugTourDue\(now\)\) \{ _ppAt = now \+ 0\.1f; return; \}[^\n]*\n\s*if \(playing && Advisor\.DebugLockDue\(now\)\)").Count == 2);
+            Check("LK1", "Card.Lockable / Locked, Snapshot.LockdownOn from Lockdown.Unlocked(), [Debug] PauseWalkLock off by default, RerollHint.OnLockChanged (C16-06b's stub)",
+                ranker != null && ranker.Contains("internal bool Lockable, Locked;") && state != null && state.Contains("s.LockdownOn = Lockdown.Unlocked();") && state.Contains("public bool? LockdownOn;")
+                && plugin != null && plugin.Contains("Config.Bind(\"Debug\", \"PauseWalkLock\", false,") && hint != null && hint.Contains("internal static void OnLockChanged(UIGameplayUpgradeSelection sel)"));
+            Check("LK1", "ItemBench.csproj does not compile Lockdown.cs (game types)", proj.Length > 0 && !proj.Contains("Lockdown.cs"));
         }
 
         public static int Run(List<ProbeItem> items)

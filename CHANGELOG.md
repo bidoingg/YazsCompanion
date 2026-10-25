@@ -5,6 +5,61 @@ checked. The [README](README.md) describes the mod as it is now. Dates are the r
 (US Central); the [GitHub releases](https://github.com/bidoingg/YazsCompanion/releases) carry the exact times, the zips
 and the one-paragraph notes the auto-updater shows.
 
+## 0.17.0 (2026-10-25) - quests that count rerolled chests and liberated survivors, the LOCKDOWN read, survive quests on hard modes
+
+Four parts. Two quest objectives the game counts now steer the advice the way the other quest rules do, a survive quest on Hardcore
+or difficulty 3+ gets its QUEST row, and every lock you make with the Training Yard's Lockdown is read and logged (no hint yet).
+
+### 'Rerolled Item Chests' (the Ghost's "Encapsulation": use Reroll on 3 different Item Chests)
+
+- The game counts one reroll per chest (read in its code: the chest screen raises the quest's event only on the first reroll of each
+  chest it shows). While the quest counts, a chest it has not counted yet whose best card is under 3.5 says `REROLL - the quest counts
+  this reroll (Rerolled Item Chests 1 of 3)` (`REROLL - the quest counts this reroll` where the line goes under the button) - not when
+  the best card is the quest's own, not while a second life is on the cards under a survive quest. Over the 152 chest views of 33
+  logged runs this reaches 3 rerolled chests in 15 of the 18 runs with three chests or more (64 hints; your choice of 10-13: 3.5).
+- Every other screen keeps the rerolls the quest still needs: a level-up, a training, a Research Pod or the rescue screen gives no
+  REROLL hint while no more rerolls are left than chests still to reroll and the reroll is not free ('rerolls kept for the quest' in
+  the log). After a reroll the chest's hint does not come back on that chest, not even for the moment before the new cards land.
+- No new setting: `[Advice] ActionHints` (Reroll), `RerollHint` (the rescue screen) and `QuestSteer` switch it.
+
+### 'Liberate Survivors' (SOSLiberate x3 / x5: Inflammation, the SWAT's repeatable)
+
+- Each SOS signal is a recruit or a Liberate, and once your team is full every signal you reach liberates on its own (read in the
+  game's code; not seen in a run yet). So recruits come first while the SOS signals left in the run - about one every 2:50 - cover
+  the Liberates still needed with one to spare (your choice of 10-13). When they no longer do, the Liberate card goes first with
+  `Quest: Liberate 4 more - about 4 SOS signals left`, a recruit goes under it, the rescue screen's reroll hint stays silent and the
+  PLAN's SOS row says `quest: Liberate (1 of 5)`. When even every signal left cannot reach the count, nothing moves. In
+  Extermination, where a full team's SOS rewards give XP instead, Liberate goes first while the team has a free slot.
+- It overrides `[Advice] Recruit` while it applies; the quest's team rule (stay solo, a class needed) still decides first;
+  `QuestSteer` InfoOnly writes the lines and moves nothing.
+
+### Survive quests on Hardcore or difficulty 3+
+
+- A quest that asks you to survive the run on Hardcore or difficulty 3+ adds `survive the run` to the QUEST row from 30 % of the run.
+- The plan was to weigh health, armor and healing x1.15 from then on, kept only if a replay of the logged hard-mode runs showed it
+  mattering (your choice of 10-13: x1.15 only if the replay keeps x1.10 or more, otherwise the row alone). The replay
+  (`tools\bench.cmd --replay-caution <logs>`) over every log on the PC - 119 Hardcore offers of two runs; the older runs had rotated
+  out of the log - found no pick that x1.10 or x1.15 would change (x1.20 would have changed one chest late in a run): so the cards
+  stay as they are and the row is all. The factor stays in the code at 1.0, ready should a later replay keep it.
+
+### LOCKDOWN, read and logged
+
+- Read in the game's code: Lockdown is free and unlimited on level-ups, chests and Military Trainings once the Training Yard's team
+  tree unlocks it; the locked card comes back first on the next screen of its kind - and on a reroll of the same screen - while it is
+  still in the pool; taking it spends the lock, a skip keeps it; a locked training keeps its rarity.
+- The log now names every lock: `[lock] Chest 08:02: Golden Key locked - on the cards (#1, 3.80)` on each offer while one is held,
+  your presses (`the Lockdown button pressed (armed)`), `lockdown on X (#2, 3.40)`, `lockdown off X`, and `- the lock is spent` when
+  you take it. Nothing changes on screen; the LOCKDOWN hint comes later. `[Debug] PauseWalkLock` (off by default) adds a lock proof
+  to the pause walk: card #2 locked, the screen rerolled, the new cards must hold it.
+
+### How it was checked, and what was not seen
+
+- Bench (full, `--strict`, `--no-data`) all as wanted, with new sections: Q6b / Q6c / Q7 (`QuestCases017.cs`: the rules on made-up
+  screens and runs, the gates, the rails, the replay's decision) and LK1 (the LOCKDOWN read's sources); the existing hint cases are
+  unchanged. The chest corpus of the logged runs is replayed outside the repository (`--replay-quest-chests`): 15 of 33 runs, 64 hints.
+- Not seen in the game yet: all four parts. The two quests are not open in the maintainer's save (Ghost's "Encapsulation" is
+  completed) or wait for the game to offer them; the LOCKDOWN lines show with a lock by hand or the walk's proof.
+
 ## 0.16.5 (2026-10-22) - the survivors' balance pass of the 10-16 update
 
 A test build. The game's patch notes for the 10-16 update (published with the 10-20 rebuild) list a balance pass over

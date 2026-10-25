@@ -12,6 +12,9 @@
 //        0.16.0: --timings (with a full or --strict run) prints YB8's milliseconds (YardBadgeCases.cs); without it a bench log is
 //        the same bytes on every run of one tree
 //        0.16.2: ItemBench --updater-drill --root <dir> --base http://localhost:<port> --dlls <dir> ... (tools\updater_drill.ps1 runs it)
+//        0.17.0: ItemBench --replay-caution <companion.log> [more logs] [--data <gamedata.json>] [--probe <probe.json>] - the survive quest's
+//        caution replayed over the logged hard-mode offers, a verdict line at the end (CautionReplay.cs, C16-09);
+//        ItemBench --replay-quest-chests <chest_corpus.txt> - a chest corpus under the 'Rerolled Item Chests' rule (QuestCases017.cs, C16-04b)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -37,6 +40,12 @@ namespace YazsCompanion.Bench
             // 0.15.0 (C15-11): a log's health, PASS / FAIL per check (LogCheck.cs): ItemBench --check-log <companion.log> [--since last|all|<stamp>] [--wide on|off] [--expect kind,kind]
             int ci = Array.IndexOf(args, "--check-log");
             if (ci >= 0) return LogCheck.Command(args, ci);
+            // 0.17.0 (C16-09): the survive quest's caution replayed over logged hard-mode offers (CautionReplay.cs); its own data paths, so before the path handling
+            int cr = Array.IndexOf(args, "--replay-caution");
+            if (cr >= 0) return CautionReplay.Command(args, cr);
+            // 0.17.0 (C16-04b): a chest corpus (the user's stays outside the repository) replayed under the 'Rerolled Item Chests' rule (QuestCases017.cs)
+            int qc = Array.IndexOf(args, "--replay-quest-chests");
+            if (qc >= 0) return QuestCases.ReplayCorpusFile(qc + 1 < args.Length ? args[qc + 1] : null);
             if (args.Contains("--api-surface")) return ApiContract.Print();       // 0.15.0 (C15-01): the start of a new api_v<N>.txt
             // 0.16.2 (the beta channel, WP1): the host of tools\updater_drill.ps1 - the real update check against a localhost feed (UpdaterDrill.cs)
             if (args.Contains("--updater-drill")) return UpdaterDrill.Run(args);

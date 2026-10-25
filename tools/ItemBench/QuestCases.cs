@@ -17,6 +17,7 @@
 //       count, the readout's info-only story row along the live 10-06 "Genesis" run, the gates, event counts and kills (log only), the
 //       advice audit's keys, and the sources (the runtime's _count, the readout's dim row behind [General] QuestProgress).
 //   Q6a 0.16.1 (C16-04a): every counted objective of 1.0.2 in the game's own words - QuestWordsCases.cs.
+//   Q6b / Q6c / Q7 0.17.0 (C16-04b 'Rerolled Item Chests', C16-04c 'Liberate Survivors', C16-09 survive quests on hard modes) - QuestCases017.cs.
 // Generic names only (the repository is public): the game's own quest, class and card names; the lent build is "Bench Anchor".
 using System;
 using System.Collections.Generic;
@@ -67,7 +68,7 @@ namespace YazsCompanion.Bench
             Rails();
             Sources();
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
-            return _bad;
+            return _bad + RunPure017();                                 // 0.17.0 (C16-04b / C16-04c / C16-09): QuestCases017.cs, a section of its own
         }
 
         // ---------------------------------------------------------------- helpers

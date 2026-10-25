@@ -65,6 +65,9 @@ namespace YazsCompanion
         internal bool OwnBuildOpen;      // an ability card the owner's build ranks (no build: any), short of its last level
         internal string Rarity, StatKey; // a stat card's rarity and its stat (the asset's: AbilitySize, TeamArmor), for the quest's rules
         internal TieKey Tie; internal string TieSay;   // 0.16.0 (C16-08): what settles an exact tie (CardTies), and the words of it for the WHY band (CardTies.Say against the first card; null: no tie, or the position)
+        // 0.17.0 (C16-06a): the game would let the player lock this card (its button's own IsLockdownable - the test the game's click routing
+        // makes), and it is the screen's lock now (Lockdown.Mark after the ranking; Lockdown.Remark after a lock changed)
+        internal bool Lockable, Locked;
     }
 
     internal static class Ranker
@@ -805,6 +808,9 @@ namespace YazsCompanion
                 string libWhy = HeldRules.LiberateWhy(libUps, heals);                       // C16-01d: 'held: two level-ups and cash (Hijacked Signal)'
                 if (libWhy != null) c.Why.Insert(0, libWhy);
                 var lq = s.Quest; if (lq != null) c.Score = lq.Card(null, c.Score, c.Why);       // 0.13.0 (C1): the active quest's team rule
+                // 0.17.0 (C16-04c): a 'Liberate Survivors' quest - Liberate first when the SOS signals left run short (the team rule wins while active)
+                if (lq == null || !lq.Active) { var st = s.Story; if (st != null) c.Score = QuestStory.LiberateCard(st.Sos, st.Steer, true, c.Score, c.Why); }
+                else SosTeamFirst(s);
                 lib.Quest = QuestHead(c.Why);
                 c.Say = new CardWords { Kind = SayKind.Recruit, Recruit = lib };
                 return;
@@ -818,9 +824,18 @@ namespace YazsCompanion
             var say = new RecruitSay();
             c.Score = RecruitScore(cls, props, s, c.Why, c.Recruit, say);
             var q = s.Quest; if (q != null) c.Score = q.Card(c.Name, c.Score, c.Why);      // 0.13.0 (C1): the active quest's team rule
+            // 0.17.0 (C16-04c): ... and under a 'Liberate Survivors' quest that wants this signal liberated, a recruit under the Liberate card
+            if (q == null || !q.Active) { var st = s.Story; if (st != null) c.Score = QuestStory.LiberateCard(st.Sos, st.Steer, false, c.Score, c.Why); }
+            else SosTeamFirst(s);
             say.Quest = QuestHead(c.Why);
             c.Say = new CardWords { Kind = SayKind.Recruit, Recruit = say };
             c.Recruit.Score = c.Score;
+        }
+
+        // 0.17.0 (C16-04c): the team rule is active and the Liberate rule would force - the team rule decides (said once a run)
+        static void SosTeamFirst(Snapshot s)
+        {
+            try { var st = s.Story; if (st != null && st.Sos != null && st.Sos.Force && st.Moves) Quest.TeamRuleDecides(); } catch { }
         }
 
         /// <summary>What a recruit brings to THIS squad: bought synergy nodes (an unbought node does nothing in a run), damage

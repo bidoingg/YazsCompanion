@@ -20,10 +20,12 @@
 //   real-session proofs  first-input (prints the source: pad / key / mouse / touch), yard (a Training Yard purchase or
 //                        refund), equip (EQUIP ADVICE / UNDO pressed - prints how: touch / mouse / key, 0.16.1 pad; a line of
 //                        a build before 0.16.0 has no source and counts apart), equip-order (0.16.1: an EQUIP that left the
-//                        slots in the advice's order), ribbon (the badge ribbon stepped aside)
-//   quest proofs         quest-story (a '[quest] ... -> story objective ...' step)
+//                        slots in the advice's order), ribbon (the badge ribbon stepped aside); 0.17.0 lock (a '[lock] ...' line:
+//                        the screen's lock read on an offer), lock-pick (a lock set or cleared by the player - prints on / off)
+//   quest proofs         quest-story (a '[quest] ... -> story objective ...' step); 0.17.0 quest-reroll (a chest's quest REROLL),
+//                        quest-liberate (the Liberate rule's words on the count's line), quest-survive (the survive row's line)
 //   walk proofs          side-panel (a WHY panel in a side wing), results (a results-screen shot step), recruit-tour (the
-//                        pause walk's hover tour over cards 2 to 4 of 4)
+//                        pause walk's hover tour over cards 2 to 4 of 4); 0.17.0 lock-walk ([Debug] PauseWalkLock rerolled)
 // --expect kind,kind turns those kinds into checks: FAIL when the kind is not in the log (equip: when no line says how it
 // was pressed). An unknown kind exits 2 with the list.
 // Exit 0 when every check passes, 1 when one fails, 2 when the file or a session is missing (or --expect names an unknown
@@ -119,11 +121,19 @@ namespace YazsCompanion.Bench
             // 0.16.1: an EQUIP run that left the slots in the advice's order (its done line; 'NOT the advice's order' does not count)
             new ProofKind("equip-order", "real-session proofs", @"^\[loadout\] equip: done - \d+ press(?:es)?, the selection is now \S+ = slots [#\dQ\- ]+, the advice's order$"),
             new ProofKind("ribbon", "real-session proofs", @"^\[badge\] ribbon stepped aside "),
+            // 0.17.0 (C16-06a): a lock read on an offer, and a lock the player set or cleared (Lockdown.cs)
+            new ProofKind("lock", "real-session proofs", @"^\[lock\] (?:LevelUp|Chest|Military) \S+: .+ locked - (?:on the cards \(#\d+|not on the cards \(no longer in the pool\))"),
+            new ProofKind("lock-pick", "real-session proofs", @"^\[pick\] (?:LevelUp|Chest|Military) \S+: lockdown (on|off) ", source: true),
             // Quest.cs writes the quest's key, or 'the quest' when it has none
             new ProofKind("quest-story", "quest proofs", @"^\[quest\] (?:\S+|the quest) -> story objective "),
+            // 0.17.0: the quest's counted rules (C16-04b's chest REROLL, C16-04c's Liberate rule) and the survive quest's row (C16-09)
+            new ProofKind("quest-reroll", "quest proofs", @"^\[squad\] action hint: Chest \S+: (?:\([^)]*\) )?SHOWN REROLL - quest: Rerolled Item Chests \d+ of \d+ - "),
+            new ProofKind("quest-liberate", "quest proofs", @"^\[quest\] (?:\S+|the quest) -> .*event SOSLiberate: \d+ of \d+ - (?:Liberate first|recruits as usual|out of reach this run|Extermination: )"),
+            new ProofKind("quest-survive", "quest proofs", @"^\[quest\] (?:\S+|the quest) -> .*survive the run(?: \(info only\))?: "),
             new ProofKind("side-panel", "walk proofs", @"^\[why\] \w+ .*\(side wing (left|right), header \+ \d+ lines?, "),
             new ProofKind("results", "walk proofs", @"^\[shot\] results step [12] set up "),
             new ProofKind("recruit-tour", "walk proofs", @"^\[menu\] pause walk: hover tour - cards 2 to 4 of 4 "),
+            new ProofKind("lock-walk", "walk proofs", @"^\[menu\] pause walk: lock proof - rerolled "),         // 0.17.0 (C16-06a): [Debug] PauseWalkLock
         };
         static string KindList() { return string.Join(", ", Kinds.Select(k => k.Id)); }
 
@@ -783,9 +793,39 @@ namespace YazsCompanion.Bench
                 leSrc != null && lvSrc != null && leSrc.Contains("(tab || submit) && Menu.KeyboardHeld()") && lvSrc.Contains("string source = keyboard ? \"key\" : \"pad\"") && lvSrc.Contains("Source = \"pad\", How = \"the pad's Y (TabToggle)\"")
                 && leSrc.Contains("\"the advice's order\"") && leSrc.Contains("\"[loadout] equip: \" + (_undoing ? \"undone\" : \"done\") + \" - \""));
 
+            // L16 (0.17.0): the new kinds - a lock, a lockdown on / off, the quest's counted rules, the survive row, the walk's lock proof - on made-up lines;
+            // near misses (a lock with no place, a non-chest REROLL, a 'progress only' Liberate count, the walk's 'not reached') do not count
+            var p17 = ProofsText(Healthy + Proof017); var miss17 = ProofsText(Healthy + Miss017);
+            var ex17 = Expect(p17, new List<string> { "lock", "lock-pick", "quest-reroll", "quest-liberate", "quest-survive", "lock-walk" });
+            Check("L16", "0.17.0 kinds: lock, lock-pick (on / off), quest-reroll, quest-liberate, quest-survive, lock-walk each seen; --expect met; the near misses count for none",
+                Pt(p17, "lock") == "seen 2, first at 10:05:00: [lock] Chest 08:02: Golden Key locked - on the cards (#1, 3.80)" && Pt(p17, "lock-pick") == "seen 2, first at 10:05:02: on (on 1, off 1)"
+                && Pt(p17, "quest-reroll").StartsWith("seen 1, first at 10:05:04: [squad] action hint: Chest 03:09: SHOWN REROLL - quest:") && Pt(p17, "quest-liberate").StartsWith("seen 1, first at 10:05:05: [quest] GameHubQuest_Medic_3 ->")
+                && Pt(p17, "quest-survive").StartsWith("seen 1, first at 10:05:06: [quest] GameHubQuest_Tank_4 ->") && Pt(p17, "lock-walk").StartsWith("seen 1, first at 10:05:07: [menu] pause walk: lock proof")
+                && ex17.All(r => r.Pass) && miss17.All(p => p.Text == "not in this log"),
+                string.Join(" | ", p17.Where(p => p.Kind.Id.StartsWith("lock") || p.Kind.Id.StartsWith("quest-")).Select(p => p.Kind.Id + " " + p.Text))
+                + " || misses: " + string.Join(", ", miss17.Where(p => p.Text != "not in this log").Select(p => p.Kind.Id)));
+
             Console.WriteLine("  " + (_bad == 0 ? "all as wanted" : _bad + " BAD"));
             return _bad;
         }
+
+        // 0.17.0 (L16): made-up lines of the new kinds and their near misses (the game's names only)
+        static readonly string Proof017 = Lf(@"10:05:00.000 [Info] [lock] Chest 08:02: Golden Key locked - on the cards (#1, 3.80)
+10:05:01.000 [Info] [lock] Military 09:10: Kevlar Plating locked - not on the cards (no longer in the pool) (Rare kept)
+10:05:02.000 [Info] [pick] LevelUp 05:12: lockdown on Fire Walk (#2, 3.40)
+10:05:03.000 [Info] [pick] LevelUp 05:40: lockdown off Fire Walk
+10:05:04.000 [Info] [squad] action hint: Chest 03:09: SHOWN REROLL - quest: Rerolled Item Chests 1 of 3 - best Teddy Bear 3.20 under the quest cap 3.50 | rerolls 4 (the screen's count) | skip +400 cash, +150 health (worth 0.15) | actions Reroll, Skip | 'the quest counts this reroll (Rerolled Item Chests 1 of 3)'
+10:05:05.000 [Info] [quest] GameHubQuest_Medic_3 -> event SOSLiberate: 1 of 5 - Liberate first (about 4 SOS signals left, margin 1)
+10:05:06.000 [Info] [quest] GameHubQuest_Tank_4 -> survive the run: advice unchanged (no caution factor)
+10:05:07.000 [Info] [menu] pause walk: lock proof - rerolled (5 (the screen's count)); the new cards must hold Fire Walk
+");
+        static readonly string Miss017 = Lf(@"10:05:00.000 [Info] [lock] Chest 08:02: Golden Key locked
+10:05:01.000 [Info] [pick] LevelUp 05:12: the Lockdown button pressed (armed)
+10:05:02.000 [Info] [squad] action hint: LevelUp 03:09: SHOWN REROLL - best Handgun 3.00 under the level-up floor 3.50 | rerolls 4
+10:05:03.000 [Info] [quest] GameHubQuest_Medic_3 -> event SOSLiberate: 1 of 5 - progress only
+10:05:04.000 [Info] [menu] pause walk: lock proof not reached - card #2 (Handgun) is not lockdownable
+10:05:05.000 [Info] [config] note: [lock] Chest 08:02: Golden Key locked - on the cards (#1, 3.80)
+");
 
         // the 0.16.0 cases' made-up lines (the game's names only; badge names like Gunner, yard nodes like Weapon Damage)
         static readonly string ProofLog = Lf(@"10:03:00.000 [Info] [menu] first input this session: touch

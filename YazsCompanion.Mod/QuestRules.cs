@@ -126,6 +126,9 @@ namespace YazsCompanion
         public string TeamWords;                                // InfoOnly: the team rule, which the SOS row then leaves out
         public bool Survive;                                    // 0.16.0 (C16-12): a Survive / SurviveTime / CompleteRun objective - the quest asks to
                                                                 // survive the run (Quest.SurviveFollowed; C16-09's caution reads it too)
+        // 0.17.0 (C16-09): a survive quest on a hard mode - the QUEST row's item ('survive the run - caution up', SurviveText) and the log's
+        // words (SurviveLog); both null without a Survive objective. One gate decides the factor and the row: RunContext.QuestCautionOn
+        public string SurviveRow, SurviveSaid;
         public readonly List<QuestRule> List = new List<QuestRule>();
         public readonly Dictionary<string, int> Points = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);     // the squad's tag points now
 
@@ -145,6 +148,47 @@ namespace YazsCompanion
         /// <summary>A lift to <paramref name="floor"/> that keeps the order among lifted cards: a little of the card's own score
         /// on top, never past <paramref name="cap"/>, never under the card's own score.</summary>
         public static double Up(double score, double floor, double cap) { return Math.Max(score, Math.Min(cap, floor + Math.Min(0.3, Math.Max(0, score) * 0.04))); }
+
+        // ================================================================ 0.17.0 (C16-09): survive quests on hard modes
+        // A quest that asks to survive the run (Survive / SurviveTime / CompleteRun) on Hardcore or difficulty 3+ weighs survival a little more
+        // from 30 % of the run: RunContext.Survival x SurviveCaution while RunContext.QuestCautionOn holds (Context.cs) - decided by the replay of
+        // the logged hard-mode offers (mod\tools\ItemBench\CautionReplay.cs, 'ItemBench --replay-caution') under the user's Q41 of 10-13: x1.15,
+        // kept only if the replay keeps x1.10 or more, otherwise the QUEST row alone. The replay of 10-25 over every log on the PC (119 Hardcore d1
+        // offers of two runs - the older runs had rotated out of companion.log; fidelity 4 of 4 stat cards): at x1.10 and x1.15 no #1 changes
+        // (0.0 %, under the 0.5 % floor; x1.20 flips one chest late in a run) - 'caution replay: drop'. So SurviveCaution is 1.0: the gate, the
+        // factor's place in Survival and the row stay, the row says 'survive the run' and no card moves; 1.15 here switches the factor on.
+        public const double SurviveCaution = 1.0, SurviveFrom = 0.3;
+
+        /// <summary>0.17.0 (C16-09): the caution factor is in force (SurviveCaution over 1.0; the replay of 10-25 dropped it).</summary>
+        public static bool CautionKept { get { return SurviveCaution > 1.0; } }
+
+        /// <summary>0.17.0 (C16-09): a hard mode for a survive quest - Hardcore, or difficulty 3 or higher; never One Hit (survival weighs 0 there).</summary>
+        public static bool Hard(string mode, int difficulty) { return mode != "OneHit" && (mode == "Hardcore" || difficulty >= 3); }
+
+        /// <summary>0.17.0 (C16-09): the QUEST row's item for a survive quest - null without one, when the quest is not followed, off a hard mode
+        /// or before <see cref="SurviveFrom"/> of the run; 'survive the run - caution up' while the factor applies (<paramref name="cautionOn"/>
+        /// = RunContext.QuestCautionOn), 'survive the run (info only)' under [Advice] QuestSteer InfoOnly, else 'survive the run' ([Advice]
+        /// ModeAware off, or the factor dropped).</summary>
+        public static string SurviveText(bool survive, bool follows, QuestSteer steer, bool hard, double p, bool cautionOn)
+        {
+            if (!survive || !follows || !hard || p < SurviveFrom) return null;
+            if (cautionOn) return "survive the run - caution up";
+            if (steer == QuestSteer.InfoOnly) return "survive the run (info only)";
+            return "survive the run";
+        }
+
+        /// <summary>0.17.0 (C16-09): the survive objective in the '[quest] ... -&gt;' line: 'survive the run: survival picks x1.15 from 30% of the run
+        /// (Hardcore d1)' while the factor applies; 'advice unchanged (not a hard mode)'; 'caution from 30% of the run' before then (or while the
+        /// quest is not followed: the line's gate says why); 'survive the run (info only)' / 'survive the run' as the row says. Null without a
+        /// survive objective.</summary>
+        public static string SurviveLog(bool survive, bool hard, bool cautionOn, string row, string mode, int difficulty)
+        {
+            if (!survive) return null;
+            if (cautionOn) return "survive the run: survival picks x" + SurviveCaution.ToString("0.00", IC) + " from " + (int)Math.Round(SurviveFrom * 100) + "% of the run (" + mode + " d" + difficulty + ")";
+            if (!hard) return "survive the run: advice unchanged (not a hard mode)";
+            if (row == null) return "survive the run: caution from " + (int)Math.Round(SurviveFrom * 100) + "% of the run";
+            return row + ": advice unchanged" + (row.EndsWith("(info only)", StringComparison.Ordinal) ? "" : !CautionKept ? " (no caution factor)" : " ([Advice] ModeAware off)");
+        }
 
         /// <summary>A modest lift keeps a card that was under one of the build's core cards under it (<paramref name="cores"/> = their
         /// scores before the quest's pass and after it): kills with a class or tag points never pass the build's own abilities.</summary>
@@ -430,6 +474,8 @@ namespace YazsCompanion
                     string t = RowText(r);
                     if (!string.IsNullOrEmpty(t) && !items.Contains(t)) items.Add(t);
                 }
+            // 0.17.0 (C16-09): a survive quest on a hard mode, after the rules' items while room is left ('survive the run - caution up')
+            if (!string.IsNullOrEmpty(SurviveRow) && items.Count < max && !items.Contains(SurviveRow)) items.Add(SurviveRow);
             return items;
         }
 
@@ -508,6 +554,7 @@ namespace YazsCompanion
                 else if (r.Unreachable != null) parts.Add(t + " out of reach (" + r.Unreachable + ")");
                 else parts.Add(t + ": " + Does(r));
             }
+            if (!string.IsNullOrEmpty(SurviveSaid)) parts.Add(SurviveSaid);          // 0.17.0 (C16-09)
             string gate = Steer == QuestSteer.Off ? " - not followed ([Advice] QuestSteer Off)" : AnyOf ? " - not followed (objectives match Any)" : Failed ? " - not followed (the game counts the quest as failed)"
                 : NotThisRun != null ? " - not followed (" + NotThisRun + ")" : Steer == QuestSteer.InfoOnly ? " (info only: no card moves)" : "";
             return (parts.Count == 0 ? "no rule for the cards" : string.Join("; ", parts)) + gate;
@@ -526,6 +573,7 @@ namespace YazsCompanion
                     || r.Ask == QuestAsk.RareTraining || r.Ask == QuestAsk.TypesAt10 || r.Ask == QuestAsk.FillSlots || r.Ask == QuestAsk.Items || (r.Ask == QuestAsk.WeaponLine && r.Class == null))
                     sb.Append(N(r.Have));
             }
+            if (SurviveRow != null) sb.Append("|s").Append(SurviveRow);         // 0.17.0 (C16-09): the survive row coming (30 % of the run) is one log line
             return sb.ToString();
         }
     }
@@ -592,6 +640,109 @@ namespace YazsCompanion
         {
             foreach (var c in Counts) if (c.Kind == CountKind.Event && string.Equals(c.Id, id, StringComparison.Ordinal) && !double.IsNaN(c.Have) && !c.Met) return c;
             return null;
+        }
+
+        // ---------------------------------------------------------------- 0.17.0 (C16-04b): 'Rerolled Item Chests' (Ghost_1 "Encapsulation")
+        // The game counts a reroll of an item chest once per chest view (UIGameplayChestOpened.ClickReroll raises RerollItemChecOncePerView only
+        // while the view's _rerollOncePerView is still false, and sets it; OnEnable clears it - machine code of 1.0.2). While the quest counts
+        // them, a chest whose best card is under ScreenCall.QuestRerollCap gets the REROLL hint (ScreenCall.Decide), and the other screens - the
+        // rescue screen too: one pool of rerolls - keep the rerolls the quest still needs (the user's Q39 of 10-13: the cap 3.5).
+        public const string RerollEvent = "RerollItemChecOncePerView";
+
+        /// <summary>0.17.0 (C16-04b): the open reroll count in the game's words ('Rerolled Item Chests 1 of 3') while a rule of this quest may move
+        /// the cards; null otherwise (none, met, unread, or the gates: Off, InfoOnly, Any, failed, not this run).</summary>
+        public string RerollAsk() { return Moves ? RowText(OpenEvent(RerollEvent)) : null; }
+
+        /// <summary>0.17.0 (C16-04b): the chests the quest still wants rerolled (Need - Have) while a rule of this quest may move the cards; 0 otherwise.</summary>
+        public int RerollsKept()
+        {
+            if (!Moves) return 0;
+            var c = OpenEvent(RerollEvent);
+            return c == null ? 0 : Math.Max(0, c.Need - (int)Math.Floor(c.Have + 1e-6));
+        }
+
+        // ---------------------------------------------------------------- 0.17.0 (C16-04c): 'Liberate Survivors' (SOSLiberate x3 / x5)
+        // Each SOS signal is a recruit or a Liberate; once the team is full every signal reached liberates on its own (CharacterRescue.Update
+        // applies the Liberate powerup with no screen when the squad holds 3 - machine code of 1.0.2; not yet seen live), so a recruit costs the
+        // quest nothing while the signals left (E, one about every SosCadence seconds) cover the Liberates left (L) with a spare (the user's Q40
+        // of 10-13: one spare). When they no longer do, the Liberate card goes first and a recruit under it; when even every signal cannot
+        // reach L, nothing moves (out of reach). In Extermination a full team's SOS rewards give XP instead, so there Liberate goes first while
+        // the team has a free slot.
+        public const double SosCadence = 170;                   // seconds between SOS signals (one Normal run's seven Liberates: mean 171 s)
+        public const int SosMargin = 1;                         // the spare signal (Q40)
+        public const double LiberateFirst = 5.0, RecruitUnder = 4.9;
+        // the full team's signals liberate on their own (machine code; fixed in the build: the live fallback needs a rebuild anyway - with false
+        // the last recruit slot waits until the count is met). static readonly, not const: a constant would make the fallback's branch dead code
+        public static readonly bool FullTeamLiberates = true;
+
+        /// <summary>0.17.0 (C16-04c): what the Liberate rule says on this snapshot.</summary>
+        public sealed class LiberateCall
+        {
+            public bool Force, Unreachable;                     // Liberate goes first / the count cannot be reached this run (nothing moves)
+            public int Left, Expected = -1;                     // L: Liberates still to make; E: SOS signals still to come (-1: not estimated)
+            public string Head, RecruitWhy, Said;               // the Liberate card's line, a recruit's line, the log's words
+        }
+
+        /// <summary>0.17.0 (C16-04c): the Liberate rule on this snapshot (Quest.Story sets it; null: no open Liberate count or the quest not followed).</summary>
+        public LiberateCall Sos;
+
+        /// <summary>0.17.0 (C16-04c): the Liberate rule for a squad of <paramref name="squad"/> survivors in a mode of <paramref name="kind"/> with
+        /// <paramref name="secondsLeft"/> of play to come (RunContext.Remaining). Null: no open SOSLiberate count, or the quest not followed.</summary>
+        public LiberateCall Liberate(int squad, ModeKind kind, double secondsLeft) { return Liberate(squad, kind, secondsLeft, SosMargin); }
+
+        /// <summary>0.17.0 (C16-04c): <see cref="Liberate(int, ModeKind, double)"/> with the spare signals given (the bench tries 0).</summary>
+        public LiberateCall Liberate(int squad, ModeKind kind, double secondsLeft, int margin)
+        {
+            var c = OpenEvent("SOSLiberate");
+            if (c == null || !Follows) return null;
+            int left = Math.Max(0, c.Need - (int)Math.Floor(c.Have + 1e-6));
+            var lc = new LiberateCall { Left = left, RecruitWhy = "quest: a recruit takes an SOS signal the quest needs" };
+            if (kind == ModeKind.Waves)
+            {
+                if (squad >= 3) { lc.Unreachable = true; lc.Said = "Extermination: a full team's SOS rewards give XP, not a Liberate"; return lc; }
+                lc.Force = true;
+                lc.Head = "quest: Liberate " + left + " more - only a chosen one counts";
+                lc.Said = "Extermination: Liberate first while the team has a free slot";
+                return lc;
+            }
+            if (squad >= 3) { lc.Said = "recruits as usual: a full team's signals liberate on their own"; return lc; }
+            if (kind == ModeKind.Open) { lc.Said = "recruits as usual: open-ended"; return lc; }
+            int e = (int)Math.Floor(Math.Max(0, secondsLeft) / SosCadence);
+            lc.Expected = e;
+            if (e + 1 < left)
+            {   // this screen and every signal to come cannot reach the count: nothing moves
+                lc.Unreachable = true;
+                lc.Said = "out of reach this run (about " + e + " SOS signals left for " + left + ")";
+                return lc;
+            }
+            lc.Force = e - margin < left || (!FullTeamLiberates && squad + 1 >= 3);
+            lc.Head = "quest: Liberate " + left + " more - about " + e + " SOS signals left";
+            lc.Said = lc.Force ? "Liberate first (about " + e + " SOS signals left, margin " + margin + ")"
+                : "recruits as usual while the SOS signals left cover it (about " + e + " left)";
+            return lc;
+        }
+
+        /// <summary>0.17.0 (C16-04c): a rescue card's score under the Liberate rule (pure; Ranker.ScoreSos calls it after the team rule, which wins
+        /// while it is active). Force + On: the Liberate card to at least <see cref="LiberateFirst"/> with its Head first, a recruit to at most
+        /// <see cref="RecruitUnder"/> with RecruitWhy last (a reason, not AVOID: the cadence is an estimate). Force + InfoOnly: the same lines with
+        /// ' (info only)', the scores unchanged. Out of reach: a line on the Liberate card, nothing moves. Otherwise the score as it is.</summary>
+        public static double LiberateCard(LiberateCall lc, QuestSteer steer, bool liberate, double score, List<string> why)
+        {
+            if (lc == null || (!lc.Force && !lc.Unreachable) || steer == QuestSteer.Off) return score;
+            if (lc.Unreachable)
+            {
+                if (liberate && why != null) why.Add(lc.Expected >= 0 ? "quest: Liberate Survivors out of reach (about " + lc.Expected + " SOS signals for " + lc.Left + ")"
+                    : "quest: Liberate Survivors out of reach (a full team's SOS rewards give XP here)");
+                return score;
+            }
+            bool info = steer == QuestSteer.InfoOnly;
+            if (liberate)
+            {
+                if (why != null) { if (info) why.Add(lc.Head + " (info only)"); else why.Insert(0, lc.Head); }
+                return info ? score : Math.Max(score, LiberateFirst);
+            }
+            if (why != null) why.Add(lc.RecruitWhy + (info ? " (info only)" : ""));
+            return info ? score : Math.Min(score, RecruitUnder);
         }
 
         static readonly CultureInfo IC = CultureInfo.InvariantCulture;
@@ -755,8 +906,8 @@ namespace YazsCompanion
 
         /// <summary>One counted objective in the log's "[quest] Q -> ..." words: open "story objective main_story_objective_q6: 3 of 5 -
         /// progress only", met "story objective main_story_objective_q6 met" (the advice audit's time-to-met reads the " met"). 0.16.1
-        /// (C16-04a): with its quest (<paramref name="st"/>) an open count may end with a rule's note instead of 'progress only' - none yet
-        /// (C16-04b / c fill Note); the words before ': ' keep the ids.</summary>
+        /// (C16-04a): with its quest (<paramref name="st"/>) an open count may end with a rule's note instead of 'progress only' (0.17.0: the
+        /// reroll and Liberate counts, Note); the words before ': ' keep the ids.</summary>
         public static string SaidOne(QuestCount c, QuestStory st = null)
         {
             string what = c.Kind == CountKind.Story ? "story objective " + c.Id : c.Kind == CountKind.BossRushBoss ? "kill " + c.Id : c.Kind == CountKind.Event ? "event " + c.Id : "kills of " + c.Id;
@@ -766,9 +917,18 @@ namespace YazsCompanion
             return what + ": " + count + " - " + (note ?? "progress only");
         }
 
-        /// <summary>0.16.1 (C16-04a): what a rule of this quest does with an open count, for its log words (null: progress only - every count
-        /// today; the counted rules of 0.17.0, C16-04b / c, answer here).</summary>
-        string Note(QuestCount c) { return null; }
+        /// <summary>0.16.1 (C16-04a): what a rule of this quest does with an open count, for its log words (null: progress only). 0.17.0: the reroll
+        /// count (C16-04b: 'REROLL hint on item chests whose best card is under 3.50') and the Liberate count (C16-04c: what Sos says - 'Liberate
+        /// first (about 4 SOS signals left, margin 1)'), ' (info only)' under [Advice] QuestSteer InfoOnly; 'progress only' while the quest is
+        /// not followed (Off, Any, failed, not this run).</summary>
+        string Note(QuestCount c)
+        {
+            if (c == null || c.Kind != CountKind.Event || c.Met || double.IsNaN(c.Have) || !Follows) return null;
+            string info = Steer == QuestSteer.InfoOnly ? " (info only)" : "";
+            if (c.Id == RerollEvent) return "REROLL hint on item chests whose best card is under " + ScreenCall.QuestRerollCap.ToString("0.00", IC) + info;
+            if (c.Id == "SOSLiberate" && Sos != null && !string.IsNullOrEmpty(Sos.Said)) return Sos.Said + info;
+            return null;
+        }
 
         /// <summary>The counted objectives as they stand, for the log line.</summary>
         public string Said()
@@ -786,6 +946,10 @@ namespace YazsCompanion
             sb.Append(Failed ? 'f' : '-').Append(NotThisRun == null ? '-' : 'n').Append((int)Steer).Append(AnyOf ? 'a' : '-');
             foreach (var c in Counts)
                 sb.Append('|').Append((int)c.Kind).Append(c.Met ? 'm' : '-').Append(double.IsNaN(c.Have) ? "?" : Math.Floor(c.Have / Math.Max(1, c.Step)).ToString("0", IC));
+            // 0.17.0 (C16-04c): the Liberate rule's verdict and the Liberates left - not the signals left (they fall about every 170 s: a log line
+            // and a readout rebuild each time); a squad that fills changes the verdict's words, so the full-team state counts too
+            var sos = Sos;
+            if (sos != null) sb.Append("|s").Append(sos.Force ? 'f' : '-').Append(sos.Unreachable ? 'u' : '-').Append(sos.Left.ToString(IC)).Append(sos.Expected < 0 ? "o" : "");
             return sb.ToString();
         }
     }

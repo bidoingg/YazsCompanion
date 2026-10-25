@@ -325,6 +325,15 @@ namespace YazsCompanion
             bool replace = false; string quest = null;
             try { quest = s.Quest.PlanText(late, Names.Class, out replace); } catch { }
             if (quest != null && replace) { Add("run", "sos", "SOS", N(quest)); return; }
+            // 0.17.0 (C16-04c): a 'Liberate Survivors' quest whose SOS signals left run short - 'SOS  quest: Liberate (1 of 5)' (the team rule above
+            // wins while it is active; the row follows at the next rebuild - a level-up or a pick)
+            try
+            {
+                var st = s.Story; var oc = st == null ? null : st.OpenEvent("SOSLiberate");
+                if (oc != null && st.Sos != null && st.Sos.Force && st.Moves && (s.Quest == null || !s.Quest.Active))
+                { Add("run", "sos", "SOS", N("quest: Liberate (" + Math.Round(oc.Have) + " of " + oc.Need + ")")); return; }
+            }
+            catch { }
             var ranked = Ranker.Recruitable(s);          // who could join, by the SOS cards' rules (shared with the reroll hint, 0.12.2)
             if (ranked.Count == 0) return;
             // 0.16.0 (C16-01d): with Hijacked Signal a Liberate gives two level-ups - the row names it once it outscores every recruit

@@ -605,8 +605,12 @@ namespace YazsCompanion
         /// has a reroll for this screen (<paramref name="rerolls"/> = how the log words it), <paramref name="recruitValue"/> =
         /// the value left in a recruit now (0..1). <paramref name="quest"/> = the active quest's word on the squad (0.13.0, C1; null:
         /// none): at the quest's team limit no recruit is wanted - no hint; while it needs a class the squad lacks, the hint speaks
-        /// for that class alone (shown when it could still come and a reroll is left, whatever the clock or the margin).</summary>
-        public static RerollCall Decide(IList<Recruit> offered, double liberate, IList<Recruit> possible, bool canReroll, string rerolls, double recruitValue, QuestSos quest = null)
+        /// for that class alone (shown when it could still come and a reroll is left, whatever the clock or the margin). 0.17.0, after the
+        /// team rule: <paramref name="liberateFirst"/> (C16-04c: a 'Liberate Survivors' quest wants this signal liberated) - no hint for a
+        /// recruit; <paramref name="keptFor"/> (C16-04b: the words of the rerolls a 'Rerolled Item Chests' quest still needs, null: none) - no
+        /// hint, the rerolls are the quest's.</summary>
+        public static RerollCall Decide(IList<Recruit> offered, double liberate, IList<Recruit> possible, bool canReroll, string rerolls, double recruitValue, QuestSos quest = null,
+            string keptFor = null, bool liberateFirst = false)
         {
             var c = new RerollCall();
             Recruit top = null;
@@ -639,6 +643,8 @@ namespace YazsCompanion
                     return c;
                 }
             }
+            if (liberateFirst) { c.Better.Clear(); c.Why = "quest: Liberate Survivors - no recruit wanted (Liberate)"; return c; }      // 0.17.0 (C16-04c)
+            if (keptFor != null) { c.Better.Clear(); c.Why = "quest: " + keptFor; return c; }                                              // 0.17.0 (C16-04b)
             if (recruitValue < Late) { c.Why = "late in the run: a recruit no longer has the time to grow, the cards say Liberate"; return c; }
             if (c.Best == null) { c.Why = "every survivor who could come is on the cards or on the squad"; return c; }
             if (c.Better.Count == 0)

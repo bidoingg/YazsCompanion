@@ -15,7 +15,7 @@ namespace YazsCompanion
         static bool _heldLineSaid, _itemsLineSaid;      // 0.16.0: a failed [held] / [items] held line said once a session
 
         /// <summary>The HUD went away (the run ended or the scene changed): no offer is open any more.</summary>
-        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); WhyUi.Forget(); Quest.Forget(); Badge.Forget(); }
+        public static void Forget() { _lastCards = null; _debugScreen = null; _lastT = -1f; RerollHint.Forget(); WhyUi.Forget(); Quest.Forget(); Badge.Forget(); Lockdown.Forget(); }
 
         // 0.12.2 (F13): a reroll or a banish fills the SAME screen again - AssignGeneratedElements runs a second time with no
         // Hide in between (every close clears _lastCards), on the clock the screen holds still. The game's isReroll flag was
@@ -85,6 +85,7 @@ namespace YazsCompanion
                 if (cards.Count == 0) { Plugin.Logger.LogInfo("[offer] " + screen + " " + snap.Clock + ": no active cards"); return; }
 
                 Ranker.Rank(screen, cards, snap);
+                Lockdown.Mark(sel, screen, cards, snap);       // 0.17.0 (C16-06a): each card's Lockable / Locked and the screen's lock (marks only)
                 if (Plugin.ShowBadges.Value) foreach (var c in cards) Badge.Show(c);
                 // 10-07 review (C-m7): 1.0 s - after the WHY's own 0.6 s entrance delay and 0.12 s fade (at 0.6 s the shot came 3-38 ms
                 // before the WHY was drawn); WhyUi adds a 'why' shot 0.4 s after the offer's first '[why]' line
@@ -128,6 +129,7 @@ namespace YazsCompanion
                 if (Plugin.ShowBadges.Value) Plugin.Logger.LogInfo(ShownLine(screen, snap.Clock, cards));
                 // 0.12.2: the rescue screen - is a reroll worth it? (judged again after a reroll: the replaced offer)
                 // 0.14.0: and every other screen (REROLL / SKIP / BANISH: ScreenCall.cs); the WHY band of the selected card (WhyUi.cs)
+                Lockdown.LogOffer();                           // 0.17.0 (C16-06a): '[lock] ...' while the screen holds a lock, after the [card] lines
                 RerollHint.OnOffer(sel, screen, cards, snap, before != null);
                 WhyUi.OnOffer(sel, screen, cards, snap.Clock, before != null);
                 if (Plugin.Verbose.Value) Describe.Offer(sel, screen.ToString());
@@ -157,6 +159,8 @@ namespace YazsCompanion
                     what = p != null ? G.Name(p) : it != null ? G.Name(it) : "unknown card";
                 }
                 string screen = "?"; try { screen = sel.GetIl2CppType().Name.Replace("UIGameplay", ""); } catch { }
+                // 0.17.0 (C16-06a): taking the locked card spends the lock (the level-up's and the training's OnButtonOnApply, the chest's Hide)
+                if (picked != null && picked.Locked) what += " - the lock is spent";
                 Plugin.Logger.LogInfo("[pick] " + screen + " " + _lastClock + ": " + what);
                 Shots.Later(1.2f, "pick");
             }
@@ -203,6 +207,14 @@ namespace YazsCompanion
             }
             catch (Exception e) { _debugScreen = null; Plugin.Logger.LogWarning("[menu] pause walk: pick failed: " + e.Message); }
             return false;
+        }
+
+        /// <summary>0.17.0 (C16-06a), [Debug] PauseWalkLock: the walk's lock proof on its first level-up (Lockdown.DebugDue) - true while it holds the
+        /// offer. Called between DebugTourDue and DebugPickDue in the walk's stages 1 and 61 only.</summary>
+        internal static bool DebugLockDue(float now)
+        {
+            try { return Lockdown.DebugDue(now, _debugScreen, _lastScreen, _lastCards, _debugOfferAt); }
+            catch { return false; }
         }
 
         // ---- the pause walk's hover tour (C-m7 / C-m8 of the 10-07 release review): once a session, on the first offer of two cards or

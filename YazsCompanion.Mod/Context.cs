@@ -62,6 +62,7 @@ namespace YazsCompanion
         public double LevelRate;                // level-ups per minute: the mode's measured pace blended with this run's, smoothed (LevelPace; 0 = not known)
         public double Health = 1;               // the squad's health, 0..1
         public bool SurviveQuest;               // 0.16.0 (C16-12): the active quest asks to survive the run and is followed (Quest.SurviveFollowed)
+        public double QuestCaution = 1.0;       // 0.17.0 (C16-09): the survive quest's factor on Survival (QuestRules.SurviveCaution while SurviveQuest; 1.0: none)
         public Doctrine D = Doctrine.Current;
 
         /// <summary>Seconds of play the open-ended modes are judged over: far enough that everything still pays back.</summary>
@@ -169,6 +170,15 @@ namespace YazsCompanion
 
         public string Phase { get { double p = Progress; return p < 0.3 ? "early" : p < 0.7 ? "mid" : "late"; } }
 
+        /// <summary>0.17.0 (C16-09): the run's progress for the survive quest's gate - <see cref="Progress"/>, but the open-ended modes by their
+        /// clock (seconds / 1200; Progress stays at 0.15 there) - the clock Survival's own curve reads in those modes.</summary>
+        public double QuestProgress { get { return Kind == ModeKind.Open ? Clamp01(Seconds / 1200.0) : Progress; } }
+
+        /// <summary>0.17.0 (C16-09): the one gate of the survive quest's caution, read by Survival's factor AND the QUEST row: [Advice] ModeAware on,
+        /// a factor handed in (QuestCaution, from a followed survive quest), a hard mode (QuestRules.Hard: Hardcore or difficulty 3+, never One Hit)
+        /// and at least QuestRules.SurviveFrom of the run played.</summary>
+        public bool QuestCautionOn { get { return Aware && QuestCaution != 1.0 && QuestRules.Hard(Mode, Difficulty) && QuestProgress >= QuestRules.SurviveFrom; } }
+
         /// <summary>Level-ups still to come, from the run's pace (LevelPace: the mode's measured pace blended with this run's own, smoothed).
         /// 0.15.0 (C15-04): with no pace handed in, the mode's measured pace blended with the level-ups seen - up to 0.14.0 a flat 2.5 a
         /// minute, whatever the mode (Hardcore runs at 4.7).</summary>
@@ -232,6 +242,8 @@ namespace YazsCompanion
                     if (Mode == "OneHit") return 0;
                     v *= 1 + 0.08 * Math.Max(0, Difficulty - 1);
                     if (Mode == "Hardcore") v *= 1.25;
+                    // 0.17.0 (C16-09): a survive quest on a hard mode from 30 % of the run - before the hurting term, which stays as it is
+                    if (QuestCautionOn) v *= QuestCaution;
                 }
                 if (Health < 0.5) v += 0.4 * (1 - Health * 2);
                 return v * (c == 0 ? 0.6 : c == 2 ? 1.4 : 1.0);
@@ -290,7 +302,7 @@ namespace YazsCompanion
 
         public override string ToString()
         {
-            return Mode + " d" + Difficulty + ", " + ClockText + ", " + Phase + " (economy x" + Economy.ToString("0.00") + ", survival x" + Survival.ToString("0.00")
+            return Mode + " d" + Difficulty + ", " + ClockText + ", " + Phase + " (economy x" + Economy.ToString("0.00") + ", survival x" + Survival.ToString("0.00") + (QuestCautionOn ? " (quest)" : "")
                 + ", boss x" + Boss.ToString("0.00") + ", ~" + ExpectedLevelUps.ToString("0") + " level-ups to come" + WavesTail() + HealthTail() + ")";
         }
 

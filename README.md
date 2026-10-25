@@ -142,10 +142,11 @@ highest tag point counts (`Kinetic 31, Electric 22 - effects on` past the 10-tag
 
 In both: `SOS` is the two best rescues by the SOS-card rules, exact ties settled as on the cards (hidden with a
 full squad), or what the active quest's team rule says (`quest: stay solo`, `quest: Huntress`, the recruits with
-`quest: full team` late in a run - see "How it ranks", SOS); `GRAB` the two best items worth a chest slot (S/A tier or
+`quest: full team` late in a run; 0.17.0 `quest: Liberate (1 of 5)` - see "How it ranks", SOS); `GRAB` the two best items worth a chest slot (S/A tier or
 quest target, not held); `QUEST` what the active quest still asks while one of its rules changes the advice - at most two items, in
 words that change with a pick, not with every kill (`Taser to tier 3, max level`, `Plasma 3/4 to max level`, `a
-health item (0 of 1)`, `evolutions (2 of 6)`, `no Pyro abilities`, `Explosive+Slashing+Fire under 20`, `Engineer kills to 2000`); gone once
+health item (0 of 1)`, `evolutions (2 of 6)`, `no Pyro abilities`, `Explosive+Slashing+Fire under 20`, `Engineer kills to 2000`, 0.17.0's
+`survive the run` on Hardcore / difficulty 3+ from 30 % of the run); gone once
 met. Since 0.15.0 the row also follows what the quest counts, which no card is steered by, in the words of the game's quest
 box (0.16.1): a story objective (`Broken Vials 3 of 5` under "Genesis", `Defeat Tower` for a Boss Rush one) and the other
 counts (`Liberate Survivors 1 of 3`, `Open Item Chests 4 of 7`, `Collect Cash 12 of 30`, `Defeat Elite Bosses 0 of 3`) -
@@ -307,17 +308,14 @@ Everything is parented to the card, so it rises with a hovered card and goes wit
 clicks (the placement, read from the card prefab: [docs/INTERNALS.md](docs/INTERNALS.md#how-it-hooks-the-game)).
 
 Turn the badges off with `ShowBadges = false` in `BepInEx\config\bidoi.yazs.companion.cfg`
-(the file appears after the first launch). The log keeps working either way. The card text's size is the DISPLAY
-tab's **Card text size** row (`BadgeScale`, 0.15.0). Auto (0, the default) enlarges the ribbon and the reason lines on
-small screens until the reason reads 16 px - up to x1.3, x1.6 on a screen taller than 16:9 (x1 on a desktop monitor,
-about 21 px at 1440p; x1.56 on the Deck, 16 px - 0.14.0 stopped at x1.3 there, about 13 px). 90% / 115% / 130% / 150%
-are shares of what Auto draws on that screen (the cfg takes 0.5 - 1.6): 115% reads 23.6 px at 1440p and 18.4 px on
-the Deck; at most x1.85, the RECOMMENDED ribbon stopping at x1.3 so the line under it stays above the game's divider.
-A step that would draw what the screen shows already is passed over, and the row's help lists every step's size on
-this screen; the preview shows a reason line and the WHY band at their real size. The WHY band and the REROLL / SKIP
-hint follow the row, and nothing of it is drawn under 15 px, the WHY band's floor (a small screen gets the size that
-reads 15 px). `[badge] scale s=.. px=..` is logged once per screen size and setting, with the characters a line
-holds; the frame is not scaled.
+(the file appears after the first launch). The log keeps working either way. The card text's size is the DISPLAY tab's **Card
+text size** row (`BadgeScale`, 0.15.0). Auto (0, the default) enlarges the ribbon and the reason lines on small screens until the
+reason reads 16 px - up to x1.3, x1.6 on a screen taller than 16:9 (x1 on a desktop monitor, about 21 px at 1440p; x1.56 on the
+Deck, 16 px). 90% / 115% / 130% / 150% are shares of what Auto draws on that screen (the cfg takes 0.5 - 1.6): 115% reads 23.6 px at
+1440p and 18.4 px on the Deck; at most x1.85, the RECOMMENDED ribbon stopping at x1.3 so the line under it stays above the game's
+divider. A step that would draw what the screen shows already is passed over; the row's help lists every step's size on this screen
+and the preview shows a reason line and the WHY band at their real size. The WHY band and the REROLL / SKIP hint follow the row,
+never under 15 px (the WHY band's floor). `[badge] scale s=.. px=..` is logged once per screen size and setting; the frame is not scaled.
 
 ## The reroll hint on the rescue screen (0.12.2)
 
@@ -331,29 +329,24 @@ REROLL  -  Tank would fit this squad better
 - **When.** The best survivor who could still come rates at least **0.75** above the best card on the table (a
   recruit, or Liberate when the cards rank it first), and the game still has a reroll for the screen. Everyone is
   scored by the very rules of the SOS cards, so the hint, the cards and the readout's `SOS` row always agree. Why
-  0.75: early in a run one guide tier apart is 0.5 and one bought synergy 1.1, so a tier alone, a trained level or
-  an exact tie stay silent (a reroll is spent for the run, and the next draw may be no better), while a synergy, or a
-  tier together with shared damage types, speaks. On the Deck's four screens the gap was 0.96 - 1.29 each time. When
-  two survivors clear the margin the line names both (`SWAT or Tank would fit this squad better`, and `(+1 more)` when
-  still more do; the scores stay in the log). No hint late in a run, when the cards say Liberate anyway (a recruit no
-  longer has the time to grow).
+  0.75: early in a run one guide tier apart is 0.5 and one bought synergy 1.1 - a tier alone or a tie stays silent (a
+  reroll is spent for the run), a synergy speaks (the Deck's four screens: 0.96 - 1.29). When two survivors clear the
+  margin the line names both (`SWAT or Tank would fit this squad better`, `(+1 more)` when still more do). No hint late
+  in a run, when the cards say Liberate anyway (a recruit no longer has the time to grow).
 - **Who could still come** follows how the game draws the cards: every survivor unlocked in your profile who is not
   on the squad, not on the cards, and not held back after a reroll (the cards shown before one); where the game's
   own availability check of a survivor's unlock card can be read, it must agree.
-- **The reroll count is the game's own** for that screen (the number it hands the screen's action buttons, else the
-  team's `Rerolls available`, else the number on the Reroll button); a FREE reroll counts too. When the game's own
-  count comes late and differs, the hint is judged again once (`(re-judged with rerolls 8 - ...)` in the log).
-- **Where.** The screen's one gold frame goes to the Reroll button (0.16.1): the line over it reads `RECOMMENDED:
-  REROLL  -  ...`, and the best card gives its frame up - its ribbon turns grey and reads `IF YOU KEEP`, over its own
-  line in grey - until the hint goes. The frame comes with the cards; the line stands over the button in the band
-  between the cards' reason lines and the button, placed once, 0.6 s in, when the cards have flown in (0.16.3), never
-  over a card's text; when that band is too low it goes under the button (with the action alone
-  as its head), and without room for either only the frame shows. Motion only when it appears (the frame settles,
-  the line unfolds from its left tip and types on); nothing loops.
+- **The reroll count is the game's own** for that screen (the number it hands the screen's action buttons, else the team's
+  `Rerolls available`, else the Reroll button's number; a FREE reroll counts), judged again once when the game's count comes late.
+- **Where.** The screen's one gold frame goes to the Reroll button (0.16.1): the line over it reads `RECOMMENDED: REROLL  -  ...`,
+  and the best card gives its frame up - its ribbon turns grey and reads `IF YOU KEEP`, over its own line in grey - until the hint
+  goes. The frame comes with the cards; the line stands over the button in the band between the cards' reason lines and the button,
+  placed once, 0.6 s in (0.16.3), never over a card's text; when that band is too low it goes under the button (the action alone as
+  its head), without room for either only the frame shows. Motion only when it appears; nothing loops.
 - **The active quest first**: at the quest's team limit no hint (`not shown - quest: stay solo - no recruit
   wanted (Liberate)`); while the quest needs a class the squad lacks, the hint speaks for that class alone, whatever
   the margin or the clock: `REROLL - the quest needs Huntress` when she could still come and a reroll is left, nothing
-  when she is on the cards already.
+  when she is on the cards already. 0.17.0: none while a 'Liberate Survivors' quest wants the signal liberated or a 'Rerolled Item Chests' quest needs the rerolls.
 - **After a reroll** the screen is judged again (the replaced offer); the pick takes the hint away. It never rerolls
   for you.
 - **Off:** the ADVICE tab's "Hints on the selection screens" at Off (`[Advice] RerollHint = false`; the row's "Rescue
@@ -368,6 +361,7 @@ The level-up, chest, military training and Research Pod screens get the rescue s
 
 ```
 SKIP    -  Quest: taking any item fails it
+REROLL  -  the quest counts this reroll (Rerolled Item Chests 1 of 3)
 REROLL  -  the best card here is weak for this squad (2 rerolls left)
 SKIP    -  every card here would hurt this squad - take the skip bonus
 SKIP    -  the heal and the cash are worth more than these cards
@@ -380,9 +374,11 @@ BANISH  -  Medical Drone - the Rifleman build skips it
 - **REROLL** when the best card is under the screen's floor on the cards' own scale - a chest 2.5, a level-up 3.5 in
   the first half of the run and 2.5 after, a military training 2.0, a Research Pod 2.0 - and the game still has a
   reroll for the screen (its own count, as on the rescue screen; a FREE reroll counts). `(2 rerolls left)` / `(1 reroll
-  left)` when that few are. The chest floor: at 3.0 the hint would have spoken on 70 of the 147 logged chests (48 %, 65
-  of them taken as offered), at 2.5 on 34; the words say the best card is weak, not that nothing fits - the card's own
-  line may well say `A-tier, fits the Rifleman build`.
+  left)` when that few are. The words say the best card is weak, not that nothing fits (its own line may say `A-tier`).
+- **A quest that counts rerolled item chests** (0.17.0; the Ghost's "Encapsulation" - the game counts one reroll per chest): a chest
+  it has not counted yet whose best card is under 3.5 says `REROLL - the quest counts this reroll (Rerolled Item Chests 1 of 3)`
+  (not when the best card is the quest's own); every other screen, the rescue screen too, keeps the rerolls the quest still needs
+  (no REROLL there while no more are left than the chests still to reroll and the reroll is not free).
 - **SKIP** when a quest wants no item at all (a chest: a reroll brings only more items); when every card is worth
   avoiding (all under 1) and no reroll is left (`every card here is weak for this squad` when not every card costs the
   squad something, 0.16.1); or when every card is under 1.5 and the skip bonus is worth more. The
@@ -410,18 +406,14 @@ BANISH  -  Medical Drone - the Rifleman build skips it
   avoiding, that the game will banish (`isBanishable`) and the active quest does not name (its class under "fully
   upgrade", its weapon, ability or evolution, a health item it counts, a card a quest line decided) - never the card
   framed RECOMMENDED.
-- **Lockdown** is not advised: what a lockdown keeps has not been read in the game's code yet.
-- **Where.** As on the rescue screen: a REROLL or SKIP takes the screen's one gold frame to its button (`RECOMMENDED:
-  SKIP  -  ...` over it, the best card's grey `IF YOU KEEP`; a BANISH leaves the gold frame on the best card, which stays
-  the pick, and frames its button in grey), the line stands over it in the band
-  under the cards (or under the button, or the frame alone) - the band manager's rule (`ScreenBand.Hint`); the WHY band
-  keeps clear of it. On a button right of the screen's centre (Skip, next to the team panel) the line ends at the
-  button's right edge and grows left, and no line runs into the team panel or the skip reward (cut short with an
-  ellipsis; the frame alone when too little is left). On screens where the hint goes under its button (1280 x 800:
-  the band over the button is too low there) it uses its short words, so the WHY band keeps its room (0.16.0):
-  `REROLL  -  a weak offer (2 left)`, `SKIP  -  every card hurts`, `SKIP  -  the heal and cash are worth more`,
-  `SKIP  -  Quest: no items`, on the rescue screen `REROLL  -  Tank fits better`; over the button (the PC) the long
-  words stay. BANISH keeps its words.
+- **Lockdown** is not advised yet; since 0.17.0 every lock is read and logged (`[lock] ...`: the game draws a locked card first).
+- **Where.** As on the rescue screen: a REROLL or SKIP takes the screen's one gold frame to its button (`RECOMMENDED: SKIP  -  ...`
+  over it, the best card's grey `IF YOU KEEP`; a BANISH leaves the gold frame on the best card, which stays the pick, and frames its
+  button in grey), the line in the band under the cards (or under the button, or the frame alone: `ScreenBand.Hint`); the WHY band
+  keeps clear of it. On a button right of the screen's centre (Skip) the line grows left and never runs into the team panel or the
+  skip reward (cut short; the frame alone when too little is left). Under its button (1280 x 800) the hint uses its short words so
+  the WHY band keeps its room (0.16.0): `REROLL  -  a weak offer (2 left)`, `REROLL  -  the quest counts this reroll`, `SKIP  -  every
+  card hurts`, `SKIP  -  Quest: no items`, on the rescue screen `REROLL  -  Tank fits better`; over it (the PC) the long words stay.
 - **An older cfg:** a 0.13.0 cfg with the rescue screen's hint off (`RerollHint = false`) and no `ActionHints` line
   starts with these hints off too (`[config] Advice.ActionHints = None: ...` in the log).
 - **Switch:** `[Advice] ActionHints` - any of `Reroll, Skip, Banish` (`Reroll, Skip` by default, `None` = off); the
@@ -689,7 +681,12 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   a run that does not fit the quest's conditions (arena, mode, difficulty or leader - the game shows the quest box in
   every run but completes the quest only in one that fits) or a team that has broken the rule already leaves the cards
   as they are (the log says why). Held items move recruit against Liberate (Reserve Bench, Hijacked Signal - see Held
-  items); the order of the recruits never changes with them.
+  items); the order of the recruits never changes with them. **A 'Liberate Survivors' quest** (0.17.0, under the team rule): a
+  full team's SOS signals liberate on their own (the game's code), so recruits come first while the signals left (about one
+  every 2:50) cover the Liberates left with one to spare; once they no longer do, Liberate goes to 5.0 (`Quest: Liberate 4 more
+  - about 4 SOS signals left`), a recruit under it (4.9), no reroll hint, the SOS row `quest: Liberate (1 of 5)`; out of reach,
+  nothing moves; in Extermination (a full team's SOS rewards give XP) Liberate goes first while a slot is free. It overrides
+  `[Advice] Recruit` while it applies.
 - **The active quest's other objectives** (`QuestRules.cs`), after everything above, on every screen. What
   each objective counts was read in the game's machine code: `FinishWithWeapons` = a player holds one of the weapons
   at the level (in hand when it says so), checked again at every pick; `FinishWithEvolutions` = an evolution of the
@@ -710,7 +707,8 @@ dumped from the running game by `[Debug] Probe` - always wins over any of them. 
   lacks (a weapon, ability or evolution of it, a fully upgraded class, its synergies) also gives the rescue cards
   that class (the team rule above). `[Advice] QuestSteer`: InfoOnly writes the reasons after the cards' own, `(info
   only)`, and moves nothing - the team rule neither; Off follows nothing. The game's own quest item (`CollectItem`,
-  +3) follows the switch too.
+  +3) follows the switch too. A quest that asks to survive the run on Hardcore or difficulty 3+ adds `survive the run` to the
+  QUEST row from 30 % of the run (0.17.0); no card moves (x1.15 survival weight was replayed over the logged hard runs: no pick changed).
 - **Military training**: `1 + rarity x weight x 2`, the rarity factor being the card's own value against the Common
   card of its stat - the list the game applies for the card's rarity (`GetMyRarityBonusList()`) against `bonuses`: in
   1.0.2 a Rare is 1.9 - 2.5 times its Common card, a Legendary 3 - 5 times, an Endless card - the level-up's filler -
@@ -764,7 +762,7 @@ feed's release notes are kept as `notes_<version>.txt` (the running and newer ve
 - `BepInEx\LogOutput.log` — everything BepInEx logged this launch (overwritten per launch).
 - Set `Verbose = true` in the config to also log every raw field of every card and survivor
   (`[raw]` lines) when a verdict looks wrong. The debug switches (`[Debug] Screenshots`, `Preview`, `PreviewResolution`,
-  `Perf`, `ItemKeywords`, `HeldPretend`, `PreviewPauseRecruit`) are in [docs/INTERNALS.md](docs/INTERNALS.md#debug-switches).
+  `Perf`, `ItemKeywords`, `HeldPretend`, `PreviewPauseRecruit`, `PauseWalkLock`) are in [docs/INTERNALS.md](docs/INTERNALS.md#debug-switches).
 
 To disable the mod without uninstalling BepInEx, delete or rename `BepInEx\plugins\YazsCompanion\YazsCompanionMod.dll`.
 To disable BepInEx entirely, set `enabled = false` in `doorstop_config.ini` in the game folder.
@@ -923,12 +921,14 @@ entry). A sent log answers most of them - the lines to look for are named below 
    row, from screenshots (`[Debug] Screenshots = true`). The side panel's proof: `--expect side-panel`.
 4. **The quest rules on a kind they handle, live**: a run under a quest whose objective moves the cards (a tier-3
    weapon at max level, a health item, a team size): the `[quest]` lines, the `Quest: ...` line under the card and the
-   QUEST row along the run (`--check-log` lists it under quest proofs, `quest-story`).
+   QUEST row along the run (`--check-log` lists it under quest proofs, `quest-story`). 0.17.0's counted rules: 'Liberate Survivors'
+   (whether a full team's SOS signal raises the count with no screen) and 'Rerolled Item Chests' (the chest's quest REROLL).
 5. **Banish logging**: one banish by hand on a chest or a level-up - `[pick] ... banish on ...` and `replaced
    (banish)` on the next offer line.
 6. **The badge weights U1 - U3**, not measured yet (tag points against the Hashtag stat, player stats on recruits,
    the crit pools): read from the `[loadout] measure` line of real runs, then set in `knowledge.json`.
-7. **LOCKDOWN**: what a lockdown keeps has not been read in the game's code, so the action hints never advise one.
+7. **LOCKDOWN, live** (0.17.0 reads and logs it, no hint yet): a lock by hand on a chest, then the next chest - `[lock] Chest mm:ss: X
+   locked - on the cards`, the pick line's `- the lock is spent`; or the walk's proof (`[Debug] PauseWalkLock`: `lock proof - rerolled`).
 8. **The QUEST row's counts, live** (0.15.0; the game's words 0.16.1): seen on 10-10 under "Genesis" - the readout's
    `story objective 0 of 5` stepped to 2 of 5 with the game's quest box (`[quest] ... -> story objective
    main_story_objective_q6: 2 of 5 - progress only`), so `_count` reads the game's own count. Owed: 0.16.1's words on the

@@ -54,6 +54,10 @@
 // 0.16.3 (C162-01, COMPANION-LOG-05 of the 10-11 PC round): the line is placed ONCE. Placed the frame after the cards, it moved when the
 // screen had flown in on 5 of 5 first draws (4 chest hints, 1 rescue hint: band 85 -> 111 units, 0.58 - 0.60 s later); now an offer's
 // first line waits for that moment (ScreenBand.LineAt) and is placed where the screen settled - the frame still comes with the cards.
+// 0.17.0: the active quest's counted rules feed the verdicts - a 'Rerolled Item Chests' quest (C16-04b) gives an item chest the game has not
+// counted yet its own REROLL (the chest view's _rerollOncePerView read at the offer and again before every verdict) and keeps the rerolls it
+// still needs on every screen, the rescue screen too (RerollCall's keptFor); a 'Liberate Survivors' quest (C16-04c) silences the rescue
+// screen's reroll hint while it wants the signal liberated (RerollCall's liberateFirst).
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -85,8 +89,11 @@ namespace YazsCompanion
             public bool Button, Interactable, Free; public int Label = -1, Stat = -1;          // the Reroll button
             public bool Skip, SkipUp; public int Cash, Heal;                                   // the Skip button, what it grants
             public bool Banish, BanishUp, BanishFree; public int BanishStat = -1;               // the Banish button
+            public bool RerolledHere;                                                          // 0.17.0 (C16-04b): a chest view the game counted a reroll on
         }
-        sealed class Inputs { public List<Recruit> Offered, Possible; public double Liberate = -1, RecruitValue; public Avail Rr; public string Pool = ""; public QuestSos Quest; }
+        // 0.17.0: Keep (C16-04b) = the chests a 'Rerolled Item Chests' quest still wants rerolled, LiberateFirst (C16-04c) = a 'Liberate Survivors'
+        // quest wants this signal liberated
+        sealed class Inputs { public List<Recruit> Offered, Possible; public double Liberate = -1, RecruitValue; public Avail Rr; public string Pool = ""; public QuestSos Quest; public int Keep; public bool LiberateFirst; }
 
         static UIGameplayUpgradeSelection _sel;          // the screen being advised (null: none)
         static IntPtr _selPtr;
@@ -164,6 +171,15 @@ namespace YazsCompanion
                         else if (c.Kind == "liberate") inp.Liberate = Math.Max(inp.Liberate, c.Score);
                     }
                     inp.Possible = Possible(sel, s, inp.Offered, out inp.Pool);
+                    // 0.17.0: the rescue screen spends the team's one pool of rerolls (C16-04b), and a 'Liberate Survivors' quest may want this
+                    // signal liberated (C16-04c; the team rule decides while it is active)
+                    try
+                    {
+                        var st = s.Story;
+                        inp.Keep = st == null ? 0 : st.RerollsKept();
+                        inp.LiberateFirst = st != null && st.Sos != null && st.Sos.Force && st.Moves && (s.Quest == null || !s.Quest.Active);
+                    }
+                    catch { }
                     _in = inp;
                 }
                 else
@@ -202,6 +218,10 @@ namespace YazsCompanion
             x.SlotBy = HeldRules.SlotBy(held);                                        // C16-01c Wooden Stick / Empty Chest
             // 0.16.0 (C16-13): the revive guard - the quest asks to survive the run (C16-12), a second life on a card
             x.SurviveQuest = s.Ctx.SurviveQuest;
+            // 0.17.0 (C16-04b): a quest that counts rerolled item chests - the chest's own count and whether the game counted this view already, and
+            // on every screen the rerolls the quest still needs (the chest included: once counted, its floor REROLL keeps them too)
+            x.RerolledHere = av.RerolledHere;
+            try { var st = s.Story; if (st != null) { x.KeepRerolls = st.RerollsKept(); if (screen == Screen.Chest) x.QuestReroll = st.RerollAsk(); } } catch { }
             foreach (var c in cards)
             {
                 var k = new HintCard { Name = c.Name, Kind = c.Kind, Score = c.Score, Rank = c.Rank, Head = c.Reason, Class = c.Owner != null ? c.Owner.Name : null };
@@ -269,6 +289,22 @@ namespace YazsCompanion
 
         static string _againWhy = "";                    // what the re-judge's log line says the cards were judged with before
         static string Count(int n) { return n >= 0 ? n.ToString(CultureInfo.InvariantCulture) : "?"; }
+
+        /// <summary>0.17.0 (C16-06a): from Lockdown's P_Locked once the player locked, replaced or cleared a lock on the screen being advised (the cards
+        /// are marked again by then). Nothing yet: the LOCKDOWN hint that answers here is C16-06b.</summary>
+        internal static void OnLockChanged(UIGameplayUpgradeSelection sel) { }
+
+        /// <summary>0.17.0 (C16-06a), for the pause walk's lock proof only: does the screen still have a reroll (RerollCount.Can over this file's reading:
+        /// the verdict's count on the screen being advised, else the team's statistic, else the button's number; a FREE reroll counts)?
+        /// <paramref name="why"/> = the count and where it came from.</summary>
+        internal static bool DebugRerollLeft(UIGameplayUpgradeSelection sel, out string why)
+        {
+            var a = Read(sel);
+            bool advised = Ptr(sel) == _selPtr && _count.Judged >= 0;
+            int n = advised ? _count.Judged : a.Stat >= 0 ? a.Stat : a.Label;
+            why = Count(n) + " (" + (advised ? _count.From : a.Stat >= 0 ? RerollCount.FromStat : a.Label >= 0 ? RerollCount.FromLabel : RerollCount.FromNone) + (a.Free ? ", a FREE reroll" : "") + ")";
+            return RerollCount.Can(a.Button, a.Interactable, a.Free, n);
+        }
 
         /// <summary>From Advisor: a selection screen closed (the pick, a skip) - the hint goes with it. 0.16.1 (C-3): the best card is left as it
         /// is (its screen animates out; the next offer badges every card afresh).</summary>
@@ -341,8 +377,11 @@ namespace YazsCompanion
             Button bn = null; try { bn = sel.banishButton; } catch { }
             try { a.Banish = bn != null && bn.gameObject.activeInHierarchy; a.BanishUp = bn != null && bn.interactable; } catch { }
             try { var f = sel.banishFreeLabel; a.BanishFree = f != null && f.activeInHierarchy; } catch { }
+            try { a.RerolledHere = RerolledOnce(sel); } catch { }           // 0.17.0 (C16-04b)
             return a;
         }
+        // 0.17.0 (C16-04b): the chest view's own flag - set by its ClickReroll as the quest's event is raised (once per view), cleared by OnEnable
+        [MethodImpl(MethodImplOptions.NoInlining)] static bool RerolledOnce(UIGameplayUpgradeSelection sel) { var ch = sel.TryCast<UIGameplayChestOpened>(); return ch != null && ch._rerollOncePerView; }
         [MethodImpl(MethodImplOptions.NoInlining)] static int SkipCash(UIGameplayUpgradeSelection sel) { return sel.GetSkipBonusMoney(); }
         [MethodImpl(MethodImplOptions.NoInlining)] static int SkipHeal(UIGameplayUpgradeSelection sel) { return sel.GetSkipBonusHp(); }
 
@@ -424,7 +463,12 @@ namespace YazsCompanion
             if (_in != null)
             {
                 bool can = CanReroll(_in.Rr, out rr);
-                var r = RerollCall.Decide(_in.Offered, _in.Liberate, _in.Possible, can, rr, _in.RecruitValue, _in.Quest);     // 0.13.0 (C1): the quest's team rule first
+                // 0.17.0: after the team rule, a 'Liberate Survivors' quest's Liberate first (C16-04c), then the rerolls a 'Rerolled Item Chests' quest
+                // still needs (C16-04b: while no more are left than the chests to reroll and the reroll is not free)
+                string kept = _in.Keep > 0 && !_in.Rr.Free && _count.Judged >= 0 && _count.Judged <= _in.Keep
+                    ? "rerolls kept for Rerolled Item Chests (" + _in.Keep + " chests to reroll, " + _count.Judged + " left)" : null;
+                var r = RerollCall.Decide(_in.Offered, _in.Liberate, _in.Possible, can, rr, _in.RecruitValue, _in.Quest,     // 0.13.0 (C1): the quest's team rule first
+                    keptFor: kept, liberateFirst: _in.LiberateFirst);
                 _rescue = r;
                 call = ScreenCall.FromRescue(r, r.Show ? LineText(r, false) : null, r.Show ? LineText(r, true) : null);     // C16-15: both forms
             }
@@ -432,6 +476,9 @@ namespace YazsCompanion
             {
                 _gin.CanReroll = CanReroll(_av, out rr); _gin.Rerolls = _count.Judged; _gin.FreeReroll = _av.Free; _gin.RerollsText = rr;
                 _gin.CanBanish = _av.Banish && _av.BanishUp && (_gin.Banishes > 0 || _av.BanishFree);
+                // 0.17.0 (C16-04b): a re-judge after a reroll runs on the old cards with the first verdict's inputs - the chest's flag read again, so
+                // the quest's REROLL does not come back for the moment before the new cards land
+                if (_gin.Screen == "Chest" && _sel != null) { try { _gin.RerolledHere = RerolledOnce(_sel); } catch { } }
                 call = ScreenCall.Decide(_gin);
             }
             bool flipped = _call == null || _call.Show != call.Show || _call.Action != call.Action;

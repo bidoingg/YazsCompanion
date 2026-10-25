@@ -17,7 +17,7 @@
 //   BANISH  (off by default: a banish is for the whole run) a banishable card the build skips, or one scored under 1, that
 //           the active quest does not name - never a card the game marks as not banishable, never the recommended card.
 // The rescue screen keeps its own verdict (RerollCall: who could still come) and its words; FromRescue carries it. LOCKDOWN is
-// not advised: what a lockdown keeps has not been read in the game's code yet.
+// not advised yet: 0.17.0 reads and logs every lock (Lockdown.cs, C16-06a); the hint is C16-06b.
 // 0.16.0: the items the squad holds change the skip (HeldRules, C16-01b / d / e / f): with Reserve Bench the skip of a chest or a
 // training is a level-up - REROLL first, then (no reroll left, or reroll hints off) SKIP when the best card is under the floor, the
 // level-up worth a card at the floor; Life Savings turns the skip's cash into a heal, Hijacked Signal pays a chest item the same cash
@@ -38,6 +38,10 @@
 // the line over it reads 'RECOMMENDED: REROLL  -  ...', HeadWord) and the best card gives them up: its ribbon turns grey and reads 'IF YOU
 // KEEP' (KeepLead) over its own line, grey too; all of it with the cards, no 0.6 s wait (RerollHint.cs). BANISH keeps the card's frame
 // (the best card stays the pick; its button's frame is grey). The bench checks one gold frame in every hint state.
+// 0.17.0 (C16-04b): under a quest that counts rerolled item chests (Ghost_1 "Encapsulation": 'Use Reroll on 3 different Item Chests'; the game
+// counts one reroll per chest view) a chest not yet counted whose best card is under QuestRerollCap 3.5 says 'REROLL - the quest counts this
+// reroll (Rerolled Item Chests 1 of 3)', before the floor's REROLL; every other screen keeps the rerolls the quest still needs ('rerolls kept
+// for the quest' in the log) while no more are left than the chests still to reroll (the rescue screen likewise, RerollCall's keptFor).
 // Pure (no game types): RerollHint.cs reads the screen and draws the line, the offline bench replays the logged chests.
 using System;
 using System.Collections.Generic;
@@ -90,6 +94,10 @@ namespace YazsCompanion
         public string SkipBy;                   // C16-01f: the skip extras held, joined ' and ' (A Cookie, Skip Rope)
         public int RopePoints, RopeReq = 4;     // C16-01f: Skip Rope's points of this skip, Military Training Points per training (the log)
         public bool SurviveQuest;               // C16-13: the active quest asks to survive the run and is followed (RunContext.SurviveQuest)
+        // ---- 0.17.0 (C16-04b): a quest that counts rerolled item chests (QuestStory.RerollAsk / RerollsKept; RerollHint.Inputs0 fills them)
+        public string QuestReroll;              // a chest: the open count in the game's words ('Rerolled Item Chests 1 of 3'); null: none
+        public bool RerolledHere;               // a chest: this view counted already (the game's UIGameplayChestOpened._rerollOncePerView)
+        public int KeepRerolls;                 // every screen: the chests the quest still wants rerolled (0: none) - their rerolls are kept
     }
 
     internal sealed class ScreenCall
@@ -98,6 +106,9 @@ namespace YazsCompanion
         // book dropped the false 'damage' bonus - 39 of 150 logged chests instead of 49)
         public const double ChestFloor = 2.5, LevelUpEarly = 3.5, LevelUpLate = 2.5, MilitaryFloor = 2.0, PodFloor = 2.0, SkipUnder = 1.5;
         public const int Budget = 64;           // the words after "REROLL  -  " (the reroll line has a band of its own, 1800 units wide)
+        /// <summary>0.17.0 (C16-04b, the user's Q39 of 10-13): while the quest counts rerolled item chests, a chest not yet counted whose best card is
+        /// under this gets the REROLL hint (of 160 chest views logged up to 10-07, 64 % had their best card under 3.5).</summary>
+        public const double QuestRerollCap = 3.5;
         /// <summary>0.16.0 (C16-13): under this squad health (and while the quest asks to survive the run) a second life on the cards holds the
         /// REROLL and SKIP hints back - one constant with the revive need's (C16-12).</summary>
         public const double ReviveHealth = ItemRules.ReviveHurt;
@@ -213,11 +224,35 @@ namespace YazsCompanion
                 c.Why = "quest: " + x.NoItems + "; skip bonus +" + x.SkipCash + " cash, +" + x.SkipHeal + " health";
                 return c;
             }
+            // 0.17.0 (C16-04b): REROLL on an item chest while the quest counts rerolled chests - a view the game has not counted yet (one per view),
+            // its best card (its merit, as the floor's) under the quest's cap and not the quest's own, a reroll left, no second life on the cards.
+            // Not shown, the quest's reason leads the log's words that follow (qWhy), never lost
+            string qWhy = "";
+            if (x.Screen == "Chest" && x.QuestReroll != null)
+            {
+                bool kept = (best.Head ?? "").StartsWith("quest", StringComparison.OrdinalIgnoreCase) || Protected(x.Quest, best);
+                string q = "quest: " + x.QuestReroll;
+                if (!x.RerolledHere && !kept && held == null && merit < QuestRerollCap && x.Reroll && x.CanReroll)
+                {
+                    c.Show = true; c.Action = HintAction.Reroll;
+                    c.Words = Pick("the quest counts this reroll (" + x.QuestReroll + ")", q);
+                    c.Short = Pick("the quest counts this reroll");                     // C16-15: the line under its button
+                    c.Why = q + " - best " + bestText + " under the quest cap " + F2(QuestRerollCap) + " | rerolls " + x.RerollsText;
+                    return c;
+                }
+                qWhy = q + " - " + (x.RerolledHere ? "this chest counted already" : kept ? "the best card is the quest's own (" + bestText + ")"
+                    : held != null ? "the revive guard holds it" : merit >= QuestRerollCap ? "best " + bestText + " at or over the quest cap " + F2(QuestRerollCap)
+                    : !x.Reroll ? "reroll hints off" : "no reroll left (" + x.RerollsText + ")") + " | ";
+            }
             // REROLL: the best card is under the screen's floor (its merit: before a held slot cost, C16-01c), and the game still has a reroll for it
             if (c.Floor > 0 && merit < c.Floor)
             {
-                string under = "best " + bestText + " under the " + ScreenWord(x.Screen) + " floor " + F2(c.Floor);
+                string under = qWhy + "best " + bestText + " under the " + ScreenWord(x.Screen) + " floor " + F2(c.Floor);
+                // 0.17.0 (C16-04b): the rerolls the quest still needs are kept - on every screen but a chest the game has not counted yet (that
+                // reroll counts for the quest too), while no more are left than the chests still to reroll and the reroll is not free
+                bool keep = (x.Screen != "Chest" || x.RerolledHere) && x.KeepRerolls > 0 && !x.FreeReroll && x.Rerolls >= 0 && x.Rerolls <= x.KeepRerolls;
                 if (x.Reroll && x.CanReroll && held != null) c.Why = under + " - held back: " + held;
+                else if (x.Reroll && x.CanReroll && keep) c.Why = under + " - rerolls kept for the quest (" + x.KeepRerolls + " chests to reroll, " + x.Rerolls + " left)";
                 else if (x.Reroll && x.CanReroll)
                 {
                     c.Show = true; c.Action = HintAction.Reroll;
@@ -233,7 +268,7 @@ namespace YazsCompanion
                 }
                 else c.Why = under + " - " + (!x.Reroll ? "reroll hints off" : "no reroll left (" + x.RerollsText + ")");
             }
-            else c.Why = c.Floor > 0 ? "best " + bestText + " at or over the " + ScreenWord(x.Screen) + " floor " + F2(c.Floor) : "no reroll floor on this screen (best " + bestText + ")";
+            else c.Why = qWhy + (c.Floor > 0 ? "best " + bestText + " at or over the " + ScreenWord(x.Screen) + " floor " + F2(c.Floor) : "no reroll floor on this screen (best " + bestText + ")");
             if (held != null && c.Why.IndexOf("held back", StringComparison.Ordinal) < 0) c.Why += " | revive guard: " + held;
             // SKIP (0.16.0, C16-01b): Reserve Bench held - the skip of a chest or training under its floor is a level-up, worth at least a card
             // at the floor; once no reroll is left (or reroll hints are off)

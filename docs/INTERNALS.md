@@ -150,8 +150,9 @@ new file). Two tools read a log:
   come INFO sections, which are not checks: the proofs the log holds, each kind as `seen N, first at HH:MM:SS: <source or
   line>` or `not in this log`. The real-session proofs are `first-input`, `yard`, `equip` (with how EQUIP ADVICE / UNDO
   was pressed: `touch`, `mouse`, `key` or, 0.16.1, `pad`), `equip-order` (0.16.1: an EQUIP whose done line says the
-  slots read in the advice's order) and `ribbon`. The quest proof is `quest-story`. The walk proofs are
-  `side-panel`, `results` and `recruit-tour`. `--expect kind,kind` turns those kinds into checks: a kind not in the log
+  slots read in the advice's order), `ribbon` and, 0.17.0, `lock` (a `[lock]` line) and `lock-pick` (a lock set or cleared: `on` /
+  `off`). The quest proofs are `quest-story` and, 0.17.0, `quest-reroll`, `quest-liberate` and `quest-survive`. The walk proofs are
+  `side-panel`, `results`, `recruit-tour` and, 0.17.0, `lock-walk`. `--expect kind,kind` turns those kinds into checks: a kind not in the log
   fails, and so does `equip` when no line says how it was pressed (exit 1). An unknown kind exits 2 with the list.
   Without `--expect` the exit codes are 0.15.0's.
 - `python tools\advice_audit.py companion.log.1 companion.log [--since 2026-10-06] [--until HH:MM:SS] [--brief] [--json f]`
@@ -170,6 +171,17 @@ new file). Two tools read a log:
   `pwsh -NoProfile -File tools\updater_drill.ps1` (the bench built first) runs the REAL check - HttpClient, files, renames -
   against a feed served by `python -I -m http.server --bind 127.0.0.1` at `http://localhost:<port>`, 18 scenes over scratch
   plugin folders whose running DLL is loaded as BepInEx loads a plugin; last line `updater drill: N of M PASS`.
+- **The quest's counted rules and the survive quest** (0.17.0, `QuestCases017.cs` Q6b / Q6c / Q7, also in `--no-data`): the
+  'Rerolled Item Chests' REROLL and the rerolls kept, the 'Liberate Survivors' rule along a made-up Normal run, Hardcore and
+  Extermination, the survive quest's one gate and the replay's decision - every fixture made up; the LOCKDOWN read's sources
+  (`HintCases.cs` LK1). Two tools read files outside the repository (the user's runs are never a fixture):
+  `tools\bench.cmd --replay-quest-chests <chest_corpus.txt>` (lines `run TAB seconds TAB mode TAB best`) replays a chest corpus
+  under the reroll quest's rule (the corpus of 10-07: `15 runs reach 3 rerolled chests (18 runs with 3+ chests), 64 hints`), and
+  `tools\bench.cmd --replay-caution <companion.log> [more logs] [--data gamedata.json] [--probe probe.json]` replays every logged
+  hard-mode offer with the survive quest's caution x1.10 / x1.15 / x1.20 / x1.30 (the real gate: `RunContext.QuestCautionOn`) -
+  fidelity (the survival stat cards rebuilt within 0.02), each #1 change, the control set, and the verdict line `caution
+  replay: adopt k=1.15 from 0.3` / `adopt k=1.10 ...` / `drop` / `no verdict (...)`. On 10-25 over every log on the PC (119
+  Hardcore d1 offers of two runs): `drop` - `QuestRules.SurviveCaution` is 1.0.
 
 ## Prerequisites (already done on this machine)
 
@@ -298,6 +310,29 @@ In `BepInEx\plugins\YazsCompanion\companion.log` (the README's *Logs* says where
   the tier-3 weapon; Engineer kills to 2000: a modest lift on the Engineer's damage cards, never over the build's
   core`; once a run, where the health-item count came from (`[quest] health items read from the objective's own
   count`).
+  0.17.0, the quest's counted rules (C16-04b / c) on the count's line: `[quest] GameHubQuest_Ghost_1 -> event
+  RerollItemChecOncePerView: 1 of 3 - REROLL hint on item chests whose best card is under 3.50` and `[quest] GameHubQuest_Medic_3
+  -> event SOSLiberate: 1 of 5 - Liberate first (about 4 SOS signals left, margin 1)` (or `recruits as usual while the SOS signals
+  left cover it (about 9 left)`, `recruits as usual: a full team's signals liberate on their own`, `recruits as usual: open-ended`,
+  `out of reach this run (about 2 SOS signals left for 4)`, `Extermination: Liberate first while the team has a free slot`; ` (info
+  only)` under InfoOnly; `progress only` while the quest is not followed) - a new line when the verdict or the Liberates left
+  change, not as the signals left fall; once a run `[quest] the team rule decides the rescue cards (the Liberate rule waits while it
+  is active)`. The hints: `[squad] action hint: Chest 03:09: SHOWN REROLL - quest: Rerolled Item Chests 1 of 3 - best Teddy Bear
+  3.20 under the quest cap 3.50 | rerolls 4 (...)`, not shown `quest: Rerolled Item Chests 1 of 3 - this chest counted already |
+  best ...`, a level-up `... under the level-up floor 3.50 - rerolls kept for the quest (2 chests to reroll, 2 left)`, the rescue
+  screen `[squad] reroll hint: not shown - quest: rerolls kept for Rerolled Item Chests (2 chests to reroll, 2 left)` / `quest:
+  Liberate Survivors - no recruit wanted (Liberate)`. A survive quest (C16-09): the read line's `Survive (...) the run's own goal -
+  advice unchanged; on Hardcore or difficulty 3+ the QUEST row says 'survive the run' from 30% of the run`, then from 30 % of a
+  hard run `[quest] ... -> survive the run: advice unchanged (no caution factor)`; with the factor kept (`SurviveCaution` over 1.0)
+  the `[ctx]` line would read `survival x1.51 (quest)`.
+  0.17.0, LOCKDOWN (C16-06a, `Lockdown.cs`): after the `[card]` / `[shown]` lines, while the screen holds a lock, `[lock] LevelUp
+  05:40: Fire Walk locked - on the cards (#1, 3.80)` or `[lock] Chest 08:02: Golden Key locked - not on the cards (no longer in
+  the pool)` (a training's ends ` (Rare kept)`); no line while none is held. The player's presses: `[pick] LevelUp 05:12: the
+  Lockdown button pressed (armed)` / `(put away)` / `- ignored (the screen holds input)`, `[pick] LevelUp 05:12: lockdown on Fire
+  Walk (#2, 3.40)`, `... (replaces Golden Key)`, `[pick] LevelUp 05:12: lockdown off Fire Walk`; the pick line ends ` - the lock is
+  spent` when the locked card is taken. Once a run: `[lock] the Lockdown feature is not unlocked in this profile (Training Yard
+  team tree, rank 3) - no LOCKDOWN hints; the lockdown items score without it`, or `[lock] the Lockdown unlock not read (<why>) -
+  treated as unlocked`.
   The held items (0.16.0, `HeldRules.cs`): after every `[ctx]` line, while an item a held-item rule reads is held, what it
   changes now - `[held] Mana Potion: ability cooldown reduction off | Reserve Bench: ... | Wooden Stick: ...` (one part per
   item, in the table's order) - and once a run (Try Again counts: the play clock going back starts a new one) what was
@@ -575,6 +610,16 @@ In `BepInEx\config\bidoi.yazs.companion.cfg`, all off by default.
   counts those): `[menu] pause walk: hint preview - ...`, `... hint preview REROLL - the frame on the Reroll button, the line
   over it, #1 <card> gave up its frame`, the same for SKIP, then `... hint preview done - the screen's own verdict again
   (none), the gold frame on the best card`.
+- `PauseWalkLock = true` with `PreviewPause = true` (0.17.0, C16-06a): after the hover tour, on the walk's first level-up of two
+  cards or more (2.4 s in), the Lockdown button is pressed and card #2 locked the game's way (`ClickLockdown`, then
+  `OnPowerupButtonClicked`: the game routes the click to its `ProcessLockdown`), a `locked` shot 0.6 s later, and 1.0 s on the
+  screen rerolled once when a reroll is left - the game draws the locked card first, so the replaced offer proves the read and the
+  mechanics together. It spends one reroll of the throwaway run. Lines in order: `[pick] LevelUp mm:ss: the Lockdown button pressed
+  (armed)`, `[pick] LevelUp mm:ss: lockdown on X (#2, s.ss)`, `[menu] pause walk: lockdown on X (debug)`, `[menu] pause walk: lock
+  proof - rerolled (...)`, `[offer] LevelUp mm:ss (...) replaced (reroll): ...`, `[lock] LevelUp mm:ss: X locked - on the cards
+  (#k, s.ss)`; or `[menu] pause walk: lock proof not reached - <why>` (no Lockdown on this screen, the button not shown, card #2
+  not lockdownable, the press ignored, no reroll left). Set without PreviewPause it does nothing (`[menu] PauseWalkLock is on but
+  PreviewPause is off - nothing happens` at load). Off by default.
 - `[Debug] PreviewYard = true` opens the Training Yard from the main menu about 6 s after launch
   (`UIViewMainMenu.OnClickUpgrades()`), walks the nine tabs with the game's own tab change (`ChangeTabIdx(1)`),
   saves `yard1_general` .. `yard9_mechanic` and `yard10_highlight` (the cursor moved onto a node), and on the Medic tab
@@ -740,7 +785,15 @@ there would fire for all of them). The mod also post-fixes each card class's own
 Military, Hashtag, SOS - the WHY band) and ONE `OnDeselected()` - the five overrides are a single function in
 `GameAssembly.dll`, so the skill card's carries every card's deselection and the post-fix reads only the card's
 pointer -, `ClickBanish` and `ProcessBanish` (each screen's own; the Research Pod screen's is an empty shared body and
-is left alone) to log the banishes, and reads `GetSkipBonusMoney` / `GetSkipBonusHp` for the skip hint. The run setup
+is left alone) to log the banishes, and reads `GetSkipBonusMoney` / `GetSkipBonusHp` for the skip hint. 0.17.0 (C16-06a): a
+prefix and a post-fix on the base `ClickLockdown` (no screen overrides it) and on exactly the level-up's, the chest's and the
+training's own `ProcessLockdown(UIPowerupButtonBase)` (each a function of its own that ends in a jump into the base, so the
+post-fix runs after the base) log the presses and the locks - never the base `ProcessLockdown` (every override jumps into it: a
+lock would be seen twice), never the Research Pod's (an empty body shared by 4,075 methods), never the rescue screen's
+(unreachable: a rescue card is never lockdownable); the locks themselves are the screens' `_lockedPowerup` / `_lockedItem` /
+`_lockedPowerup` + `_lockedDownRarity`, each card's lockability its button's own virtual `IsLockdownable`, the unlock
+`GamePermanentData.Get.skillTreeUnlockLockdown`'s runtime instance (`levelCurrent > 0 && IsUnlocked()`, the screens' own test),
+and the chest view's `_rerollOncePerView` (C16-04b: the quest counts one reroll per view). The run setup
 screen: post-fixes on `UIViewRunSetup.Update` (the tick), `OnBadgeHighlight` and `UIViewRunSetupBadgeButton.OnHighlight`
 (the cursor), `RefreshSelectedBadgeButtons` (a selection changed) and `OnDisable` (the screen closed), each skipped
 when its target is missing (`Prepare`), plus a fallback tick from `GameMaster.Update` that reads the main menu's run
@@ -819,6 +872,7 @@ mod/                              (the GitHub repository bidoingg/YazsCompanion 
     Plugin.cs                     BepInEx entry point, config, Harmony bootstrap, per-mod log file
     LogFile.cs                    companion.log's session header and its rotation over 4 MB at load (pure, 0.14.0)
     Advisor.cs                    Harmony patches; collects the cards, ranks, draws, logs offers and picks
+    Lockdown.cs                   LOCKDOWN read and logged: the unlock, each screen's lock, the presses and locks; the walk's lock proof (0.17.0)
     GameState.cs                  live squad / clock / Training Yard / damage-tag readers over the IL2CPP objects
     Ranker.cs                     the ranking rules: the build, the squad, the clock, the mode
     Context.cs                    the run context (mode, clock, pace, health), the player's doctrine, the timing curves (pure)
